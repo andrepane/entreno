@@ -1,151 +1,142 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Calendario Entrenos Híbridos</title>
-  <link rel="stylesheet" href="style.css"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Calendario de Entrenos</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="app-header">
-    <h1>Entreno Híbrido</h1>
-    <button id="calendarMini" class="calendar-mini" aria-haspopup="dialog" aria-controls="calendarOverlay">
-      <span class="calendar-mini__heading">Calendario</span>
-      <span class="calendar-mini__date" id="miniDateLabel">Selecciona un día</span>
-      <span class="calendar-mini__month" id="miniMonthLabel">Mes Año</span>
-    </button>
+    <h1>Entrenos</h1>
+    <div class="day-controls">
+      <button id="prevDayBtn" aria-label="Día anterior">◀</button>
+      <input type="date" id="selectedDate" />
+      <button id="nextDayBtn" aria-label="Día siguiente">▶</button>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button class="tab active" data-tab="hoy" role="tab" aria-selected="true">Hoy</button>
+      <button class="tab" data-tab="nuevo" role="tab" aria-selected="false">Añadir</button>
+    </nav>
   </header>
 
-  <main class="app-main">
-    <section class="editor" aria-labelledby="formTitle">
-      <h2 id="formTitle">Añadir ejercicio</h2>
-
-      <form id="entryForm" class="entry-form">
-        <div class="row">
-          <label for="categoria">Categoría</label>
-          <select id="categoria" required>
-            <option value="" disabled selected>Elige…</option>
-            <option>Push (Empuje)</option>
-            <option>Tirón (Espalda)</option>
-            <option>Pierna + Core</option>
-            <option>Skills / Técnica</option>
-            <option>Full body / Descarga</option>
-          </select>
-        </div>
-
-        <div class="row">
-          <span class="label">Modalidad</span>
-          <div class="segmented">
-            <input type="radio" id="mod-cal" name="modalidad" value="Calistenia" checked>
-            <label for="mod-cal">Calistenia</label>
-            <input type="radio" id="mod-mus" name="modalidad" value="Musculación">
-            <label for="mod-mus">Musculación</label>
+  <main>
+    <!-- Sección HOY -->
+    <section id="tab-hoy" class="tab-panel" role="tabpanel">
+      <div class="day-summary">
+        <h2 id="dayTitle">Ejercicios de <span data-bind="humanDate"></span></h2>
+        <div class="copy-day">
+          <button id="copyDayToggleBtn" class="ghost">Copiar este día…</button>
+          <div id="copyDayBox" class="copy-box hidden">
+            <label for="copyTargetDate">Copiar a:</label>
+            <input type="date" id="copyTargetDate" />
+            <button id="copyDayBtn" class="primary">Copiar</button>
+            <button id="cancelCopyBtn" class="ghost">Cancelar</button>
           </div>
         </div>
+      </div>
 
-        <div class="row">
-          <label for="ejercicio">Ejercicio</label>
-          <input id="ejercicio" type="text" placeholder="Ej: Fondos EMOM, Press banca, Front lever raises…" required />
-        </div>
+      <ul id="exerciseList" class="exercise-list" aria-live="polite"></ul>
 
-        <div class="row grid-3 reps-row">
-          <div>
-            <label for="series">Series</label>
-            <input id="series" type="number" min="0" step="1" placeholder="4"/>
-          </div>
-          <div>
-            <label for="reps">Reps</label>
-            <div class="input-stack">
-              <input id="reps" type="number" min="0" step="1" placeholder="8"/>
-              <label class="fallo-toggle">
-                <input id="alFallo" type="checkbox" />
+      <div class="empty-hint" id="emptyDayHint">
+        No hay ejercicios para este día. Ve a <strong>Añadir</strong> para crear alguno.
+      </div>
+    </section>
+
+    <!-- Sección AÑADIR -->
+    <section id="tab-nuevo" class="tab-panel hidden" role="tabpanel">
+      <h2>Añadir ejercicio</h2>
+      <form id="addForm" class="card">
+        <div class="grid">
+          <label class="field">
+            <span>Día</span>
+            <input type="date" id="formDate" required />
+          </label>
+
+          <label class="field">
+            <span>Nombre del ejercicio</span>
+            <input type="text" id="formName" placeholder="Dominadas / Plancha / EMOM…" required />
+          </label>
+
+          <label class="field">
+            <span>Series</span>
+            <input type="number" id="formSets" min="1" value="3" required />
+          </label>
+
+          <div class="fieldset">
+            <span class="legend">Tipo de objetivo</span>
+
+            <label class="row">
+              <input type="radio" name="goalType" value="reps" id="goalReps" checked />
+              <span>Repeticiones</span>
+            </label>
+            <div class="row indent" id="rowReps">
+              <label class="field inline">
+                <span>Reps</span>
+                <input type="number" id="formReps" min="1" value="8" />
+              </label>
+              <label class="row inline">
+                <input type="checkbox" id="formFailure" />
                 <span>Al fallo</span>
               </label>
             </div>
+
+            <label class="row">
+              <input type="radio" name="goalType" value="seconds" id="goalSecs" />
+              <span>Isométrico (segundos)</span>
+            </label>
+            <div class="row indent hidden" id="rowSeconds">
+              <label class="field inline">
+                <span>Segundos</span>
+                <input type="number" id="formSeconds" min="1" value="30" />
+              </label>
+            </div>
+
+            <label class="row">
+              <input type="radio" name="goalType" value="emom" id="goalEmom" />
+              <span>EMOM</span>
+            </label>
+            <div class="row indent hidden" id="rowEmom">
+              <label class="field inline">
+                <span>Minutos</span>
+                <input type="number" id="formEmomMinutes" min="1" value="10" />
+              </label>
+              <label class="field inline">
+                <span>Reps / min</span>
+                <input type="number" id="formEmomReps" min="1" value="10" />
+              </label>
+            </div>
           </div>
-          <div>
-            <label for="tiempo">Tiempo (s)</label>
-            <input id="tiempo" type="number" min="0" step="5" placeholder="20"/>
-          </div>
+
+          <label class="field">
+            <span>Lastre (kg) — opcional</span>
+            <input type="number" id="formWeight" step="0.5" placeholder="0" />
+          </label>
         </div>
 
-        <div class="row fallo-extra" id="falloExtra" hidden>
-          <label for="falloDetalle">Registro al fallo</label>
-          <input id="falloDetalle" type="text" placeholder="Ej: 12/10/8 reps, 35s, etc." />
-          <p class="hint">Anota las repeticiones o segundos logrados al fallo para verlos en el resumen del día.</p>
-        </div>
-
-        <div class="row grid-2">
-          <div>
-            <label for="peso">Peso/Lastre (kg)</label>
-            <input id="peso" type="number" min="0" step="0.5" placeholder="10"/>
-          </div>
-          <div>
-            <label for="descanso">Descanso (s)</label>
-            <input id="descanso" type="number" min="0" step="5" placeholder="90"/>
-          </div>
-        </div>
-
-        <div class="row">
-          <label for="notas">Notas</label>
-          <textarea id="notas" rows="2" placeholder="Técnica, sensaciones, progresión…"></textarea>
-        </div>
-
-        <div class="row actions">
-          <button type="submit" class="primary">Añadir ejercicio</button>
-          <button type="button" id="clearForm" class="ghost">Limpiar</button>
+        <div class="actions">
+          <button type="submit" class="primary">Añadir</button>
+          <button type="reset" class="ghost">Limpiar</button>
         </div>
       </form>
-
-    </section>
-
-    <section class="entries-panel" aria-labelledby="selectedDateTitle">
-      <div class="entries-header">
-        <h2 id="selectedDateTitle">Selecciona un día</h2>
-        <p class="entries-hint">Usa el calendario para elegir la fecha y añade tus entrenos.</p>
-      </div>
-
-      <div class="entries">
-        <h3>Registro del día</h3>
-        <ul id="entriesList" class="entries-list empty">
-          <li>Sin ejercicios aún.</li>
-        </ul>
-      </div>
-
-      <div class="day-actions">
-        <button id="exportDay" class="ghost small">Exportar día (PDF)</button>
-        <button id="deleteDay" class="danger small">Borrar día</button>
-      </div>
     </section>
   </main>
 
-  <footer class="app-footer">
-    <button id="exportAll" class="ghost">Exportar todo (JSON)</button>
-    <label class="importer">
-      Importar JSON
-      <input id="importFile" type="file" accept="application/json"/>
-    </label>
-  </footer>
-
-  <div id="calendarOverlay" class="calendar-overlay" aria-hidden="true">
-    <div class="calendar-modal" role="dialog" aria-modal="true" aria-labelledby="monthLabel">
-      <div class="calendar-modal__header">
-        <div class="month-nav">
-          <button id="prevMonth" aria-label="Mes anterior">◀</button>
-          <div class="month-label" id="monthLabel">Mes Año</div>
-          <button id="nextMonth" aria-label="Mes siguiente">▶</button>
-        </div>
-        <button id="closeCalendar" class="close-calendar" aria-label="Cerrar calendario">✕</button>
-      </div>
-      <section class="calendar" id="calendar">
-        <div class="weekdays">
-          <div>L</div><div>M</div><div>X</div><div>J</div><div>V</div><div>S</div><div>D</div>
-        </div>
-        <div class="days-grid" id="daysGrid"></div>
-      </section>
+  <!-- Mini calendario -->
+  <aside class="mini-cal" aria-label="Calendario">
+    <div class="mini-cal-header">
+      <button id="mcPrev" aria-label="Mes anterior">◀</button>
+      <div id="mcLabel" aria-live="polite"></div>
+      <button id="mcNext" aria-label="Mes siguiente">▶</button>
     </div>
-  </div>
+    <div class="mini-cal-grid" id="mcGrid" role="grid" aria-label="Días del mes"></div>
+  </aside>
+
+  <footer class="app-footer">
+    <small>Datos guardados en tu navegador.</small>
+  </footer>
 
   <script src="app.js"></script>
 </body>
 </html>
+
