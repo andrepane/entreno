@@ -1,636 +1,499 @@
-/* ==========
-   Calendario Entrenos Híbridos
-   - Guarda en localStorage
-   - CRUD por día
-   - Export/Import JSON
-   ========== */
+/* ========= Utilidades de fecha ========= */
+const fmt = (d) => d.toISOString().slice(0,10);
+const toHuman = (iso) => {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("es-ES", { weekday:"long", year:"numeric", month:"long", day:"numeric" });
+};
 
-const daysGrid = document.getElementById('daysGrid');
-const monthLabel = document.getElementById('monthLabel');
-const prevBtn = document.getElementById('prevMonth');
-const nextBtn = document.getElementById('nextMonth');
-const selectedDateTitle = document.getElementById('selectedDateTitle');
+/* ========= Estado & almacenamiento ========= */
+const STORAGE_KEY = "workouts.v1";
+let state = {
+  selectedDate: fmt(new Date()),
+  workouts: {} // { "YYYY-MM-DD": [exercise, ...] }
+};
 
-const form = document.getElementById('entryForm');
-const categoria = document.getElementById('categoria');
-const ejercicio = document.getElementById('ejercicio');
-const series = document.getElementById('series');
-const reps = document.getElementById('reps');
-const tiempo = document.getElementById('tiempo');
-const peso = document.getElementById('peso');
-const descanso = document.getElementById('descanso');
-const notas = document.getElementById('notas');
-const alFalloToggle = document.getElementById('alFallo');
-const falloExtra = document.getElementById('falloExtra');
-const falloDetalle = document.getElementById('falloDetalle');
-
-const clearFormBtn = document.getElementById('clearForm');
-const entriesList = document.getElementById('entriesList');
-const exportDayBtn = document.getElementById('exportDay');
-const deleteDayBtn = document.getElementById('deleteDay');
-const exportAllBtn = document.getElementById('exportAll');
-const importFile = document.getElementById('importFile');
-
-const calendarOverlay = document.getElementById('calendarOverlay');
-const calendarMini = document.getElementById('calendarMini');
-const closeCalendarBtn = document.getElementById('closeCalendar');
-const miniDateLabel = document.getElementById('miniDateLabel');
-const miniMonthLabel = document.getElementById('miniMonthLabel');
-
-if(calendarMini){
-  calendarMini.setAttribute('aria-expanded','false');
-}
-
-let current = new Date();
-let selectedDateStr = toISODate(new Date());
-
-const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-const MONTH_NAMES_SHORT = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-
-/* ===== Utils ===== */
-
-function toISODate(d){
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,'0');
-  const day = String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${day}`;
-}
-
-function fromISODate(str){
-  const [y,m,d] = str.split('-').map(Number);
-  return new Date(y, m-1, d);
-}
-
-function getData(){
-  try{
-    return JSON.parse(localStorage.getItem('hybridLog') || '{}');
-  }catch(e){
-    return {};
-  }
-}
-
-function setData(data){
-  localStorage.setItem('hybridLog', JSON.stringify(data));
-}
-
-function getDayEntries(dateStr){
-  const db = getData();
-  return db[dateStr] || [];
-}
-
-function setDayEntries(dateStr, entries){
-  const db = getData();
-  db[dateStr] = entries;
-  setData(db);
-}
-
-function escapeHTML(str = ''){
-  return String(str)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;')
-    .replace(/'/g,'&#39;');
-}
-
-function badgeClassFor(cat){
-  if(!cat) return '';
-  const c = cat.toLowerCase();
-  if(c.includes('push') || c.includes('empuje')) return 'push';
-  if(c.includes('tirón') || c.includes('espalda')) return 'pull';
-  if(c.includes('pierna')) return 'legs';
-  if(c.includes('skill')) return 'skills';
-  if(c.includes('full')) return 'full';
-  return '';
-}
-
-/* ===== Calendar Render ===== */
-
-function renderCalendar(targetDate){
-  const year = targetDate.getFullYear();
-  const month = targetDate.getMonth(); // 0-11
-
-  // Etiqueta de mes (en español)
-  monthLabel.textContent = `${capitalize(MONTH_NAMES[month])} ${year}`;
-  updateMiniLabels();
-
-  daysGrid.innerHTML = '';
-
-  // Queremos que la semana empiece en Lunes
-  const firstOfMonth = new Date(year, month, 1);
-  let startDay = firstOfMonth.getDay(); // 0-Dom, 1-Lun ...
-  if(startDay === 0) startDay = 7; // mover domingo al final
-  const daysInMonth = new Date(year, month+1, 0).getDate();
-
-  // Días del mes anterior para completar la primera semana
-  const prevMonthDays = startDay - 1;
-
-  // Total celdas: 6 filas * 7 columnas = 42 (para cuadrícula estable)
-  const totalCells = 42;
-
-  for(let cell=0; cell<totalCells; cell++){
-    const dayEl = document.createElement('div');
-    dayEl.className = 'day';
-
-    const dayNumEl = document.createElement('div');
-    dayNumEl.className = 'num';
-
-    let thisDate;
-
-    if(cell < prevMonthDays){
-      // celdas del mes anterior
-      const d = new Date(year, month, 1 - (prevMonthDays - cell));
-      thisDate = d;
-      dayEl.classList.add('out');
-    } else if (cell >= prevMonthDays && cell < prevMonthDays + daysInMonth){
-      // celdas del mes actual
-      const day = cell - prevMonthDays + 1;
-      thisDate = new Date(year, month, day);
-    } else {
-      // celdas del mes siguiente
-      const day = cell - (prevMonthDays + daysInMonth) + 1;
-      thisDate = new Date(year, month+1, day);
-      dayEl.classList.add('out');
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      state = { ...state, ...parsed };
     }
-
-    const dateStr = toISODate(thisDate);
-    dayNumEl.textContent = thisDate.getDate();
-    dayEl.appendChild(dayNumEl);
-
-    // Badges por categorías presentes ese día
-    const entries = getDayEntries(dateStr);
-    if(entries.length){
-      const badges = document.createElement('div');
-      badges.className = 'badges';
-      const presentCats = new Set(entries.map(e => e.categoria));
-      presentCats.forEach(cat => {
-        const b = document.createElement('span');
-        b.className = `badge ${badgeClassFor(cat)}`;
-        b.textContent = shortCat(cat);
-        badges.appendChild(b);
-      });
-      dayEl.appendChild(badges);
-    }
-
-    // Selección de día
-    dayEl.addEventListener('click', () => {
-      selectedDateStr = dateStr;
-      updateSelectedDateTitle();
-      renderEntries();
-      closeCalendarOverlay({focusTrigger:false});
-      // scroll hacia editor en móvil
-      if(window.innerWidth < 900){
-        document.querySelector('.editor').scrollIntoView({behavior:'smooth', block:'start'});
-      }
-    });
-
-    // Resaltar hoy
-    if(toISODate(new Date()) === dateStr){
-      dayEl.style.outline = '2px solid rgba(96,165,250,.35)';
-      dayEl.style.outlineOffset = '0';
-    }
-
-    daysGrid.appendChild(dayEl);
-  }
+  } catch(e){ console.warn("Error loading storage", e); }
+}
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function shortCat(cat){
-  if(!cat) return '';
-  if(cat.includes('Push')) return 'Push';
-  if(cat.includes('Tirón')) return 'Tirón';
-  if(cat.includes('Pierna')) return 'Pierna';
-  if(cat.includes('Skills')) return 'Skills';
-  if(cat.includes('Full')) return 'Full';
-  return cat;
-}
+/* ========= DOM ========= */
+const selectedDateInput = document.getElementById("selectedDate");
+const dayTitle = document.getElementById("dayTitle");
+const humanDateSpan = dayTitle.querySelector('[data-bind="humanDate"]');
+const exerciseList = document.getElementById("exerciseList");
+const emptyDayHint = document.getElementById("emptyDayHint");
 
-function capitalize(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+const tabs = document.querySelectorAll(".tab");
+const tabPanels = {
+  hoy: document.getElementById("tab-hoy"),
+  nuevo: document.getElementById("tab-nuevo")
+};
 
-function updateMiniLabels(){
-  if(miniDateLabel){
-    const d = fromISODate(selectedDateStr);
-    const day = d.getDate();
-    const monthShort = MONTH_NAMES_SHORT[d.getMonth()] || '';
-    miniDateLabel.textContent = `${day} ${capitalize(monthShort)}`;
-  }
-  if(miniMonthLabel){
-    if(monthLabel && monthLabel.textContent){
-      miniMonthLabel.textContent = monthLabel.textContent;
-    } else {
-      const d = fromISODate(selectedDateStr);
-      miniMonthLabel.textContent = `${capitalize(MONTH_NAMES[d.getMonth()])} ${d.getFullYear()}`;
+const prevDayBtn = document.getElementById("prevDayBtn");
+const nextDayBtn = document.getElementById("nextDayBtn");
+
+/* Añadir */
+const addForm = document.getElementById("addForm");
+const formDate = document.getElementById("formDate");
+const formName = document.getElementById("formName");
+const formSets = document.getElementById("formSets");
+const goalReps = document.getElementById("goalReps");
+const goalSecs = document.getElementById("goalSecs");
+const goalEmom = document.getElementById("goalEmom");
+const rowReps = document.getElementById("rowReps");
+const rowSeconds = document.getElementById("rowSeconds");
+const rowEmom = document.getElementById("rowEmom");
+const formReps = document.getElementById("formReps");
+const formFailure = document.getElementById("formFailure");
+const formSeconds = document.getElementById("formSeconds");
+const formEmomMinutes = document.getElementById("formEmomMinutes");
+const formEmomReps = document.getElementById("formEmomReps");
+const formWeight = document.getElementById("formWeight");
+
+/* Copiar día */
+const copyDayToggleBtn = document.getElementById("copyDayToggleBtn");
+const copyDayBox = document.getElementById("copyDayBox");
+const copyTargetDate = document.getElementById("copyTargetDate");
+const copyDayBtn = document.getElementById("copyDayBtn");
+const cancelCopyBtn = document.getElementById("cancelCopyBtn");
+
+/* Mini calendario */
+const mcPrev = document.getElementById("mcPrev");
+const mcNext = document.getElementById("mcNext");
+const mcLabel = document.getElementById("mcLabel");
+const mcGrid = document.getElementById("mcGrid");
+let mcRefDate = new Date(); // referencia del mes mostrado
+
+/* ========= Inicialización ========= */
+load();
+selectedDateInput.value = state.selectedDate;
+formDate.value = state.selectedDate;
+renderAll();
+
+tabs.forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelector(".tab.active")?.classList.remove("active");
+    btn.classList.add("active");
+    const tab = btn.dataset.tab;
+    for (const key in tabPanels) {
+      tabPanels[key].classList.toggle("hidden", key !== tab);
     }
-  }
-}
-
-/* ===== Entries Render ===== */
-
-function updateSelectedDateTitle(){
-  const d = fromISODate(selectedDateStr);
-  const label = `${d.getDate()}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
-  selectedDateTitle.textContent = `Día seleccionado: ${label}`;
-  updateMiniLabels();
-}
-
-function renderEntries(){
-  const entries = getDayEntries(selectedDateStr);
-  entriesList.innerHTML = '';
-
-  if(!entries.length){
-    entriesList.classList.add('empty');
-    entriesList.innerHTML = `<li>Sin ejercicios aún.</li>`;
-    return;
-  }
-  entriesList.classList.remove('empty');
-
-  entries.forEach((e, idx) => {
-    const li = document.createElement('li');
-    li.className = 'entry';
-
-    const title = document.createElement('div');
-    title.className = 'title';
-    title.textContent = `${e.ejercicio}`;
-
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-
-    function addPill(text, extraClass = ''){
-      const span = document.createElement('span');
-      span.className = `pill${extraClass ? ' '+extraClass : ''}`;
-      span.textContent = text;
-      meta.appendChild(span);
-    }
-
-    if(e.categoria) addPill(e.categoria);
-    if(e.modalidad) addPill(e.modalidad);
-
-    const hasSeries = Number(e.series) > 0;
-    const hasReps = Number(e.reps) > 0;
-    const srPieces = [];
-    if(hasSeries){
-      srPieces.push(`${e.series} series`);
-    }
-    if(e.alFallo){
-      srPieces.push('Fallo');
-    } else if(hasReps){
-      srPieces.push(`${e.reps} reps`);
-    }
-    if(srPieces.length){
-      addPill(srPieces.join(' · '));
-    }
-    if(e.tiempo){
-      addPill(`${e.tiempo}s`);
-    }
-    if(e.peso){
-      addPill(`${e.peso} kg`);
-    }
-    if(e.descanso){
-      addPill(`${e.descanso}s desc.`);
-    }
-    if(e.alFallo){
-      if(e.falloDetalle){
-        addPill(`Fallo: ${e.falloDetalle}`, 'fallo');
-      } else {
-        addPill('Fallo', 'fallo');
-      }
-    }
-
-    const notes = document.createElement('div');
-    notes.style.fontSize = '13px';
-    notes.style.color = '#c9d1d9';
-    notes.textContent = e.notas || '';
-
-    const ops = document.createElement('div');
-    ops.className = 'ops';
-    const btnEdit = document.createElement('button');
-    btnEdit.className = 'ghost small';
-    btnEdit.textContent = 'Editar';
-    btnEdit.addEventListener('click', () => loadIntoForm(e, idx));
-
-    const btnDel = document.createElement('button');
-    btnDel.className = 'danger small';
-    btnDel.textContent = 'Borrar';
-    btnDel.addEventListener('click', () => deleteEntry(idx));
-
-    ops.append(btnEdit, btnDel);
-
-    li.append(title, meta);
-    if(e.notas) li.appendChild(notes);
-    li.appendChild(ops);
-    entriesList.appendChild(li);
   });
+});
+
+prevDayBtn.addEventListener("click", ()=> shiftSelectedDay(-1));
+nextDayBtn.addEventListener("click", ()=> shiftSelectedDay(1));
+selectedDateInput.addEventListener("change", (e)=>{
+  state.selectedDate = e.target.value || fmt(new Date());
+  formDate.value = state.selectedDate;
+  save(); renderAll();
+  highlightMiniCalSelected();
+});
+
+/* ==== Lógica Toggle de tipo de objetivo ==== */
+function updateGoalRows() {
+  rowReps.classList.toggle("hidden", !goalReps.checked);
+  rowSeconds.classList.toggle("hidden", !goalSecs.checked);
+  rowEmom.classList.toggle("hidden", !goalEmom.checked);
 }
+[goalReps, goalSecs, goalEmom].forEach(el=>el.addEventListener("change", updateGoalRows));
+updateGoalRows();
 
-/* ===== CRUD ===== */
+/* ==== Añadir ejercicio ==== */
+addForm.addEventListener("submit", (e)=>{
+  e.preventDefault();
+  const day = formDate.value || state.selectedDate;
 
-let editIndex = null; // si no es null, estamos editando
-
-form.addEventListener('submit', (ev) => {
-  ev.preventDefault();
-  const modalidad = document.querySelector('input[name="modalidad"]:checked')?.value || 'Calistenia';
-
-  const falloActivo = !!alFalloToggle?.checked;
-
-  const newEntry = {
-    categoria: categoria.value,
-    modalidad,
-    ejercicio: ejercicio.value.trim(),
-    series: series.value ? Number(series.value) : 0,
-    reps: reps.value ? Number(reps.value) : 0,
-    tiempo: tiempo.value ? Number(tiempo.value) : 0,
-    peso: peso.value ? Number(peso.value) : 0,
-    descanso: descanso.value ? Number(descanso.value) : 0,
-    notas: (notas.value || '').trim(),
-    alFallo: falloActivo,
-    falloDetalle: falloActivo ? (falloDetalle.value || '').trim() : ''
+  const ex = {
+    id: crypto.randomUUID(),
+    name: (formName.value || "").trim(),
+    sets: Math.max(1, Number(formSets.value||1)),
+    goal: null,          // "reps" | "seconds" | "emom"
+    reps: null,          // si goal="reps"
+    failure: false,      // si goal="reps"
+    seconds: null,       // si goal="seconds"
+    emomMinutes: null,   // si goal="emom"
+    emomReps: null,      // si goal="emom"
+    weightKg: formWeight.value ? Number(formWeight.value) : null,
+    done: []             // array con reps logradas por serie (o segundos)
   };
 
-  if(!newEntry.categoria || !newEntry.ejercicio){
-    alert('Categoría y ejercicio son obligatorios.');
-    return;
-  }
+  if (!ex.name) { alert("Pon un nombre al ejercicio."); return; }
 
-  const entries = getDayEntries(selectedDateStr);
-  if(editIndex === null){
-    entries.push(newEntry);
+  if (goalReps.checked) {
+    ex.goal = "reps";
+    ex.reps = formReps.value ? Number(formReps.value) : null;
+    ex.failure = !!formFailure.checked;
+  } else if (goalSecs.checked) {
+    ex.goal = "seconds";
+    ex.seconds = Number(formSeconds.value||0);
   } else {
-    entries[editIndex] = newEntry;
-    editIndex = null;
+    ex.goal = "emom";
+    ex.emomMinutes = Number(formEmomMinutes.value||0);
+    ex.emomReps = Number(formEmomReps.value||0);
   }
-  setDayEntries(selectedDateStr, entries);
 
-  form.reset();
-  // mantener modalidad calistenia por defecto
-  document.getElementById('mod-cal').checked = true;
-  if(alFalloToggle){
-    alFalloToggle.checked = false;
-  }
-  toggleFalloDetails(false);
+  if (!state.workouts[day]) state.workouts[day] = [];
+  state.workouts[day].push(ex);
+  save();
 
-  renderEntries();
-  renderCalendar(current);
+  // Ajustar UI
+  formName.value = "";
+  renderDay(day);
+  switchToTab("hoy");
+  selectedDateInput.value = day;
+  state.selectedDate = day;
+  save(); renderMiniCalendar();
 });
 
-function loadIntoForm(entry, idx){
-  editIndex = idx;
-  categoria.value = entry.categoria;
-  (entry.modalidad === 'Musculación' ? document.getElementById('mod-mus') : document.getElementById('mod-cal')).checked = true;
-  ejercicio.value = entry.ejercicio;
-  series.value = entry.series || '';
-  reps.value = entry.reps || '';
-  tiempo.value = entry.tiempo || '';
-  peso.value = entry.peso || '';
-  descanso.value = entry.descanso || '';
-  notas.value = entry.notas || '';
-  if(alFalloToggle){
-    alFalloToggle.checked = !!entry.alFallo;
-    toggleFalloDetails(!!entry.alFallo, false);
-  }
-  if(falloDetalle){
-    falloDetalle.value = entry.falloDetalle || '';
-  }
-  ejercicio.focus();
+/* ========= Render ========= */
+function renderAll(){
+  renderDay(state.selectedDate);
+  renderMiniCalendar();
 }
 
-function deleteEntry(idx){
-  const entries = getDayEntries(selectedDateStr);
-  entries.splice(idx,1);
-  setDayEntries(selectedDateStr, entries);
-  renderEntries();
-  renderCalendar(current);
-}
+function renderDay(dayISO){
+  const list = state.workouts[dayISO] || [];
+  humanDateSpan.textContent = toHuman(dayISO);
+  exerciseList.innerHTML = "";
+  emptyDayHint.style.display = list.length ? "none" : "block";
 
-clearFormBtn.addEventListener('click', () => {
-  editIndex = null;
-  form.reset();
-  document.getElementById('mod-cal').checked = true;
-  if(alFalloToggle){
-    alFalloToggle.checked = false;
-  }
-  toggleFalloDetails(false);
-});
+  list.forEach(ex=>{
+    const li = document.createElement("li");
+    li.className = "exercise";
+    li.dataset.id = ex.id;
 
-/* ===== Export/Import ===== */
+    const title = document.createElement("div");
+    title.className = "title";
+    const h3 = document.createElement("h3");
+    h3.textContent = ex.name;
+    h3.style.margin = "0";
+    const controls = document.createElement("div");
+    controls.className = "controls";
+    const editBtn = button("Editar", "small ghost");
+    const delBtn = button("Eliminar", "small danger");
+    controls.append(editBtn, delBtn);
+    title.append(h3, controls);
 
-exportDayBtn.addEventListener('click', () => {
-  const data = getDayEntries(selectedDateStr);
-  if(!data.length){
-    alert('No hay ejercicios para exportar en este día.');
-    return;
-  }
-  exportDayToPDF(data);
-});
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.innerHTML = metaText(ex);
 
-deleteDayBtn.addEventListener('click', () => {
-  if(!confirm('¿Borrar todos los ejercicios del día?')) return;
-  setDayEntries(selectedDateStr, []);
-  renderEntries();
-  renderCalendar(current);
-});
-
-exportAllBtn.addEventListener('click', () => {
-  const all = getData();
-  downloadJSON(all, `entrenos_todos.json`);
-});
-
-importFile.addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if(!file) return;
-  try{
-    const text = await file.text();
-    const json = JSON.parse(text);
-
-    // Si es un array, asumimos importación de un solo día al seleccionado
-    if(Array.isArray(json)){
-      setDayEntries(selectedDateStr, json);
-    } else if (typeof json === 'object'){
-      // Merge con el existente
-      const existing = getData();
-      const merged = {...existing, ...json};
-      setData(merged);
-    } else {
-      alert('Formato JSON no reconocido.');
-      return;
+    const setsBox = document.createElement("div");
+    setsBox.className = "sets-grid";
+    // Entradas para reps/segundos logrados por serie:
+    for (let i=0;i<ex.sets;i++){
+      const wrap = document.createElement("label");
+      wrap.className = "field";
+      const span = document.createElement("span");
+      span.textContent = `Serie ${i+1}`;
+      const input = document.createElement("input");
+      input.type = "number";
+      input.placeholder = ex.goal==="seconds" ? "seg" : "reps";
+      input.value = ex.done?.[i] ?? "";
+      input.addEventListener("change", ()=>{
+        const v = input.value? Number(input.value) : null;
+        ex.done = ex.done || [];
+        ex.done[i] = v;
+        save();
+      });
+      wrap.append(span, input);
+      setsBox.append(wrap);
     }
-    renderEntries();
-    renderCalendar(current);
-    importFile.value = '';
-    alert('Importación completada.');
-  }catch(err){
-    alert('Error al importar JSON.');
-  }
-});
 
-function downloadJSON(obj, filename){
-  const blob = new Blob([JSON.stringify(obj, null, 2)], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-}
+    const editBox = document.createElement("div");
+    editBox.className = "edit-box hidden";
+    editBox.appendChild(buildEditForm(ex));
 
-function exportDayToPDF(entries){
-  const d = fromISODate(selectedDateStr);
-  const title = `Entrenamiento ${d.getDate()}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
-  const rows = entries.map((entry, idx) => {
-    const srPieces = [];
-    if(Number(entry.series) > 0){
-      srPieces.push(`${entry.series} series`);
-    }
-    if(entry.alFallo){
-      srPieces.push('Fallo');
-    } else if(Number(entry.reps) > 0){
-      srPieces.push(`${entry.reps} reps`);
-    }
-    const series = srPieces.join(' · ');
-    const detalleFallo = entry.alFallo ? (entry.falloDetalle ? `Fallo: ${escapeHTML(entry.falloDetalle)}` : 'Al fallo') : '';
-    return `<tr>
-      <td>${idx + 1}</td>
-      <td>${escapeHTML(entry.ejercicio)}</td>
-      <td>${escapeHTML(entry.categoria || '')}</td>
-      <td>${escapeHTML(entry.modalidad || '')}</td>
-      <td>${escapeHTML(series.trim())}</td>
-      <td>${entry.tiempo ? `${entry.tiempo}s` : ''}</td>
-      <td>${entry.peso ? `${entry.peso} kg` : ''}</td>
-      <td>${entry.descanso ? `${entry.descanso}s` : ''}</td>
-      <td>${detalleFallo}</td>
-      <td>${escapeHTML(entry.notas || '')}</td>
-    </tr>`;
-  }).join('');
+    editBtn.addEventListener("click", ()=>{
+      editBox.classList.toggle("hidden");
+    });
+    delBtn.addEventListener("click", ()=>{
+      if (!confirm("¿Eliminar este ejercicio?")) return;
+      removeExercise(dayISO, ex.id);
+    });
 
-  const html = `<!DOCTYPE html>
-  <html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <title>${title}</title>
-    <style>
-      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; margin:40px; color:#1f2937;}
-      h1{font-size:22px; margin-bottom:18px;}
-      table{width:100%; border-collapse:collapse; font-size:13px;}
-      th,td{border:1px solid #d1d5db; padding:8px; text-align:left; vertical-align:top;}
-      th{background:#f3f4f6;}
-      tbody tr:nth-child(even){background:#f9fafb;}
-    </style>
-  </head>
-  <body>
-    <h1>${title}</h1>
-    <table>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Ejercicio</th>
-          <th>Categoría</th>
-          <th>Modalidad</th>
-          <th>Series/Reps</th>
-          <th>Tiempo</th>
-          <th>Peso</th>
-          <th>Descanso</th>
-          <th>Registro fallo</th>
-          <th>Notas</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </body>
-  </html>`;
-
-  const printWindow = window.open('', '_blank');
-  if(!printWindow){
-    alert('No se pudo abrir la ventana para exportar. Permite ventanas emergentes e inténtalo de nuevo.');
-    return;
-  }
-  printWindow.document.open();
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWindow.focus();
-  setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
-  }, 150);
-}
-
-/* ===== Month navigation ===== */
-
-prevBtn.addEventListener('click', () => {
-  current = new Date(current.getFullYear(), current.getMonth()-1, 1);
-  renderCalendar(current);
-});
-nextBtn.addEventListener('click', () => {
-  current = new Date(current.getFullYear(), current.getMonth()+1, 1);
-  renderCalendar(current);
-});
-
-function toggleFalloDetails(forceState, clear = true){
-  if(!falloExtra) return;
-  const enabled = forceState !== undefined ? forceState : !!alFalloToggle?.checked;
-  falloExtra.hidden = !enabled;
-  if(!enabled && clear && falloDetalle){
-    falloDetalle.value = '';
-  }
-}
-
-if(alFalloToggle){
-  alFalloToggle.addEventListener('change', () => toggleFalloDetails());
-  toggleFalloDetails(false);
-}
-
-/* ===== Calendar overlay control ===== */
-
-function openCalendarOverlay(){
-  if(!calendarOverlay) return;
-  calendarOverlay.classList.add('open');
-  calendarOverlay.setAttribute('aria-hidden','false');
-  if(calendarMini){
-    calendarMini.setAttribute('aria-expanded','true');
-  }
-  if(closeCalendarBtn){
-    setTimeout(() => closeCalendarBtn.focus(), 50);
-  }
-}
-
-function closeCalendarOverlay({focusTrigger = true} = {}){
-  if(!calendarOverlay) return;
-  const wasOpen = calendarOverlay.classList.contains('open');
-  if(!wasOpen) return;
-  calendarOverlay.classList.remove('open');
-  calendarOverlay.setAttribute('aria-hidden','true');
-  if(calendarMini){
-    calendarMini.setAttribute('aria-expanded','false');
-  }
-  if(focusTrigger && calendarMini){
-    calendarMini.focus();
-  }
-}
-
-if(calendarMini){
-  calendarMini.addEventListener('click', () => openCalendarOverlay());
-}
-if(closeCalendarBtn){
-  closeCalendarBtn.addEventListener('click', () => closeCalendarOverlay());
-}
-if(calendarOverlay){
-  calendarOverlay.addEventListener('click', (e) => {
-    if(e.target === calendarOverlay){
-      closeCalendarOverlay();
-    }
+    li.append(title, meta, setsBox, editBox);
+    exerciseList.append(li);
   });
 }
 
-document.addEventListener('keydown', (e) => {
-  if(e.key === 'Escape' && calendarOverlay?.classList.contains('open')){
-    e.preventDefault();
-    closeCalendarOverlay();
+function metaText(ex){
+  const parts = [];
+  parts.push(`<code>${ex.sets}x</code>`);
+
+  if (ex.goal==="reps") {
+    if (ex.failure && ex.reps) parts.push(`<code>${ex.reps} reps</code> + <code>al fallo</code>`);
+    else if (ex.failure) parts.push(`<code>al fallo</code>`);
+    else if (ex.reps) parts.push(`<code>${ex.reps} reps</code>`);
+  } else if (ex.goal==="seconds") {
+    parts.push(`<code>${ex.seconds}s</code> por serie`);
+  } else if (ex.goal==="emom") {
+    parts.push(`<code>EMOM ${ex.emomMinutes}'</code> x <code>${ex.emomReps} reps/min</code>`);
   }
-});
 
-/* ===== Init ===== */
-
-function boot(){
-  selectedDateStr = toISODate(new Date());
-  updateSelectedDateTitle();
-  renderCalendar(current);
-  renderEntries();
+  if (ex.weightKg!=null) parts.push(`<code>${ex.weightKg} kg</code>`);
+  return parts.join(" · ");
 }
 
-boot();
+function button(text, cls=""){
+  const b = document.createElement("button");
+  b.textContent = text;
+  if (cls) b.className = cls;
+  return b;
+}
+
+function buildEditForm(ex){
+  const box = document.createElement("div");
+  box.className = "grid";
+
+  // Nombre
+  const fName = field("Nombre", "text", ex.name);
+  // Series
+  const fSets = field("Series", "number", ex.sets, {min:1});
+
+  // Tipo
+  const typeWrap = document.createElement("div");
+  typeWrap.className = "fieldset";
+
+  const legend = document.createElement("span");
+  legend.className = "legend";
+  legend.textContent = "Tipo de objetivo";
+  typeWrap.appendChild(legend);
+
+  const rReps = radioRow("Repeticiones", "goalEdit-"+ex.id, ex.goal==="reps");
+  const rSecs = radioRow("Isométrico (segundos)", "goalEdit-"+ex.id, ex.goal==="seconds");
+  const rEmom = radioRow("EMOM", "goalEdit-"+ex.id, ex.goal==="emom");
+
+  const rowReps = document.createElement("div"); rowReps.className = "row indent";
+  const repsField = fieldInline("Reps", "number", ex.reps ?? "", {min:1});
+  const failRow = document.createElement("label"); failRow.className="row inline";
+  const failChk = document.createElement("input"); failChk.type="checkbox"; failChk.checked = !!ex.failure;
+  const failLbl = document.createElement("span"); failLbl.textContent="Al fallo";
+  failRow.append(failChk, failLbl);
+  rowReps.append(repsField.wrap, failRow);
+
+  const rowSecs = document.createElement("div"); rowSecs.className="row indent hidden";
+  const secsField = fieldInline("Segundos", "number", ex.seconds ?? "", {min:1});
+  rowSecs.append(secsField.wrap);
+
+  const rowEmom = document.createElement("div"); rowEmom.className="row indent hidden";
+  const mField = fieldInline("Minutos", "number", ex.emomMinutes ?? "", {min:1});
+  const rField = fieldInline("Reps/min", "number", ex.emomReps ?? "", {min:1});
+  rowEmom.append(mField.wrap, rField.wrap);
+
+  function toggleRows(){
+    rowReps.classList.toggle("hidden", !rReps.input.checked);
+    rowSecs.classList.toggle("hidden", !rSecs.input.checked);
+    rowEmom.classList.toggle("hidden", !rEmom.input.checked);
+  }
+  [rReps.input, rSecs.input, rEmom.input].forEach(i=>i.addEventListener("change", toggleRows));
+  toggleRows();
+
+  typeWrap.append(rReps.row, rowReps, rSecs.row, rowSecs, rEmom.row, rowEmom);
+
+  // Lastre
+  const wField = field("Lastre (kg)", "number", ex.weightKg ?? "", {step:0.5});
+
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  const saveBtn = button("Guardar", "primary small");
+  const cancelBtn = button("Cerrar", "ghost small");
+  const deleteBtn = button("Eliminar", "danger small");
+  actions.append(saveBtn, cancelBtn, deleteBtn);
+
+  box.append(fName.wrap, fSets.wrap, typeWrap, wField.wrap, actions);
+
+  saveBtn.addEventListener("click", ()=>{
+    ex.name = fName.input.value.trim() || ex.name;
+    ex.sets = Math.max(1, Number(fSets.input.value||1));
+
+    if (rReps.input.checked){
+      ex.goal="reps";
+      ex.reps = repsField.input.value ? Number(repsField.input.value) : null;
+      ex.failure = !!failChk.checked;
+      ex.seconds = null; ex.emomMinutes=null; ex.emomReps=null;
+    } else if (rSecs.input.checked){
+      ex.goal="seconds";
+      ex.seconds = Number(secsField.input.value||0);
+      ex.reps = null; ex.failure=false; ex.emomMinutes=null; ex.emomReps=null;
+    } else {
+      ex.goal="emom";
+      ex.emomMinutes = Number(mField.input.value||0);
+      ex.emomReps = Number(rField.input.value||0);
+      ex.reps = null; ex.failure=false; ex.seconds=null;
+    }
+
+    // Ajustar tamaño del array done
+    ex.done = (ex.done||[]).slice(0, ex.sets);
+    while (ex.done.length < ex.sets) ex.done.push(null);
+
+    save(); renderDay(state.selectedDate);
+  });
+  cancelBtn.addEventListener("click", ()=>{
+    box.parentElement?.classList.add("hidden");
+  });
+  deleteBtn.addEventListener("click", ()=>{
+    if (!confirm("¿Eliminar este ejercicio?")) return;
+    removeExercise(state.selectedDate, ex.id);
+  });
+
+  return box;
+}
+
+function field(label, type, value, attrs={}){
+  const wrap = document.createElement("label"); wrap.className="field";
+  const span = document.createElement("span"); span.textContent = label;
+  const input = document.createElement("input");
+  input.type = type; input.value = value ?? "";
+  Object.entries(attrs).forEach(([k,v])=> input.setAttribute(k,v));
+  wrap.append(span, input);
+  return {wrap, input};
+}
+function fieldInline(label, type, value, attrs={}){
+  const wrap = document.createElement("label"); wrap.className="field inline";
+  const span = document.createElement("span"); span.textContent = label;
+  const input = document.createElement("input");
+  input.type = type; input.value = value ?? "";
+  Object.entries(attrs).forEach(([k,v])=> input.setAttribute(k,v));
+  wrap.append(span, input);
+  return {wrap, input};
+}
+function radioRow(text, name, checked=false){
+  const row = document.createElement("label"); row.className="row";
+  const input = document.createElement("input");
+  input.type="radio"; input.name=name; input.checked = checked;
+  const span = document.createElement("span"); span.textContent = text;
+  row.append(input, span);
+  return {row, input};
+}
+
+function removeExercise(dayISO, id){
+  const list = state.workouts[dayISO] || [];
+  const idx = list.findIndex(x=>x.id===id);
+  if (idx>=0){
+    list.splice(idx,1);
+    state.workouts[dayISO] = list;
+    save(); renderDay(dayISO); renderMiniCalendar();
+  }
+}
+
+/* ========= Copiar día ========= */
+copyDayToggleBtn.addEventListener("click", ()=>{
+  copyDayBox.classList.toggle("hidden");
+  copyTargetDate.value = state.selectedDate;
+});
+cancelCopyBtn.addEventListener("click", ()=>{
+  copyDayBox.classList.add("hidden");
+});
+copyDayBtn.addEventListener("click", ()=>{
+  const src = state.selectedDate;
+  const dst = copyTargetDate.value;
+  if (!dst){ alert("Selecciona una fecha destino."); return; }
+  const items = (state.workouts[src]||[]).map(x=> ({...x, id: crypto.randomUUID(), done: []}));
+  state.workouts[dst] = (state.workouts[dst]||[]).concat(items);
+  save();
+  alert("Día copiado.");
+  copyDayBox.classList.add("hidden");
+  renderMiniCalendar();
+});
+
+/* ========= Cambiar de día (prev/next) ========= */
+function shiftSelectedDay(delta){
+  const d = new Date(state.selectedDate + "T00:00:00");
+  d.setDate(d.getDate()+delta);
+  state.selectedDate = fmt(d);
+  selectedDateInput.value = state.selectedDate;
+  formDate.value = state.selectedDate;
+  save(); renderAll();
+  highlightMiniCalSelected();
+}
+
+/* ========= Tabs helper ========= */
+function switchToTab(name){
+  document.querySelector(".tab.active")?.classList.remove("active");
+  document.querySelector(`.tab[data-tab="${name}"]`)?.classList.add("active");
+  for (const key in tabPanels) {
+    tabPanels[key].classList.toggle("hidden", key !== name);
+  }
+}
+
+/* ========= Mini Calendario ========= */
+const DOW = ["L","M","X","J","V","S","D"];
+
+function renderMiniCalendar(){
+  mcLabel.textContent = mcRefDate.toLocaleDateString("es-ES", {month:"long", year:"numeric"});
+  mcGrid.innerHTML = "";
+
+  // Cabecera días
+  DOW.forEach(d=>{
+    const el = document.createElement("div");
+    el.className = "dow";
+    el.textContent = d;
+    mcGrid.append(el);
+  });
+
+  const year = mcRefDate.getFullYear();
+  const month = mcRefDate.getMonth(); // 0-11
+  const first = new Date(year, month, 1);
+  const startDow = (first.getDay()+6)%7; // convertir a L=0 … D=6
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+
+  // Huecos previos
+  for (let i=0;i<startDow;i++){
+    const spacer = document.createElement("div");
+    mcGrid.append(spacer);
+  }
+
+  for (let d=1; d<=daysInMonth; d++){
+    const btn = document.createElement("button");
+    btn.className = "day";
+    const dayISO = fmt(new Date(year, month, d));
+    btn.textContent = d;
+
+    if (dayISO === fmt(new Date())) btn.classList.add("today");
+    if (dayISO === state.selectedDate) btn.classList.add("selected");
+    if ((state.workouts[dayISO]||[]).length) btn.classList.add("has");
+
+    btn.addEventListener("click", ()=>{
+      state.selectedDate = dayISO;
+      selectedDateInput.value = state.selectedDate;
+      formDate.value = state.selectedDate;
+      save(); renderAll();
+      highlightMiniCalSelected();
+      switchToTab("hoy");
+    });
+
+    mcGrid.append(btn);
+  }
+}
+
+function highlightMiniCalSelected(){
+  mcGrid.querySelectorAll("button.day").forEach(b=>{
+    b.classList.toggle("selected", dateFromCell(b)===state.selectedDate);
+  });
+  function dateFromCell(btn){
+    const label = Number(btn.textContent);
+    const y = mcRefDate.getFullYear();
+    const m = mcRefDate.getMonth();
+    return fmt(new Date(y, m, label));
+  }
+}
+
+mcPrev.addEventListener("click", ()=>{
+  mcRefDate.setMonth(mcRefDate.getMonth()-1);
+  renderMiniCalendar();
+});
+mcNext.addEventListener("click", ()=>{
+  mcRefDate.setMonth(mcRefDate.getMonth()+1);
+  renderMiniCalendar();
+});
