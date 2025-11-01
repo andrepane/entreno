@@ -3,7 +3,6 @@
    - Guarda en localStorage
    - CRUD por día
    - Export/Import JSON
-   - Plantillas rápidas
    ========== */
 
 const daysGrid = document.getElementById('daysGrid');
@@ -21,6 +20,9 @@ const tiempo = document.getElementById('tiempo');
 const peso = document.getElementById('peso');
 const descanso = document.getElementById('descanso');
 const notas = document.getElementById('notas');
+const alFalloToggle = document.getElementById('alFallo');
+const falloExtra = document.getElementById('falloExtra');
+const falloDetalle = document.getElementById('falloDetalle');
 
 const clearFormBtn = document.getElementById('clearForm');
 const entriesList = document.getElementById('entriesList');
@@ -28,8 +30,6 @@ const exportDayBtn = document.getElementById('exportDay');
 const deleteDayBtn = document.getElementById('deleteDay');
 const exportAllBtn = document.getElementById('exportAll');
 const importFile = document.getElementById('importFile');
-
-const quickChips = document.getElementById('quickChips');
 
 const calendarOverlay = document.getElementById('calendarOverlay');
 const calendarMini = document.getElementById('calendarMini');
@@ -82,6 +82,15 @@ function setDayEntries(dateStr, entries){
   const db = getData();
   db[dateStr] = entries;
   setData(db);
+}
+
+function escapeHTML(str = ''){
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
 }
 
 function badgeClassFor(cat){
@@ -244,13 +253,47 @@ function renderEntries(){
 
     const meta = document.createElement('div');
     meta.className = 'meta';
-    const pillCat = `<span class="pill">${e.categoria}</span>`;
-    const pillMod = `<span class="pill">${e.modalidad}</span>`;
-    const pillSR = (Number(e.series)||0) || (Number(e.reps)||0) ? `<span class="pill">${e.series||0}x${e.reps||0}</span>` : '';
-    const pillT = e.tiempo ? `<span class="pill">${e.tiempo}s</span>` : '';
-    const pillP = e.peso ? `<span class="pill">${e.peso} kg</span>` : '';
-    const pillD = e.descanso ? `<span class="pill">${e.descanso}s desc.</span>` : '';
-    meta.innerHTML = `${pillCat}${pillMod}${pillSR}${pillT}${pillP}${pillD}`;
+
+    function addPill(text, extraClass = ''){
+      const span = document.createElement('span');
+      span.className = `pill${extraClass ? ' '+extraClass : ''}`;
+      span.textContent = text;
+      meta.appendChild(span);
+    }
+
+    if(e.categoria) addPill(e.categoria);
+    if(e.modalidad) addPill(e.modalidad);
+
+    const hasSeries = Number(e.series) > 0;
+    const hasReps = Number(e.reps) > 0;
+    const srPieces = [];
+    if(hasSeries){
+      srPieces.push(`${e.series} series`);
+    }
+    if(e.alFallo){
+      srPieces.push('Fallo');
+    } else if(hasReps){
+      srPieces.push(`${e.reps} reps`);
+    }
+    if(srPieces.length){
+      addPill(srPieces.join(' · '));
+    }
+    if(e.tiempo){
+      addPill(`${e.tiempo}s`);
+    }
+    if(e.peso){
+      addPill(`${e.peso} kg`);
+    }
+    if(e.descanso){
+      addPill(`${e.descanso}s desc.`);
+    }
+    if(e.alFallo){
+      if(e.falloDetalle){
+        addPill(`Fallo: ${e.falloDetalle}`, 'fallo');
+      } else {
+        addPill('Fallo', 'fallo');
+      }
+    }
 
     const notes = document.createElement('div');
     notes.style.fontSize = '13px';
@@ -286,6 +329,8 @@ form.addEventListener('submit', (ev) => {
   ev.preventDefault();
   const modalidad = document.querySelector('input[name="modalidad"]:checked')?.value || 'Calistenia';
 
+  const falloActivo = !!alFalloToggle?.checked;
+
   const newEntry = {
     categoria: categoria.value,
     modalidad,
@@ -295,7 +340,9 @@ form.addEventListener('submit', (ev) => {
     tiempo: tiempo.value ? Number(tiempo.value) : 0,
     peso: peso.value ? Number(peso.value) : 0,
     descanso: descanso.value ? Number(descanso.value) : 0,
-    notas: (notas.value || '').trim()
+    notas: (notas.value || '').trim(),
+    alFallo: falloActivo,
+    falloDetalle: falloActivo ? (falloDetalle.value || '').trim() : ''
   };
 
   if(!newEntry.categoria || !newEntry.ejercicio){
@@ -315,6 +362,10 @@ form.addEventListener('submit', (ev) => {
   form.reset();
   // mantener modalidad calistenia por defecto
   document.getElementById('mod-cal').checked = true;
+  if(alFalloToggle){
+    alFalloToggle.checked = false;
+  }
+  toggleFalloDetails(false);
 
   renderEntries();
   renderCalendar(current);
@@ -331,6 +382,13 @@ function loadIntoForm(entry, idx){
   peso.value = entry.peso || '';
   descanso.value = entry.descanso || '';
   notas.value = entry.notas || '';
+  if(alFalloToggle){
+    alFalloToggle.checked = !!entry.alFallo;
+    toggleFalloDetails(!!entry.alFallo, false);
+  }
+  if(falloDetalle){
+    falloDetalle.value = entry.falloDetalle || '';
+  }
   ejercicio.focus();
 }
 
@@ -346,13 +404,21 @@ clearFormBtn.addEventListener('click', () => {
   editIndex = null;
   form.reset();
   document.getElementById('mod-cal').checked = true;
+  if(alFalloToggle){
+    alFalloToggle.checked = false;
+  }
+  toggleFalloDetails(false);
 });
 
 /* ===== Export/Import ===== */
 
 exportDayBtn.addEventListener('click', () => {
   const data = getDayEntries(selectedDateStr);
-  downloadJSON(data, `entrenos_${selectedDateStr}.json`);
+  if(!data.length){
+    alert('No hay ejercicios para exportar en este día.');
+    return;
+  }
+  exportDayToPDF(data);
 });
 
 deleteDayBtn.addEventListener('click', () => {
@@ -404,6 +470,86 @@ function downloadJSON(obj, filename){
   URL.revokeObjectURL(url);
 }
 
+function exportDayToPDF(entries){
+  const d = fromISODate(selectedDateStr);
+  const title = `Entrenamiento ${d.getDate()}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  const rows = entries.map((entry, idx) => {
+    const srPieces = [];
+    if(Number(entry.series) > 0){
+      srPieces.push(`${entry.series} series`);
+    }
+    if(entry.alFallo){
+      srPieces.push('Fallo');
+    } else if(Number(entry.reps) > 0){
+      srPieces.push(`${entry.reps} reps`);
+    }
+    const series = srPieces.join(' · ');
+    const detalleFallo = entry.alFallo ? (entry.falloDetalle ? `Fallo: ${escapeHTML(entry.falloDetalle)}` : 'Al fallo') : '';
+    return `<tr>
+      <td>${idx + 1}</td>
+      <td>${escapeHTML(entry.ejercicio)}</td>
+      <td>${escapeHTML(entry.categoria || '')}</td>
+      <td>${escapeHTML(entry.modalidad || '')}</td>
+      <td>${escapeHTML(series.trim())}</td>
+      <td>${entry.tiempo ? `${entry.tiempo}s` : ''}</td>
+      <td>${entry.peso ? `${entry.peso} kg` : ''}</td>
+      <td>${entry.descanso ? `${entry.descanso}s` : ''}</td>
+      <td>${detalleFallo}</td>
+      <td>${escapeHTML(entry.notas || '')}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+  <html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>${title}</title>
+    <style>
+      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; margin:40px; color:#1f2937;}
+      h1{font-size:22px; margin-bottom:18px;}
+      table{width:100%; border-collapse:collapse; font-size:13px;}
+      th,td{border:1px solid #d1d5db; padding:8px; text-align:left; vertical-align:top;}
+      th{background:#f3f4f6;}
+      tbody tr:nth-child(even){background:#f9fafb;}
+    </style>
+  </head>
+  <body>
+    <h1>${title}</h1>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Ejercicio</th>
+          <th>Categoría</th>
+          <th>Modalidad</th>
+          <th>Series/Reps</th>
+          <th>Tiempo</th>
+          <th>Peso</th>
+          <th>Descanso</th>
+          <th>Registro fallo</th>
+          <th>Notas</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </body>
+  </html>`;
+
+  const printWindow = window.open('', '_blank');
+  if(!printWindow){
+    alert('No se pudo abrir la ventana para exportar. Permite ventanas emergentes e inténtalo de nuevo.');
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+    printWindow.close();
+  }, 150);
+}
+
 /* ===== Month navigation ===== */
 
 prevBtn.addEventListener('click', () => {
@@ -415,22 +561,19 @@ nextBtn.addEventListener('click', () => {
   renderCalendar(current);
 });
 
-/* ===== Quick templates ===== */
+function toggleFalloDetails(forceState, clear = true){
+  if(!falloExtra) return;
+  const enabled = forceState !== undefined ? forceState : !!alFalloToggle?.checked;
+  falloExtra.hidden = !enabled;
+  if(!enabled && clear && falloDetalle){
+    falloDetalle.value = '';
+  }
+}
 
-quickChips.addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-ej]');
-  if(!btn) return;
-  categoria.value = btn.dataset.cat || '';
-  ejercicio.value = btn.dataset.ej || '';
-  document.getElementById(btn.dataset.mod === 'Musculación' ? 'mod-mus' : 'mod-cal').checked = true;
-  series.value = btn.dataset.ser || '';
-  reps.value = btn.dataset.rep || '';
-  tiempo.value = btn.dataset.t || '';
-  peso.value = '';
-  descanso.value = '';
-  notas.value = '';
-  ejercicio.focus();
-});
+if(alFalloToggle){
+  alFalloToggle.addEventListener('change', () => toggleFalloDetails());
+  toggleFalloDetails(false);
+}
 
 /* ===== Calendar overlay control ===== */
 
