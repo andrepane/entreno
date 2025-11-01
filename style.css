@@ -11,6 +11,7 @@
 }
 
 *{box-sizing:border-box}
+html{font-size:16px}
 html,body{height:100%}
 body{
   margin:0;
@@ -19,7 +20,10 @@ body{
   font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial;
   line-height:1.45;
   padding-bottom:env(safe-area-inset-bottom,0);
+  overflow-x:hidden;
 }
+
+.app-main{overflow-x:hidden;}
 
 button,input,select,textarea{font-family:inherit}
 
@@ -70,18 +74,21 @@ button,input,select,textarea{font-family:inherit}
   background:var(--card);
   border:1px solid var(--border);
   border-radius:16px;
-  padding:18px;
 }
+
+.editor{padding:18px;}
 
 .editor h2,
 .entries-panel h2{margin:0 0 12px 0; font-size:20px;}
 
-.entries-panel{display:flex; flex-direction:column; gap:12px;}
+.entries-panel{display:flex; flex-direction:column; overflow:hidden;}
+.entries-body{padding:18px; display:flex; flex-direction:column; gap:12px; flex:1;}
 .entries-header{display:flex; flex-direction:column; gap:6px;}
 .entries-hint{margin:0; font-size:14px; color:var(--muted);}
 
-.entry-form{display:flex; flex-direction:column; gap:14px}
-.row{display:flex; flex-direction:column; gap:6px}
+.entry-form{display:flex; flex-direction:column;}
+.row{display:flex; flex-direction:column; gap:6px; margin-bottom:10px;}
+.entry-form .row:last-child{margin-bottom:0;}
 .row .label{font-size:14px; color:var(--muted)}
 .grid-3{display:grid; grid-template-columns:repeat(3,1fr); gap:14px}
 .grid-2{display:grid; grid-template-columns:repeat(2,1fr); gap:12px}
@@ -92,9 +99,16 @@ input[type="text"], input[type="number"], select, textarea{
   color:var(--text);
   border:1px solid var(--border);
   border-radius:12px;
-  padding:12px;
+  padding:10px 12px;
+  min-height:44px;
   font-size:15px;
+  -webkit-appearance:none;
+  -moz-appearance:none;
+  -webkit-tap-highlight-color:transparent;
 }
+input[type="text"]::placeholder,
+input[type="number"]::placeholder,
+textarea::placeholder{color:rgba(154,163,175,.6);}
 textarea{resize:vertical}
 
 .input-stack{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
@@ -170,6 +184,28 @@ button:focus-visible,
 .entry .pill.fallo{border-color:var(--accent); color:#bff7d6}
 
 .day-actions{margin-top:auto; display:flex; gap:10px; flex-wrap:wrap}
+
+.top-bar{
+  position:sticky;
+  top:0;
+  z-index:50;
+  padding-top:calc(env(safe-area-inset-top,0px) + 8px);
+  padding-bottom:8px;
+  padding-left:12px;
+  padding-right:12px;
+  background:rgba(10,12,16,.65);
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+  border-bottom:1px solid var(--border,#2a2f36);
+}
+.top-bar h2#selectedDateTitle{
+  margin:0;
+  font-size:16px;
+  line-height:1.2;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 
 .app-footer{
   display:flex;
@@ -314,7 +350,9 @@ button:focus-visible,
 
 @media(max-width:480px){
   .app-main{padding:12px 14px 80px; gap:16px;}
-  .editor, .entries-panel{padding:16px; border-radius:14px;}
+  .editor{padding:16px; border-radius:14px;}
+  .entries-panel{border-radius:14px;}
+  .entries-body{padding:16px;}
   .entry{padding:14px;}
   .calendar-mini{min-width:140px; font-size:14px;}
   .app-header h1{font-size:18px;}

@@ -100,21 +100,26 @@
     </section>
 
     <section class="entries-panel" aria-labelledby="selectedDateTitle">
-      <div class="entries-header">
+      <div class="top-bar">
         <h2 id="selectedDateTitle">Selecciona un día</h2>
-        <p class="entries-hint">Usa el calendario para elegir la fecha y añade tus entrenos.</p>
       </div>
 
-      <div class="entries">
-        <h3>Registro del día</h3>
-        <ul id="entriesList" class="entries-list empty">
-          <li>Sin ejercicios aún.</li>
-        </ul>
-      </div>
+      <div class="entries-body">
+        <div class="entries-header">
+          <p class="entries-hint">Usa el calendario para elegir la fecha y añade tus entrenos.</p>
+        </div>
 
-      <div class="day-actions">
-        <button id="exportDay" class="ghost small">Exportar día (PDF)</button>
-        <button id="deleteDay" class="danger small">Borrar día</button>
+        <div class="entries">
+          <h3>Registro del día</h3>
+          <ul id="entriesList" class="entries-list empty">
+            <li>Sin ejercicios aún.</li>
+          </ul>
+        </div>
+
+        <div class="day-actions">
+          <button id="exportDay" class="ghost small">Exportar día (PDF)</button>
+          <button id="deleteDay" class="danger small">Borrar día</button>
+        </div>
       </div>
     </section>
   </main>
