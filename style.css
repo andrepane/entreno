@@ -21,17 +21,25 @@ body{
   padding-bottom:env(safe-area-inset-bottom,0);
 }
 
+.safe{
+  padding-left:16px;
+  padding-right:16px;
+  padding-left:calc(16px + env(safe-area-inset-left,0));
+  padding-right:calc(16px + env(safe-area-inset-right,0));
+}
+
 button,input,select,textarea{font-family:inherit}
 
 .app-header{
   padding:calc(16px + env(safe-area-inset-top,0)) 16px 16px;
+  padding-left:calc(16px + env(safe-area-inset-left,0));
+  padding-right:calc(16px + env(safe-area-inset-right,0));
   display:flex;
   align-items:center;
   justify-content:space-between;
   border-bottom:1px solid var(--border);
   background:rgba(0,0,0,.35);
   backdrop-filter:saturate(120%) blur(6px);
-  position:sticky; top:0; z-index:20;
 }
 .app-header h1{margin:0; font-size:22px; letter-spacing:.3px}
 
@@ -65,6 +73,50 @@ button,input,select,textarea{font-family:inherit}
   margin:0 auto 40px;
 }
 
+.top-bar{
+  position:sticky;
+  top:0;
+  z-index:40;
+  padding-top:12px;
+  padding-top:calc(12px + env(safe-area-inset-top,0));
+  padding-bottom:12px;
+  background:rgba(12,14,19,.82);
+  border-bottom:1px solid rgba(255,255,255,.04);
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+}
+.top-bar__inner{
+  max-width:1200px;
+  margin:0 auto;
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  min-height:52px;
+}
+.top-bar__stack{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  min-width:0;
+  flex:1;
+}
+.top-bar__label{
+  font-size:12px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.top-bar__value{
+  display:block;
+  font-size:18px;
+  font-weight:600;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  min-height:24px;
+}
+
 .editor,
 .entries-panel{
   background:var(--card);
@@ -78,6 +130,7 @@ button,input,select,textarea{font-family:inherit}
 
 .entries-panel{display:flex; flex-direction:column; gap:12px;}
 .entries-header{display:flex; flex-direction:column; gap:6px;}
+.entries-subtitle{margin:0; font-size:14px; color:var(--muted);}
 .entries-hint{margin:0; font-size:14px; color:var(--muted);}
 
 .entry-form{display:flex; flex-direction:column; gap:14px}
@@ -97,22 +150,71 @@ input[type="text"], input[type="number"], select, textarea{
 }
 textarea{resize:vertical}
 
-.input-stack{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
-.input-stack input{flex:1 1 120px}
 
-.fallo-toggle{
+.input-stack{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+.input-stack > input[type="number"],
+.input-stack > select{flex:1 1 120px}
+
+.chip-toggle{flex-wrap:nowrap; gap:12px;}
+.chip-toggle__input{
+  position:absolute;
+  width:1px;
+  height:1px;
+  margin:0;
+  padding:0;
+  border:0;
+  overflow:hidden;
+  clip:rect(0 0 0 0);
+  clip-path:inset(50%);
+  white-space:nowrap;
+}
+.chip-toggle__label{
+  order:2;
   display:inline-flex;
   align-items:center;
-  gap:6px;
-  font-size:13px;
-  color:var(--muted);
-  background:#101318;
-  border:1px solid #252931;
-  padding:6px 10px;
+  justify-content:center;
+  gap:8px;
+  min-height:42px;
+  padding:0 14px;
+  border:1px solid var(--border);
   border-radius:999px;
+  font-size:14px;
+  font-weight:600;
   cursor:pointer;
+  background:rgba(18,21,27,.7);
+  color:var(--muted);
+  -webkit-appearance:none;
+  -webkit-tap-highlight-color:transparent;
+  transition:background .2s ease, border-color .2s ease, color .2s ease, box-shadow .2s ease;
+  margin-left:auto;
 }
-.fallo-toggle input{accent-color:var(--accent)}
+.chip-toggle__text{line-height:1; white-space:nowrap;}
+.chip-toggle__text--on{display:none;}
+
+#alFallo:focus-visible + .chip-toggle__label{
+  box-shadow:0 0 0 3px rgba(96,165,250,.55);
+}
+#alFallo:checked + .chip-toggle__label{
+  background:rgba(110,231,183,.18);
+  border-color:rgba(110,231,183,.6);
+  color:#0f2f22;
+}
+#alFallo:checked + .chip-toggle__label .chip-toggle__text--on{display:inline;}
+#alFallo:checked + .chip-toggle__label .chip-toggle__text--off{display:none;}
+
+.chip-toggle__target{
+  order:1;
+  flex:1 1 auto;
+  min-width:0;
+  transition:background .2s ease, color .2s ease, border-color .2s ease;
+}
+#alFallo:checked ~ .chip-toggle__target{
+  background:#0b0d12;
+  border-color:#1f232a;
+  color:var(--muted);
+  cursor:not-allowed;
+  opacity:.65;
+}
 
 .fallo-extra{gap:8px}
 .hint{margin:0; font-size:12px; color:var(--muted)}
@@ -177,6 +279,7 @@ button:focus-visible,
   align-items:center;
   justify-content:center;
   padding:18px;
+  padding-bottom:calc(18px + env(safe-area-inset-bottom,0));
   border-top:1px solid var(--border);
   margin-top:10px;
   flex-wrap:wrap;

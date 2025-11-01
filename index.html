@@ -16,6 +16,15 @@
     </button>
   </header>
 
+  <div class="top-bar safe" role="region" aria-live="polite">
+    <div class="top-bar__inner">
+      <div class="top-bar__stack">
+        <span class="top-bar__label">Día seleccionado</span>
+        <span class="top-bar__value" id="selectedDateTitle">Selecciona un día</span>
+      </div>
+    </div>
+  </div>
+
   <main class="app-main">
     <section class="editor" aria-labelledby="formTitle">
       <h2 id="formTitle">Añadir ejercicio</h2>
@@ -55,12 +64,13 @@
           </div>
           <div>
             <label for="reps">Reps</label>
-            <div class="input-stack">
-              <input id="reps" type="number" min="0" step="1" placeholder="8"/>
-              <label class="fallo-toggle">
-                <input id="alFallo" type="checkbox" />
-                <span>Al fallo</span>
+            <div class="input-stack chip-toggle">
+              <input id="alFallo" class="chip-toggle__input" type="checkbox" />
+              <label for="alFallo" class="chip-toggle__label">
+                <span class="chip-toggle__text chip-toggle__text--off">Reps libres</span>
+                <span class="chip-toggle__text chip-toggle__text--on">Al fallo</span>
               </label>
+              <input id="reps" class="chip-toggle__target" type="number" min="0" step="1" placeholder="8"/>
             </div>
           </div>
           <div>
@@ -99,14 +109,14 @@
 
     </section>
 
-    <section class="entries-panel" aria-labelledby="selectedDateTitle">
+    <section class="entries-panel" aria-labelledby="entriesPanelTitle">
       <div class="entries-header">
-        <h2 id="selectedDateTitle">Selecciona un día</h2>
+        <h2 id="entriesPanelTitle">Registro del día</h2>
         <p class="entries-hint">Usa el calendario para elegir la fecha y añade tus entrenos.</p>
       </div>
 
       <div class="entries">
-        <h3>Registro del día</h3>
+        <h3 class="entries-subtitle">Entradas registradas</h3>
         <ul id="entriesList" class="entries-list empty">
           <li>Sin ejercicios aún.</li>
         </ul>
@@ -119,7 +129,7 @@
     </section>
   </main>
 
-  <footer class="app-footer">
+  <footer class="app-footer safe">
     <button id="exportAll" class="ghost">Exportar todo (JSON)</button>
     <label class="importer">
       Importar JSON
