@@ -9,23 +9,16 @@
 <body>
   <header class="app-header">
     <h1>Entreno Híbrido</h1>
-    <div class="month-nav">
-      <button id="prevMonth" aria-label="Mes anterior">◀</button>
-      <div class="month-label" id="monthLabel">Mes Año</div>
-      <button id="nextMonth" aria-label="Mes siguiente">▶</button>
-    </div>
+    <button id="calendarMini" class="calendar-mini" aria-haspopup="dialog" aria-controls="calendarOverlay">
+      <span class="calendar-mini__heading">Calendario</span>
+      <span class="calendar-mini__date" id="miniDateLabel">Selecciona un día</span>
+      <span class="calendar-mini__month" id="miniMonthLabel">Mes Año</span>
+    </button>
   </header>
 
   <main class="app-main">
-    <section class="calendar" id="calendar">
-      <div class="weekdays">
-        <div>L</div><div>M</div><div>X</div><div>J</div><div>V</div><div>S</div><div>D</div>
-      </div>
-      <div class="days-grid" id="daysGrid"></div>
-    </section>
-
-    <section class="editor">
-      <h2 id="selectedDateTitle">Selecciona un día</h2>
+    <section class="editor" aria-labelledby="formTitle">
+      <h2 id="formTitle">Añadir ejercicio</h2>
 
       <form id="entryForm" class="entry-form">
         <div class="row">
@@ -105,6 +98,13 @@
           <button data-ej="Pino (ISO pared)" data-cat="Skills / Técnica" data-mod="Calistenia" data-ser="5" data-rep="0" data-t="30">Pino ISO</button>
         </div>
       </div>
+    </section>
+
+    <section class="entries-panel" aria-labelledby="selectedDateTitle">
+      <div class="entries-header">
+        <h2 id="selectedDateTitle">Selecciona un día</h2>
+        <p class="entries-hint">Usa el calendario para elegir la fecha y añade tus entrenos.</p>
+      </div>
 
       <div class="entries">
         <h3>Registro del día</h3>
@@ -127,6 +127,25 @@
       <input id="importFile" type="file" accept="application/json"/>
     </label>
   </footer>
+
+  <div id="calendarOverlay" class="calendar-overlay" aria-hidden="true">
+    <div class="calendar-modal" role="dialog" aria-modal="true" aria-labelledby="monthLabel">
+      <div class="calendar-modal__header">
+        <div class="month-nav">
+          <button id="prevMonth" aria-label="Mes anterior">◀</button>
+          <div class="month-label" id="monthLabel">Mes Año</div>
+          <button id="nextMonth" aria-label="Mes siguiente">▶</button>
+        </div>
+        <button id="closeCalendar" class="close-calendar" aria-label="Cerrar calendario">✕</button>
+      </div>
+      <section class="calendar" id="calendar">
+        <div class="weekdays">
+          <div>L</div><div>M</div><div>X</div><div>J</div><div>V</div><div>S</div><div>D</div>
+        </div>
+        <div class="days-grid" id="daysGrid"></div>
+      </section>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

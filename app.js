@@ -31,8 +31,21 @@ const importFile = document.getElementById('importFile');
 
 const quickChips = document.getElementById('quickChips');
 
+const calendarOverlay = document.getElementById('calendarOverlay');
+const calendarMini = document.getElementById('calendarMini');
+const closeCalendarBtn = document.getElementById('closeCalendar');
+const miniDateLabel = document.getElementById('miniDateLabel');
+const miniMonthLabel = document.getElementById('miniMonthLabel');
+
+if(calendarMini){
+  calendarMini.setAttribute('aria-expanded','false');
+}
+
 let current = new Date();
 let selectedDateStr = toISODate(new Date());
+
+const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const MONTH_NAMES_SHORT = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 
 /* ===== Utils ===== */
 
@@ -89,8 +102,8 @@ function renderCalendar(targetDate){
   const month = targetDate.getMonth(); // 0-11
 
   // Etiqueta de mes (en español)
-  const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  monthLabel.textContent = `${capitalize(monthNames[month])} ${year}`;
+  monthLabel.textContent = `${capitalize(MONTH_NAMES[month])} ${year}`;
+  updateMiniLabels();
 
   daysGrid.innerHTML = '';
 
@@ -155,6 +168,7 @@ function renderCalendar(targetDate){
       selectedDateStr = dateStr;
       updateSelectedDateTitle();
       renderEntries();
+      closeCalendarOverlay({focusTrigger:false});
       // scroll hacia editor en móvil
       if(window.innerWidth < 900){
         document.querySelector('.editor').scrollIntoView({behavior:'smooth', block:'start'});
@@ -183,12 +197,30 @@ function shortCat(cat){
 
 function capitalize(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
 
+function updateMiniLabels(){
+  if(miniDateLabel){
+    const d = fromISODate(selectedDateStr);
+    const day = d.getDate();
+    const monthShort = MONTH_NAMES_SHORT[d.getMonth()] || '';
+    miniDateLabel.textContent = `${day} ${capitalize(monthShort)}`;
+  }
+  if(miniMonthLabel){
+    if(monthLabel && monthLabel.textContent){
+      miniMonthLabel.textContent = monthLabel.textContent;
+    } else {
+      const d = fromISODate(selectedDateStr);
+      miniMonthLabel.textContent = `${capitalize(MONTH_NAMES[d.getMonth()])} ${d.getFullYear()}`;
+    }
+  }
+}
+
 /* ===== Entries Render ===== */
 
 function updateSelectedDateTitle(){
   const d = fromISODate(selectedDateStr);
   const label = `${d.getDate()}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
   selectedDateTitle.textContent = `Día seleccionado: ${label}`;
+  updateMiniLabels();
 }
 
 function renderEntries(){
@@ -398,6 +430,55 @@ quickChips.addEventListener('click', (e) => {
   descanso.value = '';
   notas.value = '';
   ejercicio.focus();
+});
+
+/* ===== Calendar overlay control ===== */
+
+function openCalendarOverlay(){
+  if(!calendarOverlay) return;
+  calendarOverlay.classList.add('open');
+  calendarOverlay.setAttribute('aria-hidden','false');
+  if(calendarMini){
+    calendarMini.setAttribute('aria-expanded','true');
+  }
+  if(closeCalendarBtn){
+    setTimeout(() => closeCalendarBtn.focus(), 50);
+  }
+}
+
+function closeCalendarOverlay({focusTrigger = true} = {}){
+  if(!calendarOverlay) return;
+  const wasOpen = calendarOverlay.classList.contains('open');
+  if(!wasOpen) return;
+  calendarOverlay.classList.remove('open');
+  calendarOverlay.setAttribute('aria-hidden','true');
+  if(calendarMini){
+    calendarMini.setAttribute('aria-expanded','false');
+  }
+  if(focusTrigger && calendarMini){
+    calendarMini.focus();
+  }
+}
+
+if(calendarMini){
+  calendarMini.addEventListener('click', () => openCalendarOverlay());
+}
+if(closeCalendarBtn){
+  closeCalendarBtn.addEventListener('click', () => closeCalendarOverlay());
+}
+if(calendarOverlay){
+  calendarOverlay.addEventListener('click', (e) => {
+    if(e.target === calendarOverlay){
+      closeCalendarOverlay();
+    }
+  });
+}
+
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape' && calendarOverlay?.classList.contains('open')){
+    e.preventDefault();
+    closeCalendarOverlay();
+  }
 });
 
 /* ===== Init ===== */
