@@ -20,6 +20,17 @@ body{
   font-family:var(--font);
   color:var(--text);
   background:linear-gradient(180deg,#0c0f15 0%,#0b0e13 100%);
+  display:flex;
+  flex-direction:column;
+  min-height:100%;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.app-header,
+main,
+.app-footer{
+  width:min(960px, 100%);
+  margin:0 auto;
 }
 
 .app-header{
@@ -27,36 +38,39 @@ body{
   background:rgba(13,15,18,.8);
   backdrop-filter: blur(8px);
   border-bottom:1px solid #1f2530;
-  padding:12px;
+  padding:clamp(12px, 4vw, 20px);
 }
 .app-header h1{margin:0 0 6px 0; font-size:1.25rem; letter-spacing: .5px}
 
 .day-controls{
   display:flex; gap:8px; align-items:center; justify-content:center;
   margin-bottom:10px;
+  flex-wrap:wrap;
 }
 .day-controls input[type="date"]{
   background:var(--panel); color:var(--text);
   border:1px solid #2a3240; border-radius:10px; padding:8px 10px; min-width: 180px;
+  flex:1 1 160px;
 }
 .day-controls button{
   background:var(--panel); color:var(--text);
   border:1px solid #2a3240; border-radius:10px; padding:8px 10px;
+  flex:0 0 auto;
 }
 
-.tabs{display:flex; gap:8px}
+.tabs{display:flex; gap:8px; flex-wrap:wrap}
 .tab{
   flex:1; padding:10px; border-radius:999px; border:1px solid #2a3240;
   background:var(--panel); color:var(--muted); font-weight:600;
 }
 .tab.active{color:var(--text); border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent-ghost)}
 
-main{padding:14px}
+main{flex:1 1 auto; padding:clamp(14px, 5vw, 28px)}
 .tab-panel.hidden{display:none}
 
 .card{
   background:var(--panel); border:1px solid #252c3a; border-radius:var(--radius);
-  padding:12px; box-shadow:var(--shadow);
+  padding:clamp(12px, 4vw, 20px); box-shadow:var(--shadow);
 }
 
 .grid{display:grid; gap:var(--gap)}
@@ -92,14 +106,15 @@ button.link{background:transparent; color:var(--accent); border:none; padding:0}
 
 .app-footer{padding:16px; text-align:center; color:var(--muted)}
 
-.day-summary{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px}
+.day-summary{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; flex-wrap:wrap}
 #dayTitle{margin:0; font-size:1.05rem}
-.copy-day{display:flex; align-items:center; gap:8px}
-.copy-box{display:flex; gap:8px; align-items:center}
+.copy-day{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.copy-box{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+.copy-box input[type="date"]{flex:1 1 160px; min-width:0}
 .copy-box.hidden{display:none}
 
 .exercise-list{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:10px}
-.exercise{padding:12px; border:1px solid #2a3240; border-radius:14px; background:linear-gradient(180deg,#121722 0,#0f131d 100%)}
+.exercise{padding:clamp(12px, 4vw, 20px); border:1px solid #2a3240; border-radius:14px; background:linear-gradient(180deg,#121722 0,#0f131d 100%)}
 .exercise .title{display:flex; align-items:center; justify-content:space-between; gap:8px}
 .exercise .meta{color:var(--muted); font-size:.9rem; margin:6px 0}
 .exercise .meta code{font-family:var(--mono); background:#0b0f16; padding:2px 6px; border-radius:8px; border:1px solid #1e2633}
@@ -138,6 +153,19 @@ button.link{background:transparent; color:var(--accent); border:none; padding:0}
 
 @media (max-width: 640px){
   .mini-cal{display:none}
+  .app-header,
+  main,
+  .app-footer{width:100%;}
+  .tabs{width:100%;}
+  .tab{flex:1 1 calc(50% - 4px); text-align:center}
+  .day-summary{align-items:flex-start;}
+  .day-summary h2{font-size:1rem}
+  .copy-day{width:100%; flex-wrap:wrap; justify-content:flex-start}
+  .copy-day button{flex:1 1 120px}
+  .exercise .title{flex-direction:column; align-items:flex-start}
+  .exercise .controls{width:100%}
+  .fieldset{padding:12px}
+  .row{flex-wrap:wrap; align-items:flex-start}
 }
 
 @media (min-width: 800px){
