@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Calendario Entrenos Híbridos</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <header class="app-header">
+    <h1>Entreno Híbrido</h1>
+    <div class="month-nav">
+      <button id="prevMonth" aria-label="Mes anterior">◀</button>
+      <div class="month-label" id="monthLabel">Mes Año</div>
+      <button id="nextMonth" aria-label="Mes siguiente">▶</button>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <section class="calendar" id="calendar">
+      <div class="weekdays">
+        <div>L</div><div>M</div><div>X</div><div>J</div><div>V</div><div>S</div><div>D</div>
+      </div>
+      <div class="days-grid" id="daysGrid"></div>
+    </section>
+
+    <section class="editor">
+      <h2 id="selectedDateTitle">Selecciona un día</h2>
+
+      <form id="entryForm" class="entry-form">
+        <div class="row">
+          <label for="categoria">Categoría</label>
+          <select id="categoria" required>
+            <option value="" disabled selected>Elige…</option>
+            <option>Push (Empuje)</option>
+            <option>Tirón (Espalda)</option>
+            <option>Pierna + Core</option>
+            <option>Skills / Técnica</option>
+            <option>Full body / Descarga</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <span class="label">Modalidad</span>
+          <div class="segmented">
+            <input type="radio" id="mod-cal" name="modalidad" value="Calistenia" checked>
+            <label for="mod-cal">Calistenia</label>
+            <input type="radio" id="mod-mus" name="modalidad" value="Musculación">
+            <label for="mod-mus">Musculación</label>
+          </div>
+        </div>
+
+        <div class="row">
+          <label for="ejercicio">Ejercicio</label>
+          <input id="ejercicio" type="text" placeholder="Ej: Fondos EMOM, Press banca, Front lever raises…" required />
+        </div>
+
+        <div class="row grid-3">
+          <div>
+            <label for="series">Series</label>
+            <input id="series" type="number" min="0" step="1" placeholder="4"/>
+          </div>
+          <div>
+            <label for="reps">Reps</label>
+            <input id="reps" type="number" min="0" step="1" placeholder="8"/>
+          </div>
+          <div>
+            <label for="tiempo">Tiempo (s)</label>
+            <input id="tiempo" type="number" min="0" step="5" placeholder="20"/>
+          </div>
+        </div>
+
+        <div class="row grid-2">
+          <div>
+            <label for="peso">Peso/Lastre (kg)</label>
+            <input id="peso" type="number" min="0" step="0.5" placeholder="10"/>
+          </div>
+          <div>
+            <label for="descanso">Descanso (s)</label>
+            <input id="descanso" type="number" min="0" step="5" placeholder="90"/>
+          </div>
+        </div>
+
+        <div class="row">
+          <label for="notas">Notas</label>
+          <textarea id="notas" rows="2" placeholder="Técnica, sensaciones, progresión…"></textarea>
+        </div>
+
+        <div class="row actions">
+          <button type="submit" class="primary">Añadir ejercicio</button>
+          <button type="button" id="clearForm" class="ghost">Limpiar</button>
+        </div>
+      </form>
+
+      <div class="quick-templates">
+        <h3>Plantillas rápidas</h3>
+        <div class="chips" id="quickChips">
+          <button data-ej="Fondos EMOM" data-cat="Push (Empuje)" data-mod="Calistenia" data-ser="6" data-rep="8" data-t="0">Fondos EMOM</button>
+          <button data-ej="Pike Push Up" data-cat="Push (Empuje)" data-mod="Calistenia" data-ser="3" data-rep="10" data-t="0">Pike Push Up</button>
+          <button data-ej="Dominadas pronas" data-cat="Tirón (Espalda)" data-mod="Calistenia" data-ser="4" data-rep="6" data-t="0">Dominadas pronas</button>
+          <button data-ej="Front lever raises" data-cat="Tirón (Espalda)" data-mod="Calistenia" data-ser="4" data-rep="5" data-t="0">FL raises</button>
+          <button data-ej="Press banca" data-cat="Push (Empuje)" data-mod="Musculación" data-ser="4" data-rep="6" data-t="0">Press banca</button>
+          <button data-ej="Peso muerto" data-cat="Tirón (Espalda)" data-mod="Musculación" data-ser="4" data-rep="5" data-t="0">Peso muerto</button>
+          <button data-ej="Sentadilla" data-cat="Pierna + Core" data-mod="Musculación" data-ser="4" data-rep="8" data-t="0">Sentadilla</button>
+          <button data-ej="Pino (ISO pared)" data-cat="Skills / Técnica" data-mod="Calistenia" data-ser="5" data-rep="0" data-t="30">Pino ISO</button>
+        </div>
+      </div>
+
+      <div class="entries">
+        <h3>Registro del día</h3>
+        <ul id="entriesList" class="entries-list empty">
+          <li>Sin ejercicios aún.</li>
+        </ul>
+      </div>
+
+      <div class="day-actions">
+        <button id="exportDay" class="ghost small">Exportar día (JSON)</button>
+        <button id="deleteDay" class="danger small">Borrar día</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <button id="exportAll" class="ghost">Exportar todo (JSON)</button>
+    <label class="importer">
+      Importar JSON
+      <input id="importFile" type="file" accept="application/json"/>
+    </label>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
