@@ -68,6 +68,7 @@ const rowEmom = document.getElementById("rowEmom");
 const formReps = document.getElementById("formReps");
 const formFailure = document.getElementById("formFailure");
 const formSeconds = document.getElementById("formSeconds");
+const formSecondsFailure = document.getElementById("formSecondsFailure");
 const formEmomMinutes = document.getElementById("formEmomMinutes");
 const formEmomReps = document.getElementById("formEmomReps");
 const formWeight = document.getElementById("formWeight");
@@ -140,7 +141,7 @@ addForm.addEventListener("submit", (e)=>{
     sets: Math.max(1, Number(formSets.value||1)),
     goal: null,          // "reps" | "seconds" | "emom"
     reps: null,          // si goal="reps"
-    failure: false,      // si goal="reps"
+    failure: false,      // si goal="reps" o goal="seconds"
     seconds: null,       // si goal="seconds"
     emomMinutes: null,   // si goal="emom"
     emomReps: null,      // si goal="emom"
@@ -157,18 +158,27 @@ addForm.addEventListener("submit", (e)=>{
   } else if (goalSecs.checked) {
     ex.goal = "seconds";
     ex.seconds = Number(formSeconds.value||0);
+    ex.failure = !!formSecondsFailure.checked;
   } else {
     ex.goal = "emom";
     ex.emomMinutes = Number(formEmomMinutes.value||0);
     ex.emomReps = Number(formEmomReps.value||0);
+    ex.failure = false;
   }
 
   if (!state.workouts[normalizedDay]) state.workouts[normalizedDay] = [];
+  if (ex.failure) {
+    ex.done = Array.from({length: ex.sets}, ()=>null);
+  } else {
+    ex.done = [];
+  }
   state.workouts[normalizedDay].push(ex);
   save();
 
   // Ajustar UI
   formName.value = "";
+  formFailure.checked = false;
+  formSecondsFailure.checked = false;
   renderDay(normalizedDay);
   switchToTab("hoy");
   state.selectedDate = normalizedDay;
@@ -212,26 +222,29 @@ function renderDay(dayISO){
     meta.className = "meta";
     meta.innerHTML = metaText(ex);
 
-    const setsBox = document.createElement("div");
-    setsBox.className = "sets-grid";
-    // Entradas para reps/segundos logrados por serie:
-    for (let i=0;i<ex.sets;i++){
-      const wrap = document.createElement("label");
-      wrap.className = "field";
-      const span = document.createElement("span");
-      span.textContent = `Serie ${i+1}`;
-      const input = document.createElement("input");
-      input.type = "number";
-      input.placeholder = ex.goal==="seconds" ? "seg" : "reps";
-      input.value = ex.done?.[i] ?? "";
-      input.addEventListener("change", ()=>{
-        const v = input.value? Number(input.value) : null;
-        ex.done = ex.done || [];
-        ex.done[i] = v;
-        save();
-      });
-      wrap.append(span, input);
-      setsBox.append(wrap);
+    let setsBox = null;
+    if (ex.failure) {
+      const doneValues = Array.from({length: ex.sets}, (_,i)=> ex.done?.[i] ?? null);
+      setsBox = document.createElement("div");
+      setsBox.className = "sets-grid";
+      for (let i=0;i<ex.sets;i++){
+        const wrap = document.createElement("label");
+        wrap.className = "field";
+        const span = document.createElement("span");
+        span.textContent = `Serie ${i+1}`;
+        const input = document.createElement("input");
+        input.type = "number";
+        input.placeholder = ex.goal==="seconds" ? "seg" : "reps";
+        input.value = doneValues[i] ?? "";
+        input.addEventListener("change", ()=>{
+          const v = input.value? Number(input.value) : null;
+          ex.done = ex.done || [];
+          ex.done[i] = v;
+          save();
+        });
+        wrap.append(span, input);
+        setsBox.append(wrap);
+      }
     }
 
     const editBox = document.createElement("div");
@@ -246,26 +259,29 @@ function renderDay(dayISO){
       removeExercise(dayISO, ex.id);
     });
 
-    li.append(title, meta, setsBox, editBox);
+    li.append(title, meta);
+    if (setsBox) li.append(setsBox);
+    li.append(editBox);
     exerciseList.append(li);
   });
 }
 
 function metaText(ex){
-  const parts = [];
-  parts.push(`<code>${ex.sets}x</code>`);
+  const parts = [`<span><strong>Series:</strong> ${ex.sets}</span>`];
 
   if (ex.goal==="reps") {
-    if (ex.failure && ex.reps) parts.push(`<code>${ex.reps} reps</code> + <code>al fallo</code>`);
-    else if (ex.failure) parts.push(`<code>al fallo</code>`);
-    else if (ex.reps) parts.push(`<code>${ex.reps} reps</code>`);
+    const repsLabel = ex.reps && ex.reps > 0 ? ex.reps : "—";
+    parts.push(`<span><strong>Repeticiones:</strong> ${repsLabel}</span>`);
+    if (ex.failure) parts.push(`<span>Al fallo</span>`);
   } else if (ex.goal==="seconds") {
-    parts.push(`<code>${ex.seconds}s</code> por serie`);
+    const secsLabel = ex.seconds && ex.seconds > 0 ? ex.seconds : "—";
+    parts.push(`<span><strong>Segundos:</strong> ${secsLabel}</span>`);
+    if (ex.failure) parts.push(`<span>Al fallo</span>`);
   } else if (ex.goal==="emom") {
-    parts.push(`<code>EMOM ${ex.emomMinutes}'</code> x <code>${ex.emomReps} reps/min</code>`);
+    parts.push(`<span><strong>EMOM:</strong> ${ex.emomMinutes}' · ${ex.emomReps} reps/min</span>`);
   }
 
-  if (ex.weightKg!=null) parts.push(`<code>${ex.weightKg} kg</code>`);
+  if (ex.weightKg!=null) parts.push(`<span><strong>Lastre:</strong> ${ex.weightKg} kg</span>`);
   return parts.join(" · ");
 }
 
@@ -301,14 +317,18 @@ function buildEditForm(ex){
   const rowReps = document.createElement("div"); rowReps.className = "row indent";
   const repsField = fieldInline("Reps", "number", ex.reps ?? "", {min:1});
   const failRow = document.createElement("label"); failRow.className="row inline";
-  const failChk = document.createElement("input"); failChk.type="checkbox"; failChk.checked = !!ex.failure;
+  const failChk = document.createElement("input"); failChk.type="checkbox"; failChk.checked = !!ex.failure && ex.goal==="reps";
   const failLbl = document.createElement("span"); failLbl.textContent="Al fallo";
   failRow.append(failChk, failLbl);
   rowReps.append(repsField.wrap, failRow);
 
   const rowSecs = document.createElement("div"); rowSecs.className="row indent hidden";
   const secsField = fieldInline("Segundos", "number", ex.seconds ?? "", {min:1});
-  rowSecs.append(secsField.wrap);
+  const failSecsRow = document.createElement("label"); failSecsRow.className="row inline";
+  const failSecsChk = document.createElement("input"); failSecsChk.type="checkbox"; failSecsChk.checked = !!ex.failure && ex.goal==="seconds";
+  const failSecsLbl = document.createElement("span"); failSecsLbl.textContent="Al fallo";
+  failSecsRow.append(failSecsChk, failSecsLbl);
+  rowSecs.append(secsField.wrap, failSecsRow);
 
   const rowEmom = document.createElement("div"); rowEmom.className="row indent hidden";
   const mField = fieldInline("Minutos", "number", ex.emomMinutes ?? "", {min:1});
@@ -349,7 +369,7 @@ function buildEditForm(ex){
     } else if (rSecs.input.checked){
       ex.goal="seconds";
       ex.seconds = Number(secsField.input.value||0);
-      ex.reps = null; ex.failure=false; ex.emomMinutes=null; ex.emomReps=null;
+      ex.reps = null; ex.failure=!!failSecsChk.checked; ex.emomMinutes=null; ex.emomReps=null;
     } else {
       ex.goal="emom";
       ex.emomMinutes = Number(mField.input.value||0);
@@ -358,9 +378,15 @@ function buildEditForm(ex){
     }
 
     // Ajustar tamaño del array done
-    ex.done = (ex.done||[]).slice(0, ex.sets);
-    while (ex.done.length < ex.sets) ex.done.push(null);
+    if (ex.failure){
+      ex.done = (ex.done||[]).slice(0, ex.sets);
+      while (ex.done.length < ex.sets) ex.done.push(null);
+    } else {
+      ex.done = [];
+    }
 
+    const editWrapper = box.parentElement;
+    editWrapper?.classList.add("hidden");
     save(); renderDay(state.selectedDate);
   });
   cancelBtn.addEventListener("click", ()=>{
@@ -423,7 +449,11 @@ copyDayBtn.addEventListener("click", ()=>{
   const src = state.selectedDate;
   const dst = copyTargetDate.value;
   if (!dst){ alert("Selecciona una fecha destino."); return; }
-  const items = (state.workouts[src]||[]).map(x=> ({...x, id: crypto.randomUUID(), done: []}));
+  const items = (state.workouts[src]||[]).map(x=> ({
+    ...x,
+    id: crypto.randomUUID(),
+    done: x.failure ? Array.from({length: x.sets}, ()=>null) : []
+  }));
   state.workouts[dst] = (state.workouts[dst]||[]).concat(items);
   save();
   alert("Día copiado.");
