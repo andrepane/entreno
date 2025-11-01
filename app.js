@@ -72,6 +72,7 @@ const mcNext = document.getElementById("mcNext");
 const mcLabel = document.getElementById("mcLabel");
 const mcGrid = document.getElementById("mcGrid");
 let mcRefDate = new Date(); // referencia del mes mostrado
+const DOW = ["L","M","X","J","V","S","D"];
 
 /* ========= Inicialización ========= */
 load();
@@ -428,8 +429,6 @@ function switchToTab(name){
 }
 
 /* ========= Mini Calendario ========= */
-const DOW = ["L","M","X","J","V","S","D"];
-
 function renderMiniCalendar(){
   mcLabel.textContent = mcRefDate.toLocaleDateString("es-ES", {month:"long", year:"numeric"});
   mcGrid.innerHTML = "";
