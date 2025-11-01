@@ -1,7 +1,20 @@
 /* ========= Utilidades de fecha ========= */
-const fmt = (d) => d.toISOString().slice(0,10);
+const fmt = (d) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth()+1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+const fromISO = (iso) => {
+  if (!iso) return new Date();
+  const [y, m = 1, d = 1] = iso.split("-").map(Number);
+  if (!Number.isFinite(y)) return new Date();
+  const date = new Date(y, (m||1)-1, d||1);
+  date.setHours(0,0,0,0);
+  return date;
+};
 const toHuman = (iso) => {
-  const d = new Date(iso + "T00:00:00");
+  const d = fromISO(iso);
   return d.toLocaleDateString("es-ES", { weekday:"long", year:"numeric", month:"long", day:"numeric" });
 };
 
@@ -76,6 +89,9 @@ const DOW = ["L","M","X","J","V","S","D"];
 
 /* ========= Inicialización ========= */
 load();
+const initialDate = fromISO(state.selectedDate);
+state.selectedDate = fmt(initialDate);
+mcRefDate = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
 selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
 renderAll();
@@ -94,8 +110,11 @@ tabs.forEach(btn=>{
 prevDayBtn.addEventListener("click", ()=> shiftSelectedDay(-1));
 nextDayBtn.addEventListener("click", ()=> shiftSelectedDay(1));
 selectedDateInput.addEventListener("change", (e)=>{
-  state.selectedDate = e.target.value || fmt(new Date());
+  const picked = fromISO(e.target.value || fmt(new Date()));
+  state.selectedDate = fmt(picked);
+  selectedDateInput.value = state.selectedDate;
   formDate.value = state.selectedDate;
+  mcRefDate = new Date(picked.getFullYear(), picked.getMonth(), 1);
   save(); renderAll();
   highlightMiniCalSelected();
 });
@@ -113,6 +132,7 @@ updateGoalRows();
 addForm.addEventListener("submit", (e)=>{
   e.preventDefault();
   const day = formDate.value || state.selectedDate;
+  const normalizedDay = fmt(fromISO(day));
 
   const ex = {
     id: crypto.randomUUID(),
@@ -143,16 +163,19 @@ addForm.addEventListener("submit", (e)=>{
     ex.emomReps = Number(formEmomReps.value||0);
   }
 
-  if (!state.workouts[day]) state.workouts[day] = [];
-  state.workouts[day].push(ex);
+  if (!state.workouts[normalizedDay]) state.workouts[normalizedDay] = [];
+  state.workouts[normalizedDay].push(ex);
   save();
 
   // Ajustar UI
   formName.value = "";
-  renderDay(day);
+  renderDay(normalizedDay);
   switchToTab("hoy");
-  selectedDateInput.value = day;
-  state.selectedDate = day;
+  state.selectedDate = normalizedDay;
+  selectedDateInput.value = state.selectedDate;
+  formDate.value = state.selectedDate;
+  const selected = fromISO(state.selectedDate);
+  mcRefDate = new Date(selected.getFullYear(), selected.getMonth(), 1);
   save(); renderMiniCalendar();
 });
 
@@ -410,11 +433,12 @@ copyDayBtn.addEventListener("click", ()=>{
 
 /* ========= Cambiar de día (prev/next) ========= */
 function shiftSelectedDay(delta){
-  const d = new Date(state.selectedDate + "T00:00:00");
+  const d = fromISO(state.selectedDate);
   d.setDate(d.getDate()+delta);
   state.selectedDate = fmt(d);
   selectedDateInput.value = state.selectedDate;
   formDate.value = state.selectedDate;
+  mcRefDate = new Date(d.getFullYear(), d.getMonth(), 1);
   save(); renderAll();
   highlightMiniCalSelected();
 }
@@ -467,6 +491,7 @@ function renderMiniCalendar(){
       state.selectedDate = dayISO;
       selectedDateInput.value = state.selectedDate;
       formDate.value = state.selectedDate;
+      mcRefDate = new Date(year, month, 1);
       save(); renderAll();
       highlightMiniCalSelected();
       switchToTab("hoy");
