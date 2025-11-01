@@ -19,7 +19,9 @@ const toHuman = (iso) => {
 };
 
 /* ========= Estado & almacenamiento ========= */
-const STORAGE_KEY = "workouts.v1";
+const STORAGE_KEY = "workouts.v2";
+const LEGACY_KEY = "workouts.v1";
+// TODO: sincronizar entre dispositivos usando Firebase u otro backend.
 let state = {
   selectedDate: fmt(new Date()),
   workouts: {} // { "YYYY-MM-DD": [exercise, ...] }
@@ -27,7 +29,8 @@ let state = {
 
 function load() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) raw = localStorage.getItem(LEGACY_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       state = { ...state, ...parsed };
@@ -68,6 +71,7 @@ const rowEmom = document.getElementById("rowEmom");
 const formReps = document.getElementById("formReps");
 const formFailure = document.getElementById("formFailure");
 const formSeconds = document.getElementById("formSeconds");
+const formSecondsFailure = document.getElementById("formSecondsFailure");
 const formEmomMinutes = document.getElementById("formEmomMinutes");
 const formEmomReps = document.getElementById("formEmomReps");
 const formWeight = document.getElementById("formWeight");
@@ -138,14 +142,8 @@ addForm.addEventListener("submit", (e)=>{
     id: crypto.randomUUID(),
     name: (formName.value || "").trim(),
     sets: Math.max(1, Number(formSets.value||1)),
-    goal: null,          // "reps" | "seconds" | "emom"
-    reps: null,          // si goal="reps"
-    failure: false,      // si goal="reps"
-    seconds: null,       // si goal="seconds"
-    emomMinutes: null,   // si goal="emom"
-    emomReps: null,      // si goal="emom"
-    weightKg: formWeight.value ? Number(formWeight.value) : null,
-    done: []             // array con reps logradas por serie (o segundos)
+    goal: null,
+    weightKg: formWeight.value ? Number(formWeight.value) : null
   };
 
   if (!ex.name) { alert("Pon un nombre al ejercicio."); return; }
@@ -154,13 +152,30 @@ addForm.addEventListener("submit", (e)=>{
     ex.goal = "reps";
     ex.reps = formReps.value ? Number(formReps.value) : null;
     ex.failure = !!formFailure.checked;
+    if (ex.failure) {
+      ex.done = Array.from({length: ex.sets}, ()=>null);
+    }
+    if (!ex.failure && (!ex.reps || ex.reps<=0)) { alert("Indica un número de repeticiones mayor que cero."); return; }
+    if (ex.reps!=null && ex.reps<=0) { alert("Indica un número de repeticiones mayor que cero."); return; }
   } else if (goalSecs.checked) {
     ex.goal = "seconds";
-    ex.seconds = Number(formSeconds.value||0);
+    ex.seconds = formSeconds.value ? Number(formSeconds.value) : null;
+    ex.failure = !!formSecondsFailure.checked;
+    if (ex.failure) {
+      ex.done = Array.from({length: ex.sets}, ()=>null);
+    }
+    if (!ex.failure && (!ex.seconds || ex.seconds<=0)) { alert("Indica segundos mayores que cero."); return; }
+    if (ex.seconds!=null && ex.seconds<=0) { alert("Indica segundos mayores que cero."); return; }
   } else {
     ex.goal = "emom";
     ex.emomMinutes = Number(formEmomMinutes.value||0);
     ex.emomReps = Number(formEmomReps.value||0);
+    ex.failure = false;
+    if (ex.emomMinutes<=0 || ex.emomReps<=0) { alert("Completa minutos y repeticiones por minuto (mayores que cero)."); return; }
+  }
+
+  if (ex.weightKg!=null && Number.isNaN(ex.weightKg)) {
+    ex.weightKg = null;
   }
 
   if (!state.workouts[normalizedDay]) state.workouts[normalizedDay] = [];
@@ -168,7 +183,8 @@ addForm.addEventListener("submit", (e)=>{
   save();
 
   // Ajustar UI
-  formName.value = "";
+  addForm.reset();
+  updateGoalRows();
   renderDay(normalizedDay);
   switchToTab("hoy");
   state.selectedDate = normalizedDay;
@@ -191,6 +207,7 @@ function renderDay(dayISO){
   exerciseList.innerHTML = "";
   emptyDayHint.style.display = list.length ? "none" : "block";
 
+  let mutated = false;
   list.forEach(ex=>{
     const li = document.createElement("li");
     li.className = "exercise";
@@ -212,28 +229,6 @@ function renderDay(dayISO){
     meta.className = "meta";
     meta.innerHTML = metaText(ex);
 
-    const setsBox = document.createElement("div");
-    setsBox.className = "sets-grid";
-    // Entradas para reps/segundos logrados por serie:
-    for (let i=0;i<ex.sets;i++){
-      const wrap = document.createElement("label");
-      wrap.className = "field";
-      const span = document.createElement("span");
-      span.textContent = `Serie ${i+1}`;
-      const input = document.createElement("input");
-      input.type = "number";
-      input.placeholder = ex.goal==="seconds" ? "seg" : "reps";
-      input.value = ex.done?.[i] ?? "";
-      input.addEventListener("change", ()=>{
-        const v = input.value? Number(input.value) : null;
-        ex.done = ex.done || [];
-        ex.done[i] = v;
-        save();
-      });
-      wrap.append(span, input);
-      setsBox.append(wrap);
-    }
-
     const editBox = document.createElement("div");
     editBox.className = "edit-box hidden";
     editBox.appendChild(buildEditForm(ex));
@@ -246,27 +241,59 @@ function renderDay(dayISO){
       removeExercise(dayISO, ex.id);
     });
 
-    li.append(title, meta, setsBox, editBox);
+    const showDone = ex.failure && (ex.goal === "reps" || ex.goal === "seconds");
+    if (showDone) {
+      if (!Array.isArray(ex.done)) { ex.done = Array.from({length: ex.sets}, ()=>null); mutated = true; }
+      if (ex.done.length > ex.sets) { ex.done.length = ex.sets; mutated = true; }
+      while (ex.done.length < ex.sets) { ex.done.push(null); mutated = true; }
+
+      const setsBox = document.createElement("div");
+      setsBox.className = "sets-grid";
+      for (let i=0;i<ex.sets;i++){
+        const wrap = document.createElement("label");
+        wrap.className = "field";
+        const span = document.createElement("span");
+        span.textContent = `Serie ${i+1}`;
+        const input = document.createElement("input");
+        input.type = "number";
+        input.placeholder = ex.goal==="seconds" ? "seg" : "reps";
+        input.value = ex.done?.[i] ?? "";
+        input.addEventListener("change", ()=>{
+          const v = input.value? Number(input.value) : null;
+          ex.done = ex.done || [];
+          ex.done[i] = v;
+          save();
+        });
+        wrap.append(span, input);
+        setsBox.append(wrap);
+      }
+      li.append(title, meta, setsBox, editBox);
+    } else {
+      if (Array.isArray(ex.done)) { delete ex.done; mutated = true; }
+      li.append(title, meta, editBox);
+    }
     exerciseList.append(li);
   });
+  if (mutated) save();
 }
 
 function metaText(ex){
-  const parts = [];
-  parts.push(`<code>${ex.sets}x</code>`);
+  const parts = [`${ex.sets} series`];
 
   if (ex.goal==="reps") {
-    if (ex.failure && ex.reps) parts.push(`<code>${ex.reps} reps</code> + <code>al fallo</code>`);
-    else if (ex.failure) parts.push(`<code>al fallo</code>`);
-    else if (ex.reps) parts.push(`<code>${ex.reps} reps</code>`);
+    if (ex.reps && !ex.failure) parts.push(`${ex.sets} x ${ex.reps} reps`);
+    else if (ex.reps && ex.failure) parts.push(`${ex.sets} x ${ex.reps} reps · al fallo`);
+    else if (ex.failure) parts.push(`Al fallo`);
   } else if (ex.goal==="seconds") {
-    parts.push(`<code>${ex.seconds}s</code> por serie`);
+    if (ex.seconds && !ex.failure) parts.push(`${ex.sets} x ${ex.seconds}s`);
+    else if (ex.seconds && ex.failure) parts.push(`${ex.sets} x ${ex.seconds}s · al fallo`);
+    else if (ex.failure) parts.push(`Al fallo (segundos)`);
   } else if (ex.goal==="emom") {
-    parts.push(`<code>EMOM ${ex.emomMinutes}'</code> x <code>${ex.emomReps} reps/min</code>`);
+    parts.push(`EMOM ${ex.emomMinutes}' x ${ex.emomReps} reps/min`);
   }
 
-  if (ex.weightKg!=null) parts.push(`<code>${ex.weightKg} kg</code>`);
-  return parts.join(" · ");
+  if (ex.weightKg!=null) parts.push(`${ex.weightKg} kg`);
+  return parts.map(t=>`<code>${t}</code>`).join(" · ");
 }
 
 function button(text, cls=""){
@@ -298,17 +325,26 @@ function buildEditForm(ex){
   const rSecs = radioRow("Isométrico (segundos)", "goalEdit-"+ex.id, ex.goal==="seconds");
   const rEmom = radioRow("EMOM", "goalEdit-"+ex.id, ex.goal==="emom");
 
+  const initialFailure = !!ex.failure;
+
   const rowReps = document.createElement("div"); rowReps.className = "row indent";
   const repsField = fieldInline("Reps", "number", ex.reps ?? "", {min:1});
-  const failRow = document.createElement("label"); failRow.className="row inline";
-  const failChk = document.createElement("input"); failChk.type="checkbox"; failChk.checked = !!ex.failure;
-  const failLbl = document.createElement("span"); failLbl.textContent="Al fallo";
-  failRow.append(failChk, failLbl);
-  rowReps.append(repsField.wrap, failRow);
+  const failRowReps = document.createElement("label"); failRowReps.className="row inline";
+  const failChkReps = document.createElement("input"); failChkReps.type="checkbox"; failChkReps.checked = initialFailure;
+  const failLblReps = document.createElement("span"); failLblReps.textContent="Al fallo";
+  failRowReps.append(failChkReps, failLblReps);
+  rowReps.append(repsField.wrap, failRowReps);
 
   const rowSecs = document.createElement("div"); rowSecs.className="row indent hidden";
   const secsField = fieldInline("Segundos", "number", ex.seconds ?? "", {min:1});
-  rowSecs.append(secsField.wrap);
+  const failRowSecs = document.createElement("label"); failRowSecs.className="row inline";
+  const failChkSecs = document.createElement("input"); failChkSecs.type="checkbox"; failChkSecs.checked = initialFailure;
+  const failLblSecs = document.createElement("span"); failLblSecs.textContent="Al fallo";
+  failRowSecs.append(failChkSecs, failLblSecs);
+  rowSecs.append(secsField.wrap, failRowSecs);
+
+  failChkReps.addEventListener("change", ()=>{ failChkSecs.checked = failChkReps.checked; });
+  failChkSecs.addEventListener("change", ()=>{ failChkReps.checked = failChkSecs.checked; });
 
   const rowEmom = document.createElement("div"); rowEmom.className="row indent hidden";
   const mField = fieldInline("Minutos", "number", ex.emomMinutes ?? "", {min:1});
@@ -344,22 +380,47 @@ function buildEditForm(ex){
     if (rReps.input.checked){
       ex.goal="reps";
       ex.reps = repsField.input.value ? Number(repsField.input.value) : null;
-      ex.failure = !!failChk.checked;
+      const failureReps = !!failChkReps.checked;
+      if (!failureReps && (!ex.reps || ex.reps<=0)) { alert("Indica repeticiones mayores que cero."); return; }
+      if (ex.reps!=null && ex.reps<=0) { alert("Indica repeticiones mayores que cero."); return; }
+      ex.failure = failureReps;
       ex.seconds = null; ex.emomMinutes=null; ex.emomReps=null;
+      if (ex.failure) {
+        const prevDone = Array.isArray(ex.done) ? ex.done : [];
+        ex.done = Array.from({length: ex.sets}, (_,i)=> prevDone[i] ?? null);
+        if (ex.done.length > ex.sets) ex.done.length = ex.sets;
+        while (ex.done.length < ex.sets) ex.done.push(null);
+      } else {
+        delete ex.done;
+      }
     } else if (rSecs.input.checked){
       ex.goal="seconds";
-      ex.seconds = Number(secsField.input.value||0);
-      ex.reps = null; ex.failure=false; ex.emomMinutes=null; ex.emomReps=null;
+      ex.seconds = secsField.input.value ? Number(secsField.input.value) : null;
+      const failureSecs = !!failChkSecs.checked;
+      if (!failureSecs && (!ex.seconds || ex.seconds<=0)) { alert("Indica segundos mayores que cero."); return; }
+      if (ex.seconds!=null && ex.seconds<=0) { alert("Indica segundos mayores que cero."); return; }
+      ex.reps = null; ex.emomMinutes=null; ex.emomReps=null;
+      ex.failure = failureSecs;
+      if (ex.failure) {
+        const prevDone = Array.isArray(ex.done) ? ex.done : [];
+        ex.done = Array.from({length: ex.sets}, (_,i)=> prevDone[i] ?? null);
+        if (ex.done.length > ex.sets) ex.done.length = ex.sets;
+        while (ex.done.length < ex.sets) ex.done.push(null);
+      } else {
+        delete ex.done;
+      }
     } else {
       ex.goal="emom";
       ex.emomMinutes = Number(mField.input.value||0);
       ex.emomReps = Number(rField.input.value||0);
+      if (ex.emomMinutes<=0 || ex.emomReps<=0) { alert("Completa minutos y repeticiones por minuto (mayores que cero)."); return; }
       ex.reps = null; ex.failure=false; ex.seconds=null;
+      delete ex.done;
     }
 
-    // Ajustar tamaño del array done
-    ex.done = (ex.done||[]).slice(0, ex.sets);
-    while (ex.done.length < ex.sets) ex.done.push(null);
+    const weightValue = wField.input.value.trim();
+    ex.weightKg = weightValue === "" ? null : Number(weightValue);
+    if (ex.weightKg!=null && Number.isNaN(ex.weightKg)) ex.weightKg = null;
 
     save(); renderDay(state.selectedDate);
   });
@@ -423,7 +484,15 @@ copyDayBtn.addEventListener("click", ()=>{
   const src = state.selectedDate;
   const dst = copyTargetDate.value;
   if (!dst){ alert("Selecciona una fecha destino."); return; }
-  const items = (state.workouts[src]||[]).map(x=> ({...x, id: crypto.randomUUID(), done: []}));
+  const items = (state.workouts[src]||[]).map(x=> {
+    const clone = {...x, id: crypto.randomUUID()};
+    if (clone.failure && (clone.goal === "reps" || clone.goal === "seconds")) {
+      clone.done = Array.from({length: clone.sets}, ()=>null);
+    } else {
+      delete clone.done;
+    }
+    return clone;
+  });
   state.workouts[dst] = (state.workouts[dst]||[]).concat(items);
   save();
   alert("Día copiado.");
