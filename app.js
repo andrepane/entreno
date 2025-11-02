@@ -1,3 +1,31 @@
+const getCrypto = () =>
+  (typeof globalThis !== "undefined" && globalThis.crypto) ||
+  (typeof self !== "undefined" && self.crypto) ||
+  (typeof window !== "undefined" && window.crypto) ||
+  undefined;
+
+const randomUUID = (() => {
+  const cryptoObj = getCrypto();
+  if (cryptoObj && typeof cryptoObj.randomUUID === "function") {
+    return () => cryptoObj.randomUUID();
+  }
+  if (cryptoObj && typeof cryptoObj.getRandomValues === "function") {
+    return () => {
+      const bytes = cryptoObj.getRandomValues(new Uint8Array(16));
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    };
+  }
+  return () =>
+    "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+})();
+
 /* ========= Utilidades de fecha ========= */
 const fmt = (d) => {
   const year = d.getFullYear();
@@ -193,7 +221,7 @@ addForm.addEventListener("submit", (e)=>{
   const normalizedDay = fmt(fromISO(day));
 
   const ex = {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     name: (formName.value || "").trim(),
     sets: Math.max(1, Number(formSets.value||1)),
     goal: null,          // "reps" | "seconds" | "emom"
@@ -785,7 +813,7 @@ copyDayBtn.addEventListener("click", ()=>{
     .filter(isPlainObject)
     .map(x=> ({
     ...x,
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     done: x.failure ? Array.from({length: x.sets}, ()=>null) : []
   }));
   const targetList = Array.isArray(state.workouts?.[dst]) ? state.workouts[dst] : [];
