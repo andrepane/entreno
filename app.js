@@ -25,6 +25,43 @@ let state = {
   workouts: {} // { "YYYY-MM-DD": [exercise, ...] }
 };
 
+const isPlainObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+
+function normalizeWorkouts(rawWorkouts) {
+  if (!isPlainObject(rawWorkouts)) return {};
+
+  const normalized = {};
+  for (const [day, value] of Object.entries(rawWorkouts)) {
+    const dayISO = fmt(fromISO(day));
+    let items = [];
+
+    if (Array.isArray(value)) {
+      items = value;
+    } else if (isPlainObject(value)) {
+      items = Object.values(value);
+    }
+
+    const clean = items
+      .filter(isPlainObject)
+      .map((exercise) => ({
+        ...exercise,
+        done: Array.isArray(exercise.done) ? exercise.done : []
+      }));
+
+    if (!normalized[dayISO]) {
+      normalized[dayISO] = [];
+    }
+
+    if (clean.length) {
+      normalized[dayISO].push(...clean);
+    } else if (Array.isArray(value) && value.length === 0 && !normalized[dayISO].length) {
+      normalized[dayISO] = [];
+    }
+  }
+
+  return normalized;
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -98,12 +135,22 @@ const analyticsExerciseTable = document.getElementById("analyticsExerciseTable")
 
 /* ========= Inicialización ========= */
 load();
+const originalWorkoutsJSON = JSON.stringify(state.workouts || {});
+const normalizedWorkouts = normalizeWorkouts(state.workouts);
+const normalizedWorkoutsJSON = JSON.stringify(normalizedWorkouts);
+state.workouts = normalizedWorkouts;
+
 const initialDate = fromISO(state.selectedDate);
-state.selectedDate = fmt(initialDate);
+const normalizedSelectedDate = fmt(initialDate);
+const selectedDateChanged = state.selectedDate !== normalizedSelectedDate;
+state.selectedDate = normalizedSelectedDate;
 mcRefDate = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
 selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
 renderAll();
+if (originalWorkoutsJSON !== normalizedWorkoutsJSON || selectedDateChanged) {
+  save();
+}
 
 tabs.forEach(btn=>{
   btn.addEventListener("click", ()=>{
@@ -209,7 +256,8 @@ function renderAll(){
 }
 
 function renderDay(dayISO){
-  const list = state.workouts[dayISO] || [];
+  const source = Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO] : [];
+  const list = source.filter(isPlainObject);
   humanDateSpan.textContent = toHuman(dayISO);
   exerciseList.innerHTML = "";
   emptyDayHint.style.display = list.length ? "none" : "block";
@@ -237,7 +285,8 @@ function renderDay(dayISO){
 
     let setsBox = null;
     if (ex.failure) {
-      const doneValues = Array.from({length: ex.sets}, (_,i)=> ex.done?.[i] ?? null);
+      const doneArray = Array.isArray(ex.done) ? ex.done : [];
+      const doneValues = Array.from({length: ex.sets}, (_,i)=> doneArray[i] ?? null);
       setsBox = document.createElement("div");
       setsBox.className = "sets-grid";
       for (let i=0;i<ex.sets;i++){
@@ -251,8 +300,9 @@ function renderDay(dayISO){
         input.value = doneValues[i] ?? "";
         input.addEventListener("change", ()=>{
           const v = input.value? Number(input.value) : null;
-          ex.done = ex.done || [];
-          ex.done[i] = v;
+          const doneList = Array.isArray(ex.done) ? ex.done : [];
+          doneList[i] = v;
+          ex.done = doneList;
           save();
           renderAnalytics();
         });
@@ -298,7 +348,10 @@ function renderAnalytics(){
   if (!analyticsSummary) return;
   const entries = Object.entries(state.workouts || {});
   const daysWithExercises = entries
-    .map(([day, exercises]) => ({day, exercises: Array.isArray(exercises) ? exercises : []}))
+    .map(([day, exercises]) => ({
+      day,
+      exercises: Array.isArray(exercises) ? exercises.filter(isPlainObject) : []
+    }))
     .filter((item) => item.exercises.length);
 
   if (!daysWithExercises.length){
@@ -455,14 +508,15 @@ function renderAnalytics(){
 
 function actualWork(ex){
   const sets = Math.max(1, Number(ex.sets||0));
+  const doneArray = Array.isArray(ex.done) ? ex.done : [];
   if (ex.goal === "reps"){
-    const done = (ex.done||[]).filter((v)=> Number.isFinite(v));
+    const done = doneArray.filter((v)=> Number.isFinite(v));
     const base = Number(ex.reps)||0;
     const total = done.length ? sum(done) : sets * base;
     return {reps: total, seconds: 0};
   }
   if (ex.goal === "seconds"){
-    const done = (ex.done||[]).filter((v)=> Number.isFinite(v));
+    const done = doneArray.filter((v)=> Number.isFinite(v));
     const base = Number(ex.seconds)||0;
     const total = done.length ? sum(done) : sets * base;
     return {reps: 0, seconds: total};
@@ -651,8 +705,9 @@ function buildEditForm(ex){
 
     // Ajustar tamaño del array done
     if (ex.failure){
-      ex.done = (ex.done||[]).slice(0, ex.sets);
-      while (ex.done.length < ex.sets) ex.done.push(null);
+      const existingDone = Array.isArray(ex.done) ? ex.done.slice(0, ex.sets) : [];
+      while (existingDone.length < ex.sets) existingDone.push(null);
+      ex.done = existingDone;
     } else {
       ex.done = [];
     }
@@ -702,7 +757,7 @@ function radioRow(text, name, checked=false){
 }
 
 function removeExercise(dayISO, id){
-  const list = state.workouts[dayISO] || [];
+  const list = Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO] : [];
   const idx = list.findIndex(x=>x.id===id);
   if (idx>=0){
     list.splice(idx,1);
@@ -726,12 +781,15 @@ copyDayBtn.addEventListener("click", ()=>{
   const src = state.selectedDate;
   const dst = copyTargetDate.value;
   if (!dst){ alert("Selecciona una fecha destino."); return; }
-  const items = (state.workouts[src]||[]).map(x=> ({
+  const items = (Array.isArray(state.workouts?.[src]) ? state.workouts[src] : [])
+    .filter(isPlainObject)
+    .map(x=> ({
     ...x,
     id: crypto.randomUUID(),
     done: x.failure ? Array.from({length: x.sets}, ()=>null) : []
   }));
-  state.workouts[dst] = (state.workouts[dst]||[]).concat(items);
+  const targetList = Array.isArray(state.workouts?.[dst]) ? state.workouts[dst] : [];
+  state.workouts[dst] = targetList.concat(items);
   save();
   alert("Día copiado.");
   copyDayBox.classList.add("hidden");
@@ -796,7 +854,8 @@ function renderMiniCalendar(){
 
     if (dayISO === fmt(new Date())) btn.classList.add("today");
     if (dayISO === state.selectedDate) btn.classList.add("selected");
-    if ((state.workouts[dayISO]||[]).length) btn.classList.add("has");
+    const hasExercises = Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO].length > 0 : false;
+    if (hasExercises) btn.classList.add("has");
 
     btn.addEventListener("click", ()=>{
       state.selectedDate = dayISO;
