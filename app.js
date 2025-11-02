@@ -247,22 +247,36 @@ function renderDay(dayISO){
       }
     }
 
-    const editBox = document.createElement("div");
-    editBox.className = "edit-box hidden";
+    
+editBtn.addEventListener("click", () => {
+  // Si ya existe un editBox visible, lo ocultamos
+  const existing = li.querySelector(".edit-box");
+  if (existing && !existing.classList.contains("hidden")) {
+    existing.classList.add("hidden");
+    return;
+  }
+
+  // Si no existe, lo creamos dinámicamente
+  let editBox = li.querySelector(".edit-box");
+  if (!editBox) {
+    editBox = document.createElement("div");
+    editBox.className = "edit-box";
     editBox.appendChild(buildEditForm(ex));
-
-    editBtn.addEventListener("click", ()=>{
-      editBox.classList.toggle("hidden");
-    });
-    delBtn.addEventListener("click", ()=>{
-      if (!confirm("¿Eliminar este ejercicio?")) return;
-      removeExercise(dayISO, ex.id);
-    });
-
-    li.append(title, meta);
-    if (setsBox) li.append(setsBox);
     li.append(editBox);
-    exerciseList.append(li);
+  }
+
+  editBox.classList.toggle("hidden");
+});
+
+delBtn.addEventListener("click", () => {
+  if (!confirm("¿Eliminar este ejercicio?")) return;
+  removeExercise(dayISO, ex.id);
+});
+
+li.append(title, meta);
+if (setsBox) li.append(setsBox);
+exerciseList.append(li);
+
   });
 }
 
