@@ -48,7 +48,8 @@ const emptyDayHint = document.getElementById("emptyDayHint");
 const tabs = document.querySelectorAll(".tab");
 const tabPanels = {
   hoy: document.getElementById("tab-hoy"),
-  nuevo: document.getElementById("tab-nuevo")
+  nuevo: document.getElementById("tab-nuevo"),
+  seguimiento: document.getElementById("tab-seguimiento")
 };
 
 const prevDayBtn = document.getElementById("prevDayBtn");
@@ -88,6 +89,13 @@ const mcGrid = document.getElementById("mcGrid");
 let mcRefDate = new Date(); // referencia del mes mostrado
 const DOW = ["L","M","X","J","V","S","D"];
 
+/* Seguimiento */
+const analyticsEmpty = document.getElementById("analyticsEmpty");
+const analyticsContent = document.getElementById("analyticsContent");
+const analyticsSummary = document.getElementById("analyticsSummary");
+const analyticsCharts = document.getElementById("analyticsCharts");
+const analyticsExerciseTable = document.getElementById("analyticsExerciseTable");
+
 /* ========= Inicialización ========= */
 load();
 const initialDate = fromISO(state.selectedDate);
@@ -100,7 +108,9 @@ renderAll();
 tabs.forEach(btn=>{
   btn.addEventListener("click", ()=>{
     document.querySelector(".tab.active")?.classList.remove("active");
+    document.querySelector('.tab[aria-selected="true"]')?.setAttribute("aria-selected", "false");
     btn.classList.add("active");
+    btn.setAttribute("aria-selected", "true");
     const tab = btn.dataset.tab;
     for (const key in tabPanels) {
       tabPanels[key].classList.toggle("hidden", key !== tab);
@@ -186,13 +196,16 @@ addForm.addEventListener("submit", (e)=>{
   formDate.value = state.selectedDate;
   const selected = fromISO(state.selectedDate);
   mcRefDate = new Date(selected.getFullYear(), selected.getMonth(), 1);
-  save(); renderMiniCalendar();
+  save();
+  renderMiniCalendar();
+  renderAnalytics();
 });
 
 /* ========= Render ========= */
 function renderAll(){
   renderDay(state.selectedDate);
   renderMiniCalendar();
+  renderAnalytics();
 }
 
 function renderDay(dayISO){
@@ -241,6 +254,7 @@ function renderDay(dayISO){
           ex.done = ex.done || [];
           ex.done[i] = v;
           save();
+          renderAnalytics();
         });
         wrap.append(span, input);
         setsBox.append(wrap);
@@ -278,6 +292,250 @@ if (setsBox) li.append(setsBox);
 exerciseList.append(li);
 
   });
+}
+
+function renderAnalytics(){
+  if (!analyticsSummary) return;
+  const entries = Object.entries(state.workouts || {});
+  const daysWithExercises = entries
+    .map(([day, exercises]) => ({day, exercises: Array.isArray(exercises) ? exercises : []}))
+    .filter((item) => item.exercises.length);
+
+  if (!daysWithExercises.length){
+    analyticsEmpty?.classList.remove("hidden");
+    analyticsContent?.classList.add("hidden");
+    return;
+  }
+
+  analyticsEmpty?.classList.add("hidden");
+  analyticsContent?.classList.remove("hidden");
+
+  daysWithExercises.sort((a,b)=> a.day.localeCompare(b.day));
+
+  const totals = {
+    days: daysWithExercises.length,
+    exercises: 0,
+    sets: 0,
+    reps: 0,
+    seconds: 0,
+    weightVolume: 0
+  };
+
+  const dailyStats = [];
+  const perExercise = new Map();
+
+  daysWithExercises.forEach(({day, exercises})=>{
+    const dayStats = {date: day, sets:0, reps:0, seconds:0, weightVolume:0};
+    totals.exercises += exercises.length;
+
+    exercises.forEach((ex)=>{
+      const sets = Math.max(1, Number(ex.sets||0));
+      totals.sets += sets;
+      dayStats.sets += sets;
+
+      const actual = actualWork(ex);
+      if (actual.reps){
+        totals.reps += actual.reps;
+        dayStats.reps += actual.reps;
+      }
+      if (actual.seconds){
+        totals.seconds += actual.seconds;
+        dayStats.seconds += actual.seconds;
+      }
+
+      const weightContribution = Number.isFinite(ex.weightKg)
+        ? (actual.reps || actual.seconds) * Number(ex.weightKg)
+        : 0;
+      if (weightContribution){
+        totals.weightVolume += weightContribution;
+        dayStats.weightVolume += weightContribution;
+      }
+
+      const name = ex.name || "Ejercicio";
+      const info = perExercise.get(name) || {
+        name,
+        sessions: 0,
+        totalSets: 0,
+        totalReps: 0,
+        totalSeconds: 0,
+        bestWeight: null,
+        lastDate: null
+      };
+
+      info.sessions += 1;
+      info.totalSets += sets;
+      info.totalReps += actual.reps;
+      info.totalSeconds += actual.seconds;
+      if (Number.isFinite(ex.weightKg)){
+        info.bestWeight = info.bestWeight!=null ? Math.max(info.bestWeight, Number(ex.weightKg)) : Number(ex.weightKg);
+      }
+      if (!info.lastDate || day > info.lastDate){
+        info.lastDate = day;
+      }
+      perExercise.set(name, info);
+    });
+
+    dailyStats.push(dayStats);
+  });
+
+  const summaryItems = [
+    {label:"Días registrados", value: totals.days},
+    {label:"Ejercicios guardados", value: totals.exercises},
+    {label:"Series totales", value: totals.sets},
+    {label:"Promedio series/día", value: totals.days ? totals.sets / totals.days : 0, decimals:1},
+    {label:"Reps totales", value: totals.reps},
+    {label:"Segundos totales", value: totals.seconds, formatter: formatDuration},
+    {label:"Volumen con lastre", value: totals.weightVolume, suffix:"kg·reps"}
+  ];
+
+  analyticsSummary.innerHTML = summaryItems
+    .map((item)=>{
+      const display = item.formatter
+        ? item.formatter(item.value)
+        : formatNumber(item.value, item.decimals || 0);
+      const suffix = item.suffix ? `<div class="stat-sub">${item.suffix}</div>` : "";
+      return `<article class="stat-card"><span>${item.label}</span><div class="stat-value">${display}</div>${suffix}</article>`;
+    })
+    .join("");
+
+  const metrics = [
+    {key:"sets", label:"Series por día"},
+    {key:"reps", label:"Reps por día"},
+    {key:"seconds", label:"Segundos por día", formatter: formatDuration}
+  ];
+  if (totals.weightVolume > 0){
+    metrics.push({key:"weightVolume", label:"Volumen con lastre", suffix:"kg·reps"});
+  }
+
+  const recentStats = dailyStats.slice(-14);
+  analyticsCharts.innerHTML = metrics.map((metric)=>{
+    if (!recentStats.length){
+      return `<div class="chart-item"><h4>${metric.label}</h4><div class="chart-placeholder">Sin datos</div></div>`;
+    }
+    const values = recentStats.map((s)=>({date:s.date, value: s[metric.key] || 0}));
+    const chart = sparkline(values);
+    const last = values[values.length-1];
+    const max = values.reduce((acc, curr)=> curr.value > acc.value ? curr : acc, values[0]);
+    const lastLabel = metric.formatter ? metric.formatter(last.value) : formatNumber(last.value, metric.decimals || 0);
+    const maxLabel = metric.formatter ? metric.formatter(max.value) : formatNumber(max.value, metric.decimals || 0);
+    const rangeLabel = values.length > 1
+      ? `${formatShortDate(values[0].date)} → ${formatShortDate(values[values.length-1].date)}`
+      : formatShortDate(values[0].date);
+    const suffix = metric.suffix ? ` ${metric.suffix}` : "";
+    return `<div class="chart-item"><h4>${metric.label}</h4>${chart}<div class="chart-meta"><span>Último: ${lastLabel}${suffix}</span><span>Máx: ${maxLabel}${suffix}</span></div><div class="chart-meta"><span>${rangeLabel}</span><span>${values.length} día(s)</span></div></div>`;
+  }).join("");
+
+  const exerciseRows = Array.from(perExercise.values())
+    .sort((a,b)=>{
+      if (a.lastDate !== b.lastDate){
+        return (b.lastDate||"").localeCompare(a.lastDate||"");
+      }
+      if (a.sessions !== b.sessions){
+        return b.sessions - a.sessions;
+      }
+      return a.name.localeCompare(b.name);
+    })
+    .map((info)=>{
+      const bestWeight = info.bestWeight!=null ? `${formatNumber(info.bestWeight, info.bestWeight % 1 ? 1 : 0)} kg` : "—";
+      const lastDate = info.lastDate ? formatFullDate(info.lastDate) : "—";
+      return `<tr>
+        <td>${info.name}</td>
+        <td data-align="right">${formatNumber(info.sessions)}</td>
+        <td data-align="right">${formatNumber(info.totalSets)}</td>
+        <td data-align="right">${formatNumber(info.totalReps)}</td>
+        <td data-align="right">${info.totalSeconds ? formatDuration(info.totalSeconds) : "0 s"}</td>
+        <td data-align="right">${bestWeight}</td>
+        <td>${lastDate}</td>
+      </tr>`;
+    })
+    .join("");
+
+  analyticsExerciseTable.innerHTML = exerciseRows;
+}
+
+function actualWork(ex){
+  const sets = Math.max(1, Number(ex.sets||0));
+  if (ex.goal === "reps"){
+    const done = (ex.done||[]).filter((v)=> Number.isFinite(v));
+    const base = Number(ex.reps)||0;
+    const total = done.length ? sum(done) : sets * base;
+    return {reps: total, seconds: 0};
+  }
+  if (ex.goal === "seconds"){
+    const done = (ex.done||[]).filter((v)=> Number.isFinite(v));
+    const base = Number(ex.seconds)||0;
+    const total = done.length ? sum(done) : sets * base;
+    return {reps: 0, seconds: total};
+  }
+  if (ex.goal === "emom"){
+    const minutes = Number(ex.emomMinutes)||0;
+    const reps = Number(ex.emomReps)||0;
+    return {reps: minutes * reps, seconds: 0};
+  }
+  return {reps:0, seconds:0};
+}
+
+function sum(values){
+  return values.reduce((acc, val)=> acc + (Number.isFinite(val) ? Number(val) : 0), 0);
+}
+
+function formatNumber(value, decimals=0){
+  const options = {minimumFractionDigits: decimals, maximumFractionDigits: decimals};
+  const safeValue = Number.isFinite(value) ? value : 0;
+  return new Intl.NumberFormat("es-ES", options).format(safeValue);
+}
+
+function formatDuration(totalSeconds){
+  const seconds = Math.max(0, Math.round(Number(totalSeconds)||0));
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (minutes && secs){
+    return `${minutes} min ${secs} s`;
+  }
+  if (minutes){
+    return `${minutes} min`;
+  }
+  return `${secs} s`;
+}
+
+function formatShortDate(iso){
+  const d = fromISO(iso);
+  return d.toLocaleDateString("es-ES", {day:"2-digit", month:"short"});
+}
+
+function formatFullDate(iso){
+  const d = fromISO(iso);
+  return d.toLocaleDateString("es-ES", {day:"2-digit", month:"short", year:"numeric"});
+}
+
+function sparkline(points){
+  if (!points.length){
+    return `<div class="chart-placeholder">Sin datos</div>`;
+  }
+  const width = 200;
+  const height = 70;
+  const values = points.map((p)=> Number(p.value)||0);
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const range = max - min;
+  const step = points.length > 1 ? width / (points.length - 1) : 0;
+
+  const coords = points.map((p, idx)=>{
+    const value = Number(p.value)||0;
+    const ratio = range === 0 ? 0.5 : (value - min) / range;
+    const x = points.length === 1 ? width / 2 : idx * step;
+    const y = height - ratio * height;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  });
+
+  const polygonPoints = [`0,${height}`].concat(coords).concat([`${width},${height}`]).join(" ");
+  const lastPair = coords[coords.length-1].split(",").map(Number);
+
+  return `<div class="sparkline"><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-hidden="true">
+    <polygon class="bg" points="${polygonPoints}"></polygon>
+    <polyline class="line" points="${coords.join(" ")}"></polyline>
+    <circle class="point" cx="${lastPair[0]}" cy="${lastPair[1]}" r="3"></circle>
+  </svg></div>`;
 }
 
 function metaText(ex){
@@ -401,7 +659,9 @@ function buildEditForm(ex){
 
     const editWrapper = box.parentElement;
     editWrapper?.classList.add("hidden");
-    save(); renderDay(state.selectedDate);
+    save();
+    renderDay(state.selectedDate);
+    renderAnalytics();
   });
   cancelBtn.addEventListener("click", ()=>{
     box.parentElement?.classList.add("hidden");
@@ -447,7 +707,10 @@ function removeExercise(dayISO, id){
   if (idx>=0){
     list.splice(idx,1);
     state.workouts[dayISO] = list;
-    save(); renderDay(dayISO); renderMiniCalendar();
+    save();
+    renderDay(dayISO);
+    renderMiniCalendar();
+    renderAnalytics();
   }
 }
 
@@ -473,6 +736,7 @@ copyDayBtn.addEventListener("click", ()=>{
   alert("Día copiado.");
   copyDayBox.classList.add("hidden");
   renderMiniCalendar();
+  renderAnalytics();
 });
 
 /* ========= Cambiar de día (prev/next) ========= */
@@ -491,6 +755,9 @@ function shiftSelectedDay(delta){
 function switchToTab(name){
   document.querySelector(".tab.active")?.classList.remove("active");
   document.querySelector(`.tab[data-tab="${name}"]`)?.classList.add("active");
+  document.querySelectorAll(".tab").forEach((tab)=>{
+    tab.setAttribute("aria-selected", tab.dataset.tab === name ? "true" : "false");
+  });
   for (const key in tabPanels) {
     tabPanels[key].classList.toggle("hidden", key !== name);
   }

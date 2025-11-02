@@ -28,6 +28,7 @@
     <nav class="tabs" role="tablist" aria-label="Secciones">
       <button class="tab active" data-tab="hoy" role="tab" aria-selected="true">Hoy</button>
       <button class="tab" data-tab="nuevo" role="tab" aria-selected="false">Añadir</button>
+      <button class="tab" data-tab="seguimiento" role="tab" aria-selected="false">Seguimiento</button>
     </nav>
   </header>
 
@@ -134,6 +135,45 @@
           <button type="reset" class="ghost">Limpiar</button>
         </div>
       </form>
+    </section>
+
+    <!-- Sección SEGUIMIENTO -->
+    <section id="tab-seguimiento" class="tab-panel hidden" role="tabpanel">
+      <h2>Seguimiento</h2>
+      <p class="muted">Resumen automático de tu progreso usando los datos de tus entrenamientos.</p>
+
+      <div id="analyticsEmpty" class="empty-hint">
+        Aún no hay datos suficientes. Registra algunos entrenos para ver tus estadísticas.
+      </div>
+
+      <div id="analyticsContent" class="analytics hidden">
+        <div id="analyticsSummary" class="stats-grid"></div>
+
+        <section class="card">
+          <h3 class="card-title">Tendencias recientes</h3>
+          <div id="analyticsCharts" class="chart-grid"></div>
+        </section>
+
+        <section class="card">
+          <h3 class="card-title">Detalle por ejercicio</h3>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Ejercicio</th>
+                  <th>Sesiones</th>
+                  <th>Series totales</th>
+                  <th>Reps totales</th>
+                  <th>Segundos totales</th>
+                  <th>Mejor lastre</th>
+                  <th>Última sesión</th>
+                </tr>
+              </thead>
+              <tbody id="analyticsExerciseTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </section>
   </main>
 

@@ -26,6 +26,8 @@ body{
   padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
+.muted{color:var(--muted);}
+
 .app-header,
 main,
 .app-footer{
@@ -67,6 +69,45 @@ main,
 
 main{flex:1 1 auto; padding:clamp(14px, 5vw, 28px)}
 .tab-panel.hidden{display:none}
+
+.analytics{display:flex; flex-direction:column; gap:20px;}
+.stats-grid{display:grid; gap:var(--gap); grid-template-columns:repeat(auto-fit, minmax(160px,1fr));}
+.stat-card{
+  background:var(--panel);
+  border:1px solid #252c3a;
+  border-radius:var(--radius);
+  padding:16px;
+  box-shadow:var(--shadow);
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.stat-card span{font-size:.8rem; color:var(--muted); text-transform:uppercase; letter-spacing:.8px;}
+.stat-value{font-size:1.4rem; font-weight:700;}
+.stat-sub{font-size:.8rem; color:var(--muted);}
+
+.card-title{margin-top:0; margin-bottom:12px; font-size:1.05rem;}
+
+.chart-grid{display:grid; gap:var(--gap); grid-template-columns:repeat(auto-fit,minmax(200px,1fr));}
+.chart-item{display:flex; flex-direction:column; gap:8px; background:#0f131a; border:1px solid #252c3a; border-radius:var(--radius); padding:14px;}
+.chart-item h4{margin:0; font-size:1rem;}
+.chart-meta{font-size:.8rem; color:var(--muted); display:flex; justify-content:space-between;}
+.sparkline{width:100%; height:80px;}
+.sparkline svg{width:100%; height:100%;}
+.sparkline .bg{fill:rgba(72,208,109,0.12);}
+.sparkline .line{fill:none; stroke:var(--accent); stroke-width:2;}
+.sparkline .point{fill:var(--accent); stroke:#0f131a; stroke-width:2;}
+.chart-placeholder{font-size:.85rem; color:var(--muted); padding:12px 0; text-align:center;}
+
+.table-scroll{overflow:auto; max-width:100%;}
+.data-table{width:100%; border-collapse:collapse; font-size:.9rem;}
+.data-table thead{background:#0f131a;}
+.data-table th,.data-table td{padding:10px 12px; text-align:left; border-bottom:1px solid #1f2532; white-space:nowrap;}
+.data-table tbody tr:nth-child(odd){background:rgba(15,19,26,0.6);}
+.data-table td[data-align="right"]{text-align:right;}
+.badge{display:inline-flex; align-items:center; gap:4px; background:#0b0f16; padding:2px 8px; border-radius:10px; border:1px solid #1e2633;}
+
+.hidden{display:none !important;}
 
 .card{
   background:var(--panel); border:1px solid #252c3a; border-radius:var(--radius);
