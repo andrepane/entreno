@@ -73,7 +73,8 @@ function normalizeWorkouts(rawWorkouts) {
       .filter(isPlainObject)
       .map((exercise) => ({
         ...exercise,
-        done: Array.isArray(exercise.done) ? exercise.done : []
+        done: Array.isArray(exercise.done) ? exercise.done : [],
+        completed: !!exercise.completed
       }));
 
     if (!normalized[dayISO]) {
@@ -231,7 +232,8 @@ addForm.addEventListener("submit", (e)=>{
     emomMinutes: null,   // si goal="emom"
     emomReps: null,      // si goal="emom"
     weightKg: formWeight.value ? Number(formWeight.value) : null,
-    done: []             // array con reps logradas por serie (o segundos)
+    done: [],            // array con reps logradas por serie (o segundos)
+    completed: false
   };
 
   if (!ex.name) { alert("Pon un nombre al ejercicio."); return; }
@@ -293,6 +295,7 @@ function renderDay(dayISO){
   list.forEach(ex=>{
     const li = document.createElement("li");
     li.className = "exercise";
+    if (ex.completed) li.classList.add("completed");
     li.dataset.id = ex.id;
 
     const title = document.createElement("div");
@@ -302,9 +305,20 @@ function renderDay(dayISO){
     h3.style.margin = "0";
     const controls = document.createElement("div");
     controls.className = "controls";
+    const doneBtn = button(
+      ex.completed ? "Marcar como pendiente" : "Marcar como hecho",
+      ex.completed ? "small ghost" : "small success"
+    );
     const editBtn = button("Editar", "small ghost");
     const delBtn = button("Eliminar", "small danger");
-    controls.append(editBtn, delBtn);
+    doneBtn.addEventListener("click", ()=>{
+      ex.completed = !ex.completed;
+      save();
+      renderDay(dayISO);
+      renderMiniCalendar();
+      renderAnalytics();
+    });
+    controls.append(doneBtn, editBtn, delBtn);
     title.append(h3, controls);
 
     const meta = document.createElement("div");
@@ -623,6 +637,8 @@ function sparkline(points){
 function metaText(ex){
   const parts = [`<span><strong>Series:</strong> ${ex.sets}</span>`];
 
+  parts.push(`<span><strong>Estado:</strong> ${ex.completed ? "Completado" : "Pendiente"}</span>`);
+
   if (ex.goal==="reps") {
     const repsLabel = ex.reps && ex.reps > 0 ? ex.reps : "—";
     parts.push(`<span><strong>Repeticiones:</strong> ${repsLabel}</span>`);
@@ -814,7 +830,8 @@ copyDayBtn.addEventListener("click", ()=>{
     .map(x=> ({
     ...x,
     id: randomUUID(),
-    done: x.failure ? Array.from({length: x.sets}, ()=>null) : []
+    done: x.failure ? Array.from({length: x.sets}, ()=>null) : [],
+    completed: false
   }));
   const targetList = Array.isArray(state.workouts?.[dst]) ? state.workouts[dst] : [];
   state.workouts[dst] = targetList.concat(items);
