@@ -4,37 +4,37 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#1f2933" />
-  <meta name="application-name" content="Entrenos" />
+  <meta name="application-name" content="CaliGym" />
   <meta name="description" content="Calendario de entrenamientos con guardado local y modo offline." />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="Entrenos" />
+  <meta name="apple-mobile-web-app-title" content="CaliGym" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png" />
-  <title>Calendario de Entrenos</title>
+  <title>CaliGym</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="app-header">
-    <h1>Entrenos</h1>
+    <h1>CaliGym</h1>
     <div class="day-controls">
       <button id="prevDayBtn" aria-label="Día anterior">◀</button>
       <input type="date" id="selectedDate" />
       <button id="nextDayBtn" aria-label="Día siguiente">▶</button>
     </div>
     <nav class="tabs" role="tablist" aria-label="Secciones">
-      <button class="tab active" data-tab="hoy" role="tab" aria-selected="true">Hoy</button>
+      <button class="tab active" data-tab="entreno" role="tab" aria-selected="true">Entreno</button>
       <button class="tab" data-tab="nuevo" role="tab" aria-selected="false">Añadir</button>
       <button class="tab" data-tab="seguimiento" role="tab" aria-selected="false">Seguimiento</button>
     </nav>
   </header>
 
   <main>
-    <!-- Sección HOY -->
-    <section id="tab-hoy" class="tab-panel" role="tabpanel">
+    <!-- Sección ENTRENO -->
+    <section id="tab-entreno" class="tab-panel" role="tabpanel">
       <div class="day-summary">
         <h2 id="dayTitle">Ejercicios de <span data-bind="humanDate"></span></h2>
         <div class="copy-day">
