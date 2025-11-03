@@ -74,7 +74,8 @@ function normalizeWorkouts(rawWorkouts) {
       .map((exercise) => ({
         ...exercise,
         done: Array.isArray(exercise.done) ? exercise.done : [],
-        completed: !!exercise.completed
+        completed: !!exercise.completed,
+        note: typeof exercise.note === "string" ? exercise.note : ""
       }));
 
     if (!normalized[dayISO]) {
@@ -235,7 +236,8 @@ addForm.addEventListener("submit", (e)=>{
     emomReps: null,      // si goal="emom"
     weightKg: formWeight.value ? Number(formWeight.value) : null,
     done: [],            // array con reps logradas por serie (o segundos)
-    completed: false
+    completed: false,
+    note: ""
   };
 
   if (!ex.name) { alert("Pon un nombre al ejercicio."); return; }
@@ -316,6 +318,15 @@ function renderDay(dayISO){
     h3.style.margin = "0";
     const controls = document.createElement("div");
     controls.className = "controls";
+    const noteBtn = button("📝", "small ghost note-toggle");
+    const updateNoteState = () => {
+      const hasNote = !!(ex.note && ex.note.trim());
+      noteBtn.classList.toggle("has-note", hasNote);
+      const label = hasNote ? "Editar nota del ejercicio" : "Añadir nota al ejercicio";
+      noteBtn.setAttribute("aria-label", label);
+      noteBtn.title = hasNote ? "Editar nota" : "Añadir nota";
+    };
+    updateNoteState();
     const doneBtn = button(
       ex.completed ? "Marcar como pendiente" : "Marcar como hecho",
       ex.completed ? "small ghost" : "small success"
@@ -329,7 +340,7 @@ function renderDay(dayISO){
       renderMiniCalendar();
       renderAnalytics();
     });
-    controls.append(doneBtn, editBtn, delBtn);
+    controls.append(noteBtn, doneBtn, editBtn, delBtn);
     titleMain.append(dragBtn, h3);
     title.append(titleMain, controls);
 
@@ -338,6 +349,63 @@ function renderDay(dayISO){
     meta.innerHTML = metaText(ex);
 
     let setsBox = null;
+    const noteBox = document.createElement("div");
+    noteBox.className = "note-box hidden";
+    const noteField = document.createElement("div");
+    noteField.className = "field";
+    const noteLabel = document.createElement("span");
+    noteLabel.textContent = "Nota";
+    const noteTextarea = document.createElement("textarea");
+    noteTextarea.rows = 3;
+    noteTextarea.placeholder = "Escribe una nota personal";
+    noteTextarea.value = ex.note || "";
+
+    let noteTimer = null;
+    const persistNote = () => {
+      ex.note = noteTextarea.value;
+      updateNoteState();
+      save();
+    };
+    noteTextarea.addEventListener("input", () => {
+      ex.note = noteTextarea.value;
+      updateNoteState();
+      if (noteTimer) clearTimeout(noteTimer);
+      noteTimer = setTimeout(() => {
+        save();
+        noteTimer = null;
+      }, 300);
+    });
+    noteTextarea.addEventListener("blur", () => {
+      if (noteTimer) {
+        clearTimeout(noteTimer);
+        noteTimer = null;
+      }
+      persistNote();
+    });
+
+    noteField.append(noteLabel, noteTextarea);
+    const noteActions = document.createElement("div");
+    noteActions.className = "note-actions";
+    const noteCloseBtn = button("Cerrar", "ghost small");
+    noteCloseBtn.addEventListener("click", () => {
+      noteBox.classList.add("hidden");
+      noteTextarea.blur();
+    });
+    noteActions.append(noteCloseBtn);
+    noteBox.append(noteField, noteActions);
+
+    noteBtn.addEventListener("click", () => {
+      const isHidden = noteBox.classList.contains("hidden");
+      if (isHidden) {
+        noteBox.classList.remove("hidden");
+        requestAnimationFrame(() => {
+          noteTextarea.focus();
+          noteTextarea.setSelectionRange(noteTextarea.value.length, noteTextarea.value.length);
+        });
+      } else {
+        noteBox.classList.add("hidden");
+      }
+    });
     if (ex.failure) {
       const doneArray = Array.isArray(ex.done) ? ex.done : [];
       const doneValues = Array.from({length: ex.sets}, (_,i)=> doneArray[i] ?? null);
@@ -391,7 +459,7 @@ function renderDay(dayISO){
       removeExercise(dayISO, ex.id);
     });
 
-    li.append(title, meta);
+    li.append(title, meta, noteBox);
     if (setsBox) li.append(setsBox);
     exerciseList.append(li);
     setupExerciseDrag(li, dayISO);
