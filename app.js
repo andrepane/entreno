@@ -48,12 +48,24 @@ const toHuman = (iso) => {
 
 /* ========= Estado & almacenamiento ========= */
 const STORAGE_KEY = "workouts.v1";
+const CATEGORY_KEYS = ["calistenia", "musculacion", "cardio", "skill"];
+const CATEGORY_LABELS = {
+  calistenia: "Calistenia",
+  musculacion: "Musculación",
+  cardio: "Cardio",
+  skill: "Skill"
+};
 let state = {
   selectedDate: fmt(new Date()),
   workouts: {} // { "YYYY-MM-DD": [exercise, ...] }
 };
 
 const isPlainObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+
+function normalizeCategory(value){
+  const key = (value || "").toString().toLowerCase();
+  return CATEGORY_KEYS.includes(key) ? key : CATEGORY_KEYS[0];
+}
 
 function normalizeWorkouts(rawWorkouts) {
   if (!isPlainObject(rawWorkouts)) return {};
@@ -75,6 +87,7 @@ function normalizeWorkouts(rawWorkouts) {
         const cardioMinutesRaw = Number(exercise.cardioMinutes);
         return {
           ...exercise,
+          category: normalizeCategory(exercise.category),
           done: Array.isArray(exercise.done) ? exercise.done : [],
           completed: !!exercise.completed,
           note: typeof exercise.note === "string" ? exercise.note : "",
@@ -132,6 +145,7 @@ const nextDayBtn = document.getElementById("nextDayBtn");
 const addForm = document.getElementById("addForm");
 const formDate = document.getElementById("formDate");
 const formName = document.getElementById("formName");
+const formCategory = document.getElementById("formCategory");
 const formSets = document.getElementById("formSets");
 const goalReps = document.getElementById("goalReps");
 const goalSecs = document.getElementById("goalSecs");
@@ -186,6 +200,7 @@ state.selectedDate = normalizedSelectedDate;
 mcRefDate = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
 selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
+formCategory.value = normalizeCategory(formCategory.value);
 renderAll();
 if (originalWorkoutsJSON !== normalizedWorkoutsJSON || selectedDateChanged) {
   save();
@@ -226,6 +241,13 @@ function updateGoalRows() {
 [goalReps, goalSecs, goalEmom, goalCardio].forEach(el=>el.addEventListener("change", updateGoalRows));
 updateGoalRows();
 
+addForm.addEventListener("reset", () => {
+  requestAnimationFrame(() => {
+    formCategory.value = CATEGORY_KEYS[0];
+    updateGoalRows();
+  });
+});
+
 /* ==== Añadir ejercicio ==== */
 addForm.addEventListener("submit", (e)=>{
   e.preventDefault();
@@ -246,7 +268,8 @@ addForm.addEventListener("submit", (e)=>{
     weightKg: formWeight.value ? Number(formWeight.value) : null,
     done: [],            // array con reps logradas por serie (o segundos)
     completed: false,
-    note: ""
+    note: "",
+    category: normalizeCategory(formCategory.value)
   };
 
   if (!ex.name) { alert("Pon un nombre al ejercicio."); return; }
@@ -298,6 +321,7 @@ addForm.addEventListener("submit", (e)=>{
   formName.value = "";
   formFailure.checked = false;
   formSecondsFailure.checked = false;
+  formCategory.value = CATEGORY_KEYS[0];
   renderDay(normalizedDay);
   switchToTab("hoy");
   state.selectedDate = normalizedDay;
@@ -326,10 +350,18 @@ function renderDay(dayISO){
 
   list.forEach(ex=>{
     if (!ex.id) ex.id = randomUUID();
+    ex.category = normalizeCategory(ex.category);
     const li = document.createElement("li");
     li.className = "exercise";
+    li.dataset.category = ex.category;
+    li.classList.add(`category-${ex.category}`);
     if (ex.completed) li.classList.add("completed");
     li.dataset.id = ex.id;
+
+    const categoryName = CATEGORY_LABELS[ex.category] || CATEGORY_LABELS[CATEGORY_KEYS[0]];
+    const categoryTag = document.createElement("span");
+    categoryTag.className = `category-tag category-tag-${ex.category}`;
+    categoryTag.textContent = categoryName;
 
     const title = document.createElement("div");
     title.className = "title";
@@ -487,7 +519,7 @@ function renderDay(dayISO){
       removeExercise(dayISO, ex.id);
     });
 
-    li.append(title, meta, noteBox);
+    li.append(categoryTag, title, meta, noteBox);
     if (setsBox) li.append(setsBox);
     exerciseList.append(li);
     setupExerciseDrag(li, dayISO);
@@ -993,7 +1025,11 @@ function sparkline(points){
 }
 
 function metaText(ex){
+  const normalizedCategory = normalizeCategory(ex.category);
+  const categoryName = CATEGORY_LABELS[normalizedCategory] || CATEGORY_LABELS[CATEGORY_KEYS[0]];
   const parts = [`<span><strong>Series:</strong> ${ex.sets}</span>`];
+
+  parts.unshift(`<span><strong>Categoría:</strong> ${categoryName}</span>`);
 
   parts.push(`<span><strong>Estado:</strong> ${ex.completed ? "Completado" : "Pendiente"}</span>`);
 
@@ -1029,6 +1065,20 @@ function buildEditForm(ex){
 
   // Nombre
   const fName = field("Nombre", "text", ex.name);
+  // Categoría
+  const categoryWrap = document.createElement("label");
+  categoryWrap.className = "field";
+  const categoryLabel = document.createElement("span");
+  categoryLabel.textContent = "Categoría";
+  const categorySelect = document.createElement("select");
+  CATEGORY_KEYS.forEach((key)=>{
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = CATEGORY_LABELS[key] || key;
+    categorySelect.append(option);
+  });
+  categorySelect.value = normalizeCategory(ex.category);
+  categoryWrap.append(categoryLabel, categorySelect);
   // Series
   const fSets = field("Series", "number", ex.sets, {min:1});
 
@@ -1092,11 +1142,12 @@ function buildEditForm(ex){
   const deleteBtn = button("Eliminar", "danger small");
   actions.append(saveBtn, cancelBtn, deleteBtn);
 
-  box.append(fName.wrap, fSets.wrap, typeWrap, wField.wrap, actions);
+  box.append(fName.wrap, categoryWrap, fSets.wrap, typeWrap, wField.wrap, actions);
 
   saveBtn.addEventListener("click", ()=>{
     ex.name = fName.input.value.trim() || ex.name;
     ex.sets = Math.max(1, Number(fSets.input.value||1));
+    ex.category = normalizeCategory(categorySelect.value);
 
     const weightRaw = wField.input.value.trim();
     if (weightRaw === "") {
