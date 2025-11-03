@@ -988,6 +988,14 @@ function buildEditForm(ex){
     ex.name = fName.input.value.trim() || ex.name;
     ex.sets = Math.max(1, Number(fSets.input.value||1));
 
+    const weightRaw = wField.input.value.trim();
+    if (weightRaw === "") {
+      ex.weightKg = null;
+    } else {
+      const weightNumber = Number(weightRaw);
+      ex.weightKg = Number.isFinite(weightNumber) ? weightNumber : ex.weightKg;
+    }
+
     if (rReps.input.checked){
       ex.goal="reps";
       ex.reps = repsField.input.value ? Number(repsField.input.value) : null;
