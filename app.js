@@ -190,6 +190,19 @@ const normalizedWorkouts = normalizeWorkouts(state.workouts);
 const normalizedWorkoutsJSON = JSON.stringify(normalizedWorkouts);
 state.workouts = normalizedWorkouts;
 
+function getCalendarSnapshot(){
+  const snapshot = {};
+  Object.keys(state.workouts || {}).forEach((dayISO) => {
+    const day = buildHistoryDaySnapshot(dayISO);
+    snapshot[dayISO] = day.ejercicios;
+  });
+  return snapshot;
+}
+
+if (historyStore) {
+  historyStore.rebuildFromCalendar(getCalendarSnapshot());
+}
+
 const today = new Date();
 const todayISO = fmt(today);
 const normalizedSelectedDate = fmt(fromISO(state.selectedDate));
@@ -314,7 +327,7 @@ addForm.addEventListener("submit", (e)=>{
   }
   state.workouts[normalizedDay].push(ex);
   save();
-  recordHistoryFromExercise(normalizedDay, ex, { showToast: true });
+  syncHistoryForDay(normalizedDay, { showToast: true });
 
   // Ajustar UI
   formName.value = "";
@@ -400,7 +413,7 @@ function renderDay(dayISO){
       ex.completed = !ex.completed;
       save();
       if (ex.completed) {
-        recordHistoryFromExercise(dayISO, ex, { showToast: true });
+        syncHistoryForDay(dayISO, { showToast: true });
       }
       renderDay(dayISO);
       renderMiniCalendar();
@@ -433,7 +446,7 @@ function renderDay(dayISO){
       ex.note = noteTextarea.value;
       updateNoteState();
       save();
-      recordHistoryFromExercise(dayISO, ex, { showToast: false });
+      syncHistoryForDay(dayISO, { showToast: false });
       if (seguimientoModule?.refresh) {
         seguimientoModule.refresh();
       }
@@ -445,7 +458,7 @@ function renderDay(dayISO){
       noteTimer = setTimeout(() => {
         save();
         noteTimer = null;
-        recordHistoryFromExercise(dayISO, ex, { showToast: false });
+        syncHistoryForDay(dayISO, { showToast: false });
         if (seguimientoModule?.refresh) {
           seguimientoModule.refresh();
         }
@@ -502,7 +515,7 @@ function renderDay(dayISO){
           doneList[i] = v;
           ex.done = doneList;
           save();
-          recordHistoryFromExercise(dayISO, ex, { showToast: true });
+          syncHistoryForDay(dayISO, { showToast: true });
           if (seguimientoModule?.refresh) {
             seguimientoModule.refresh();
           }
@@ -808,146 +821,50 @@ function minutesToSeconds(value){
   return Math.round(numeric * 60);
 }
 
-function sumNumbers(values){
-  if (!Array.isArray(values)) return 0;
-  return values.reduce((acc, current) => {
-    const num = Number(current);
-    return Number.isFinite(num) ? acc + num : acc;
-  }, 0);
+function buildHistoryDaySnapshot(dayISO){
+  const ejercicios = (Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO] : [])
+    .filter(isPlainObject)
+    .map((exercise) => ({
+      name: exercise.name || "",
+      goal: exercise.goal || "",
+      sets: exercise.sets,
+      done: Array.isArray(exercise.done) ? exercise.done.slice() : [],
+      failure: !!exercise.failure,
+      reps: exercise.reps,
+      seconds: exercise.seconds,
+      emomMinutes: exercise.emomMinutes,
+      emomReps: exercise.emomReps,
+      cardioMinutes: exercise.cardioMinutes,
+      weightKg: exercise.weightKg,
+      note: exercise.note,
+    }));
+  return { fechaISO: dayISO, sourceDayId: dayISO, ejercicios };
 }
 
-function computeHistoryEntries(dayISO, exercise){
-  if (!historyStore || !exercise || !exercise.name) return [];
-  const ejercicio = exercise.name.trim();
-  if (!ejercicio) return [];
-
-  const entries = [];
-  const weightValue = Number(exercise.weightKg);
-  const hasWeight = Number.isFinite(weightValue) && weightValue > 0;
-  const generalNotes = [];
-  if (exercise.failure) generalNotes.push("al fallo");
-  if (exercise.note && exercise.note.trim()) generalNotes.push(exercise.note.trim());
-  const weightNote = hasWeight ? `lastre ${weightValue} kg` : null;
-
-  const pushEntry = (tipo, valor, extraNotes = []) => {
-    const num = Number(valor);
-    if (!Number.isFinite(num) || num <= 0) return;
-    const notes = [];
-    if (tipo !== "peso" && weightNote) notes.push(weightNote);
-    notes.push(...extraNotes.filter(Boolean));
-    notes.push(...generalNotes);
-    const notasText = notes.filter(Boolean).join(" · ") || undefined;
-    entries.push({
-      fechaISO: dayISO,
-      ejercicio,
-      tipo,
-      valor: num,
-      notas: notasText
-    });
-  };
-
-  const sets = Math.max(1, Number(exercise.sets || 1));
-  const doneValues = Array.isArray(exercise.done) ? exercise.done : [];
-  const hasDoneValues = doneValues.some((v) => Number.isFinite(Number(v)));
-
-  if (exercise.goal === "reps" || exercise.goal === "emom"){
-    let totalReps = 0;
-    if (exercise.goal === "emom"){
-      const minutes = Number(exercise.emomMinutes || 0);
-      const repsPerMinute = Number(exercise.emomReps || 0);
-      if (minutes > 0 && repsPerMinute > 0){
-        totalReps = minutes * repsPerMinute;
-      }
-    } else if (hasDoneValues){
-      totalReps = sumNumbers(doneValues);
-    } else if (Number.isFinite(Number(exercise.reps))){
-      const planned = Number(exercise.reps);
-      if (planned > 0){
-        totalReps = planned * sets;
-      }
-    }
-    if (totalReps > 0){
-      pushEntry("reps", totalReps);
-    }
+function syncHistoryForDay(dayISO, options = {}){
+  if (!historyStore) return;
+  const snapshot = buildHistoryDaySnapshot(dayISO);
+  const result = historyStore.addOrUpdateFromDay(snapshot);
+  if (options.showToast === false) return;
+  const messages = Array.isArray(result?.messages) ? result.messages : [];
+  const priority = ["reps", "tiempo", "peso"];
+  let selected = null;
+  for (const type of priority) {
+    selected = messages.find((item) => item && item.tipo === type && item.text);
+    if (selected) break;
   }
-
-  if (exercise.goal === "seconds"){
-    let totalSeconds = 0;
-    if (hasDoneValues){
-      totalSeconds = sumNumbers(doneValues);
-    } else if (Number.isFinite(Number(exercise.seconds))){
-      const secs = Number(exercise.seconds);
-      if (secs > 0){
-        totalSeconds = secs * sets;
-      }
-    }
-    if (totalSeconds > 0){
-      pushEntry("tiempo", totalSeconds);
-    }
+  if (!selected && messages.length) {
+    selected = messages.find((item) => item && item.text) || null;
   }
-
-  if (exercise.goal === "cardio"){
-    const minutes = Number(exercise.cardioMinutes || 0);
-    const seconds = minutesToSeconds(minutes * sets);
-    if (seconds > 0){
-      pushEntry("tiempo", seconds);
-    }
+  if (selected){
+    showHistoryToast(selected.text);
   }
-
-  if (hasWeight){
-    pushEntry("peso", weightValue, [weightNote]);
-  }
-
-  return entries;
 }
 
-function recordHistoryFromExercise(dayISO, exercise, options = {}){
-  if (!historyStore || !exercise) return;
-  const nombre = exercise.name ? exercise.name.trim() : "";
-  if (!nombre) return;
-
-  const previousName = options.previousName && options.previousName.trim();
-  if (previousName && previousName !== nombre){
-    ["reps", "tiempo", "peso"].forEach((tipo)=>{
-      historyStore
-        .getEntriesByExerciseAndType(previousName, tipo)
-        .filter((item)=> item.fechaISO === dayISO)
-        .forEach((item)=> historyStore.updateEntry(item.id, { ejercicio: nombre }));
-    });
-  }
-
-  const computed = computeHistoryEntries(dayISO, { ...exercise, name: nombre });
-  const expectedTypes = new Set(computed.map((entry) => entry.tipo));
-  const processedIds = new Set();
-
-  computed.forEach((entry) => {
-    const existing = historyStore
-      .getEntriesByExerciseAndType(nombre, entry.tipo)
-      .find((item) => item.fechaISO === entry.fechaISO);
-    if (existing){
-      const updated = historyStore.updateEntry(existing.id, {
-        fechaISO: entry.fechaISO,
-        valor: entry.valor,
-        notas: entry.notas ?? "",
-        ejercicio: nombre
-      });
-      if (updated) processedIds.add(updated.id);
-    } else {
-      const diff = historyStore.compareWithLast(nombre, entry.tipo, entry.valor);
-      const created = historyStore.addEntry(entry);
-      processedIds.add(created.id);
-      if (options.showToast !== false && diff?.message){
-        showHistoryToast(diff.message);
-      }
-    }
-  });
-
-  ["reps", "tiempo", "peso"].forEach((tipo)=>{
-    if (expectedTypes.has(tipo)) return;
-    historyStore
-      .getEntriesByExerciseAndType(nombre, tipo)
-      .filter((item)=> item.fechaISO === dayISO && !processedIds.has(item.id))
-      .forEach((item)=> historyStore.deleteEntry(item.id));
+if (typeof window !== "undefined") {
+  window.entrenoApp = Object.assign(window.entrenoApp || {}, {
+    getCalendarSnapshot,
+    syncHistoryForDay,
   });
 }
 
@@ -989,7 +906,6 @@ function button(text, cls=""){
 function buildEditForm(ex){
   const box = document.createElement("div");
   box.className = "grid";
-  const previousName = ex.name;
 
   // Nombre
   const fName = field("Nombre", "text", ex.name);
@@ -1117,7 +1033,7 @@ function buildEditForm(ex){
     const editWrapper = box.parentElement;
     editWrapper?.classList.add("hidden");
     save();
-    recordHistoryFromExercise(state.selectedDate, ex, { showToast: false, previousName });
+    syncHistoryForDay(state.selectedDate, { showToast: false });
     renderDay(state.selectedDate);
     if (seguimientoModule?.refresh) {
       seguimientoModule.refresh();
@@ -1165,20 +1081,9 @@ function removeExercise(dayISO, id){
   const list = Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO] : [];
   const idx = list.findIndex(x=>x.id===id);
   if (idx>=0){
-    const removed = list[idx];
     list.splice(idx,1);
     state.workouts[dayISO] = list;
-    if (historyStore && removed?.name){
-      const nombre = removed.name.trim();
-      if (nombre){
-        ["reps", "tiempo", "peso"].forEach((tipo)=>{
-          historyStore
-            .getEntriesByExerciseAndType(nombre, tipo)
-            .filter((entry)=> entry.fechaISO === dayISO)
-            .forEach((entry)=> historyStore.deleteEntry(entry.id));
-        });
-      }
-    }
+    syncHistoryForDay(dayISO, { showToast: false });
     save();
     renderDay(dayISO);
     renderMiniCalendar();
@@ -1211,6 +1116,7 @@ copyDayBtn.addEventListener("click", ()=>{
   const targetList = Array.isArray(state.workouts?.[dst]) ? state.workouts[dst] : [];
   state.workouts[dst] = targetList.concat(items);
   save();
+  syncHistoryForDay(dst, { showToast: false });
   alert("Día copiado.");
   copyDayBox.classList.add("hidden");
   renderMiniCalendar();
