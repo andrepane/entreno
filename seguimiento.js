@@ -43,6 +43,15 @@
     return document.getElementById(id);
   }
 
+  function formatExerciseName(name) {
+    if (!name) return "";
+    return name
+      .split(" ")
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+  }
+
   function init() {
     elements.search = $("historySearch");
     elements.exerciseList = $("historyExerciseList");
@@ -62,6 +71,7 @@
     elements.importBtn = $("historyImportBtn");
     elements.importInput = $("historyImportFile");
     elements.clearBtn = $("historyClearBtn");
+    elements.rebuildBtn = $("historyRebuildBtn");
     elements.toast = $("historyToast");
     elements.warnings = $("historyWarnings");
 
@@ -88,6 +98,7 @@
     elements.importBtn?.addEventListener("click", () => elements.importInput?.click());
     elements.importInput?.addEventListener("change", handleImport);
     elements.clearBtn?.addEventListener("click", handleClear);
+    elements.rebuildBtn?.addEventListener("click", handleRebuild);
 
     unsubscribe = historyStore.subscribe(() => {
       updateWarnings();
@@ -140,8 +151,12 @@
     if (!elements.exerciseList) return;
     const items = getFilteredExercises();
     items.sort((a, b) => {
-      if (a.name.toLowerCase() === b.name.toLowerCase()) return 0;
-      return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1;
+      const dateA = a.info.lastDate || "";
+      const dateB = b.info.lastDate || "";
+      if (dateA !== dateB) {
+        return dateA < dateB ? 1 : -1;
+      }
+      return a.name.localeCompare(b.name);
     });
 
     elements.exerciseList.innerHTML = "";
@@ -158,8 +173,8 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "history-item-button";
-      button.textContent = name;
-      button.setAttribute("aria-label", `Ver historial de ${name}`);
+      button.textContent = formatExerciseName(name);
+      button.setAttribute("aria-label", `Ver historial de ${formatExerciseName(name)}`);
       button.setAttribute("role", "option");
       button.addEventListener("click", () => selectExercise(name, null));
 
@@ -179,7 +194,10 @@
         chip.type = "button";
         chip.className = `history-chip history-chip-${typeKey}`;
         chip.textContent = `${TYPE_LABEL[typeKey]} (${count})`;
-        chip.setAttribute("aria-label", `${TYPE_LABEL[typeKey]} para ${name}, ${count} registros`);
+        chip.setAttribute(
+          "aria-label",
+          `${TYPE_LABEL[typeKey]} para ${formatExerciseName(name)}, ${count} registros`
+        );
         chip.addEventListener("click", (event) => {
           event.stopPropagation();
           selectExercise(name, typeKey);
@@ -254,7 +272,7 @@
 
     elements.detailEmpty?.classList.add("hidden");
     elements.detail.classList.remove("hidden");
-    elements.detailTitle.textContent = state.selectedExercise;
+    elements.detailTitle.textContent = formatExerciseName(state.selectedExercise);
     renderTypeSelector(entries);
     renderSummary(filtered);
     renderTable(filtered);
@@ -293,11 +311,21 @@
       elements.summary.append(empty);
       return;
     }
-    const sortedAsc = entries.slice().sort((a, b) => a.fechaISO.localeCompare(b.fechaISO));
-    const first = sortedAsc[0];
-    const last = sortedAsc[sortedAsc.length - 1];
-    const delta = Number(last.valor) - Number(first.valor);
-    const pct = first.valor > 0 ? (delta / first.valor) * 100 : null;
+    if (!historyStore) {
+      return;
+    }
+    const comparison = historyStore.compareProgress(entries);
+    const first = comparison.primero;
+    const last = comparison.ultimo;
+    const delta = Number(comparison.delta || 0);
+    const pct = comparison.pct;
+    if (!first || !last) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "Necesitas al menos un registro para comparar.";
+      elements.summary.append(empty);
+      return;
+    }
     const badge = document.createElement("span");
     badge.className = "summary-badge";
     if (delta > 0) {
@@ -333,8 +361,9 @@
 
   function formatDelta(value) {
     const num = Number(value);
-    if (num > 0) return `+${num}`;
-    if (num < 0) return `${num}`;
+    const formatted = Number.isInteger(num) ? num : Number(num.toFixed(2));
+    if (num > 0) return `+${formatted}`;
+    if (num < 0) return `${formatted}`;
     return "0";
   }
 
@@ -545,7 +574,10 @@
   function updateOrderButton() {
     if (!elements.orderBtn) return;
     elements.orderBtn.textContent = state.order === "desc" ? "Ordenar ↑" : "Ordenar ↓";
-    elements.orderBtn.setAttribute("aria-label", state.order === "desc" ? "Ordenar por fecha ascendente" : "Ordenar por fecha descendente");
+    elements.orderBtn.setAttribute(
+      "aria-label",
+      state.order === "desc" ? "Ordenar por fecha ascendente" : "Ordenar por fecha descendente"
+    );
   }
 
   function handleExport() {
@@ -567,12 +599,28 @@
     }
   }
 
+  function handleRebuild() {
+    if (!historyStore) return;
+    const calendarProvider = global.entrenoApp?.getCalendarSnapshot;
+    if (typeof calendarProvider !== "function") {
+      alert("No se pudo reconstruir el historial. Calendario no disponible.");
+      return;
+    }
+    const calendar = calendarProvider();
+    const result = historyStore.rebuildFromCalendar(calendar);
+    showToast(`Historial reconstruido (${result.entries} registros)`);
+    autoSelectFirst();
+    renderExercises();
+    renderDetail();
+  }
+
   async function handleImport(event) {
     const file = event.target?.files?.[0];
     event.target.value = "";
     if (!file) return;
     try {
-      const result = await historyStore.importJSON(file);
+      const text = await file.text();
+      const result = historyStore.importJSON(text);
       showToast(`Importadas ${result.imported} entradas`);
       autoSelectFirst();
       renderExercises();

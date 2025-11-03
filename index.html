@@ -165,12 +165,13 @@
           <label for="historySearch" class="sr-only">Buscar ejercicio</label>
           <input type="search" id="historySearch" placeholder="Buscar ejercicio" aria-label="Buscar ejercicio" />
         </div>
-        <div class="seguimiento-actions">
-          <button id="historyExportBtn" class="ghost" aria-label="Exportar historial">Exportar</button>
-          <button id="historyImportBtn" class="ghost" aria-label="Importar historial">Importar</button>
-          <input type="file" id="historyImportFile" class="sr-only" accept="application/json" aria-label="Archivo de historial" />
-          <button id="historyClearBtn" class="danger" aria-label="Borrar historial">Borrar todo</button>
-        </div>
+          <div class="seguimiento-actions">
+            <button id="historyExportBtn" class="ghost" aria-label="Exportar historial">Exportar</button>
+            <button id="historyImportBtn" class="ghost" aria-label="Importar historial">Importar</button>
+            <input type="file" id="historyImportFile" class="sr-only" accept="application/json" aria-label="Archivo de historial" />
+            <button id="historyRebuildBtn" class="ghost" aria-label="Reconstruir historial">Reconstruir</button>
+            <button id="historyClearBtn" class="danger" aria-label="Borrar historial">Borrar todo</button>
+          </div>
       </div>
 
       <div id="historyWarnings" class="alert hidden" role="status" aria-live="polite"></div>
