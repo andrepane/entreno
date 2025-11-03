@@ -157,11 +157,13 @@ button.link{background:transparent; color:var(--accent); border:none; padding:0}
 .copy-box input[type="date"]{flex:1 1 160px; min-width:0}
 .copy-box.hidden{display:none}
 
-.exercise-list{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:10px}
+.exercise-list{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:10px; position:relative}
 .exercise{padding:clamp(12px, 4vw, 20px); border:1px solid #2a3240; border-radius:14px; background:linear-gradient(180deg,#121722 0,#0f131d 100%)}
 .exercise.completed{border-color:#2f855a; box-shadow:0 0 0 1px rgba(47,133,90,.4)}
 .exercise.completed .meta span{border-color:#234d36}
-.exercise .title{display:flex; align-items:center; justify-content:space-between; gap:8px}
+.exercise .title{display:flex; align-items:center; justify-content:space-between; gap:12px}
+.exercise .title-main{display:flex; align-items:center; gap:10px; flex:1; min-width:0}
+.exercise .title-main h3{margin:0; flex:1; min-width:0}
 .exercise .meta{color:var(--muted); font-size:.9rem; margin:6px 0; display:flex; flex-wrap:wrap; gap:6px}
 .exercise .meta span{background:#0b0f16; padding:2px 8px; border-radius:8px; border:1px solid #1e2633}
 
@@ -169,6 +171,13 @@ button.link{background:transparent; color:var(--accent); border:none; padding:0}
 .exercise .edit-box{margin-top:10px; border-top:1px dashed #2a3240; padding-top:10px}
 .exercise .sets-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(80px,1fr)); gap:8px}
 .exercise .sets-grid input{width:100%}
+.drag-handle{border:1px solid #2a3240; background:#0b0f16; color:#d7e2ff; border-radius:10px; padding:6px; display:flex; align-items:center; justify-content:center; cursor:grab; touch-action:none; min-width:36px; min-height:36px; font-size:1.2rem; line-height:1; box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.drag-handle span{pointer-events:none}
+.drag-handle:focus-visible{outline:2px solid #6c8ff2; outline-offset:2px}
+.exercise.dragging{opacity:.95; box-shadow:0 16px 32px rgba(0,0,0,.45); cursor:grabbing}
+.exercise.dragging .drag-handle{cursor:grabbing}
+.exercise-placeholder{border:2px dashed #2a3240; border-radius:14px; background:rgba(15,19,29,.6)}
+body.is-dragging{user-select:none}
 
 .empty-hint{
   opacity:.8; text-align:center; color:var(--muted);
@@ -209,6 +218,7 @@ button.link{background:transparent; color:var(--accent); border:none; padding:0}
   .copy-day{width:100%; flex-wrap:wrap; justify-content:flex-start}
   .copy-day button{flex:1 1 120px}
   .exercise .title{flex-direction:column; align-items:flex-start}
+  .exercise .title-main{width:100%}
   .exercise .controls{width:100%}
   .fieldset{padding:12px}
   .row{flex-wrap:wrap; align-items:flex-start}
