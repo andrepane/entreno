@@ -71,12 +71,16 @@ function normalizeWorkouts(rawWorkouts) {
 
     const clean = items
       .filter(isPlainObject)
-      .map((exercise) => ({
-        ...exercise,
-        done: Array.isArray(exercise.done) ? exercise.done : [],
-        completed: !!exercise.completed,
-        note: typeof exercise.note === "string" ? exercise.note : ""
-      }));
+      .map((exercise) => {
+        const cardioMinutesRaw = Number(exercise.cardioMinutes);
+        return {
+          ...exercise,
+          done: Array.isArray(exercise.done) ? exercise.done : [],
+          completed: !!exercise.completed,
+          note: typeof exercise.note === "string" ? exercise.note : "",
+          cardioMinutes: Number.isFinite(cardioMinutesRaw) ? cardioMinutesRaw : null
+        };
+      });
 
     if (!normalized[dayISO]) {
       normalized[dayISO] = [];
@@ -132,15 +136,18 @@ const formSets = document.getElementById("formSets");
 const goalReps = document.getElementById("goalReps");
 const goalSecs = document.getElementById("goalSecs");
 const goalEmom = document.getElementById("goalEmom");
+const goalCardio = document.getElementById("goalCardio");
 const rowReps = document.getElementById("rowReps");
 const rowSeconds = document.getElementById("rowSeconds");
 const rowEmom = document.getElementById("rowEmom");
+const rowCardio = document.getElementById("rowCardio");
 const formReps = document.getElementById("formReps");
 const formFailure = document.getElementById("formFailure");
 const formSeconds = document.getElementById("formSeconds");
 const formSecondsFailure = document.getElementById("formSecondsFailure");
 const formEmomMinutes = document.getElementById("formEmomMinutes");
 const formEmomReps = document.getElementById("formEmomReps");
+const formCardioMinutes = document.getElementById("formCardioMinutes");
 const formWeight = document.getElementById("formWeight");
 
 /* Copiar día */
@@ -214,8 +221,9 @@ function updateGoalRows() {
   rowReps.classList.toggle("hidden", !goalReps.checked);
   rowSeconds.classList.toggle("hidden", !goalSecs.checked);
   rowEmom.classList.toggle("hidden", !goalEmom.checked);
+  rowCardio.classList.toggle("hidden", !goalCardio.checked);
 }
-[goalReps, goalSecs, goalEmom].forEach(el=>el.addEventListener("change", updateGoalRows));
+[goalReps, goalSecs, goalEmom, goalCardio].forEach(el=>el.addEventListener("change", updateGoalRows));
 updateGoalRows();
 
 /* ==== Añadir ejercicio ==== */
@@ -228,12 +236,13 @@ addForm.addEventListener("submit", (e)=>{
     id: randomUUID(),
     name: (formName.value || "").trim(),
     sets: Math.max(1, Number(formSets.value||1)),
-    goal: null,          // "reps" | "seconds" | "emom"
+    goal: null,          // "reps" | "seconds" | "emom" | "cardio"
     reps: null,          // si goal="reps"
     failure: false,      // si goal="reps" o goal="seconds"
     seconds: null,       // si goal="seconds"
     emomMinutes: null,   // si goal="emom"
     emomReps: null,      // si goal="emom"
+    cardioMinutes: null, // si goal="cardio"
     weightKg: formWeight.value ? Number(formWeight.value) : null,
     done: [],            // array con reps logradas por serie (o segundos)
     completed: false,
@@ -246,15 +255,34 @@ addForm.addEventListener("submit", (e)=>{
     ex.goal = "reps";
     ex.reps = formReps.value ? Number(formReps.value) : null;
     ex.failure = !!formFailure.checked;
+    ex.seconds = null;
+    ex.emomMinutes = null;
+    ex.emomReps = null;
+    ex.cardioMinutes = null;
   } else if (goalSecs.checked) {
     ex.goal = "seconds";
     ex.seconds = Number(formSeconds.value||0);
     ex.failure = !!formSecondsFailure.checked;
-  } else {
+    ex.reps = null;
+    ex.emomMinutes = null;
+    ex.emomReps = null;
+    ex.cardioMinutes = null;
+  } else if (goalEmom.checked) {
     ex.goal = "emom";
     ex.emomMinutes = Number(formEmomMinutes.value||0);
     ex.emomReps = Number(formEmomReps.value||0);
     ex.failure = false;
+    ex.reps = null;
+    ex.seconds = null;
+    ex.cardioMinutes = null;
+  } else {
+    ex.goal = "cardio";
+    ex.cardioMinutes = Number(formCardioMinutes.value||0);
+    ex.failure = false;
+    ex.reps = null;
+    ex.seconds = null;
+    ex.emomMinutes = null;
+    ex.emomReps = null;
   }
 
   if (!state.workouts[normalizedDay]) state.workouts[normalizedDay] = [];
@@ -418,7 +446,7 @@ function renderDay(dayISO){
         span.textContent = `Serie ${i+1}`;
         const input = document.createElement("input");
         input.type = "number";
-        input.placeholder = ex.goal==="seconds" ? "seg" : "reps";
+        input.placeholder = ex.goal==="seconds" ? "seg" : ex.goal==="cardio" ? "min" : "reps";
         input.value = doneValues[i] ?? "";
         input.addEventListener("change", ()=>{
           const v = input.value? Number(input.value) : null;
@@ -893,6 +921,11 @@ function actualWork(ex){
     const reps = Number(ex.emomReps)||0;
     return {reps: minutes * reps, seconds: 0};
   }
+  if (ex.goal === "cardio"){
+    const minutes = Number(ex.cardioMinutes)||0;
+    const sets = Math.max(1, Number(ex.sets||0));
+    return {reps: 0, seconds: minutes * 60 * sets};
+  }
   return {reps:0, seconds:0};
 }
 
@@ -974,6 +1007,9 @@ function metaText(ex){
     if (ex.failure) parts.push(`<span>Al fallo</span>`);
   } else if (ex.goal==="emom") {
     parts.push(`<span><strong>EMOM:</strong> ${ex.emomMinutes}' · ${ex.emomReps} reps/min</span>`);
+  } else if (ex.goal==="cardio") {
+    const minutesLabel = ex.cardioMinutes && ex.cardioMinutes > 0 ? ex.cardioMinutes : "—";
+    parts.push(`<span><strong>Cardio:</strong> ${minutesLabel} min</span>`);
   }
 
   if (ex.weightKg!=null) parts.push(`<span><strong>Lastre:</strong> ${ex.weightKg} kg</span>`);
@@ -1008,6 +1044,7 @@ function buildEditForm(ex){
   const rReps = radioRow("Repeticiones", "goalEdit-"+ex.id, ex.goal==="reps");
   const rSecs = radioRow("Isométrico (segundos)", "goalEdit-"+ex.id, ex.goal==="seconds");
   const rEmom = radioRow("EMOM", "goalEdit-"+ex.id, ex.goal==="emom");
+  const rCardio = radioRow("Cardio", "goalEdit-"+ex.id, ex.goal==="cardio");
 
   const rowReps = document.createElement("div"); rowReps.className = "row indent";
   const repsField = fieldInline("Reps", "number", ex.reps ?? "", {min:1});
@@ -1030,15 +1067,20 @@ function buildEditForm(ex){
   const rField = fieldInline("Reps/min", "number", ex.emomReps ?? "", {min:1});
   rowEmom.append(mField.wrap, rField.wrap);
 
+  const rowCardio = document.createElement("div"); rowCardio.className="row indent hidden";
+  const cardioField = fieldInline("Minutos", "number", ex.cardioMinutes ?? "", {min:1});
+  rowCardio.append(cardioField.wrap);
+
   function toggleRows(){
     rowReps.classList.toggle("hidden", !rReps.input.checked);
     rowSecs.classList.toggle("hidden", !rSecs.input.checked);
     rowEmom.classList.toggle("hidden", !rEmom.input.checked);
+    rowCardio.classList.toggle("hidden", !rCardio.input.checked);
   }
-  [rReps.input, rSecs.input, rEmom.input].forEach(i=>i.addEventListener("change", toggleRows));
+  [rReps.input, rSecs.input, rEmom.input, rCardio.input].forEach(i=>i.addEventListener("change", toggleRows));
   toggleRows();
 
-  typeWrap.append(rReps.row, rowReps, rSecs.row, rowSecs, rEmom.row, rowEmom);
+  typeWrap.append(rReps.row, rowReps, rSecs.row, rowSecs, rEmom.row, rowEmom, rCardio.row, rowCardio);
 
   // Lastre
   const wField = field("Lastre (kg)", "number", ex.weightKg ?? "", {step:0.5});
@@ -1068,16 +1110,20 @@ function buildEditForm(ex){
       ex.goal="reps";
       ex.reps = repsField.input.value ? Number(repsField.input.value) : null;
       ex.failure = !!failChk.checked;
-      ex.seconds = null; ex.emomMinutes=null; ex.emomReps=null;
+      ex.seconds = null; ex.emomMinutes=null; ex.emomReps=null; ex.cardioMinutes=null;
     } else if (rSecs.input.checked){
       ex.goal="seconds";
       ex.seconds = Number(secsField.input.value||0);
-      ex.reps = null; ex.failure=!!failSecsChk.checked; ex.emomMinutes=null; ex.emomReps=null;
-    } else {
+      ex.reps = null; ex.failure=!!failSecsChk.checked; ex.emomMinutes=null; ex.emomReps=null; ex.cardioMinutes=null;
+    } else if (rEmom.input.checked){
       ex.goal="emom";
       ex.emomMinutes = Number(mField.input.value||0);
       ex.emomReps = Number(rField.input.value||0);
-      ex.reps = null; ex.failure=false; ex.seconds=null;
+      ex.reps = null; ex.failure=false; ex.seconds=null; ex.cardioMinutes=null;
+    } else {
+      ex.goal="cardio";
+      ex.cardioMinutes = Number(cardioField.input.value||0);
+      ex.reps = null; ex.failure=false; ex.seconds=null; ex.emomMinutes=null; ex.emomReps=null;
     }
 
     // Ajustar tamaño del array done
