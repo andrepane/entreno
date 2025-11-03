@@ -180,11 +180,8 @@ let mcRefDate = new Date(); // referencia del mes mostrado
 const DOW = ["L","M","X","J","V","S","D"];
 
 /* Seguimiento */
-const analyticsEmpty = document.getElementById("analyticsEmpty");
-const analyticsContent = document.getElementById("analyticsContent");
-const analyticsSummary = document.getElementById("analyticsSummary");
-const analyticsCharts = document.getElementById("analyticsCharts");
-const analyticsExerciseTable = document.getElementById("analyticsExerciseTable");
+const historyStore = typeof window !== "undefined" ? window.entrenoHistory : null;
+const seguimientoModule = typeof window !== "undefined" ? window.seguimientoUI : null;
 
 /* ========= Inicialización ========= */
 load();
@@ -317,6 +314,7 @@ addForm.addEventListener("submit", (e)=>{
   }
   state.workouts[normalizedDay].push(ex);
   save();
+  recordHistoryFromExercise(normalizedDay, ex, { showToast: true });
 
   // Ajustar UI
   formName.value = "";
@@ -332,14 +330,18 @@ addForm.addEventListener("submit", (e)=>{
   mcRefDate = new Date(selected.getFullYear(), selected.getMonth(), 1);
   save();
   renderMiniCalendar();
-  renderAnalytics();
+  if (seguimientoModule?.refresh) {
+    seguimientoModule.refresh();
+  }
 });
 
 /* ========= Render ========= */
 function renderAll(){
   renderDay(state.selectedDate);
   renderMiniCalendar();
-  renderAnalytics();
+  if (seguimientoModule?.refresh) {
+    seguimientoModule.refresh();
+  }
 }
 
 function renderDay(dayISO){
@@ -397,9 +399,14 @@ function renderDay(dayISO){
     doneBtn.addEventListener("click", ()=>{
       ex.completed = !ex.completed;
       save();
+      if (ex.completed) {
+        recordHistoryFromExercise(dayISO, ex, { showToast: true });
+      }
       renderDay(dayISO);
       renderMiniCalendar();
-      renderAnalytics();
+      if (seguimientoModule?.refresh) {
+        seguimientoModule.refresh();
+      }
     });
     controls.append(noteBtn, doneBtn, editBtn, delBtn);
     titleMain.append(dragBtn, h3);
@@ -426,6 +433,10 @@ function renderDay(dayISO){
       ex.note = noteTextarea.value;
       updateNoteState();
       save();
+      recordHistoryFromExercise(dayISO, ex, { showToast: false });
+      if (seguimientoModule?.refresh) {
+        seguimientoModule.refresh();
+      }
     };
     noteTextarea.addEventListener("input", () => {
       ex.note = noteTextarea.value;
@@ -434,6 +445,10 @@ function renderDay(dayISO){
       noteTimer = setTimeout(() => {
         save();
         noteTimer = null;
+        recordHistoryFromExercise(dayISO, ex, { showToast: false });
+        if (seguimientoModule?.refresh) {
+          seguimientoModule.refresh();
+        }
       }, 300);
     });
     noteTextarea.addEventListener("blur", () => {
@@ -487,7 +502,10 @@ function renderDay(dayISO){
           doneList[i] = v;
           ex.done = doneList;
           save();
-          renderAnalytics();
+          recordHistoryFromExercise(dayISO, ex, { showToast: true });
+          if (seguimientoModule?.refresh) {
+            seguimientoModule.refresh();
+          }
         });
         wrap.append(span, input);
         setsBox.append(wrap);
@@ -772,257 +790,165 @@ function createDragPlaceholder(height){
   return placeholder;
 }
 
-function renderAnalytics(){
-  if (!analyticsSummary) return;
-  const entries = Object.entries(state.workouts || {});
-  const daysWithExercises = entries
-    .map(([day, exercises]) => ({
-      day,
-      exercises: Array.isArray(exercises) ? exercises.filter(isPlainObject) : []
-    }))
-    .filter((item) => item.exercises.length);
-
-  if (!daysWithExercises.length){
-    analyticsEmpty?.classList.remove("hidden");
-    analyticsContent?.classList.add("hidden");
-    return;
+function showHistoryToast(message){
+  if (!message) return;
+  if (seguimientoModule?.showToast){
+    seguimientoModule.showToast(message);
+  } else {
+    console.info(message);
   }
+}
 
-  analyticsEmpty?.classList.add("hidden");
-  analyticsContent?.classList.remove("hidden");
+function minutesToSeconds(value){
+  if (historyStore?.minutesToSeconds){
+    return historyStore.minutesToSeconds(value);
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.round(numeric * 60);
+}
 
-  daysWithExercises.sort((a,b)=> a.day.localeCompare(b.day));
+function sumNumbers(values){
+  if (!Array.isArray(values)) return 0;
+  return values.reduce((acc, current) => {
+    const num = Number(current);
+    return Number.isFinite(num) ? acc + num : acc;
+  }, 0);
+}
 
-  const totals = {
-    days: daysWithExercises.length,
-    exercises: 0,
-    sets: 0,
-    reps: 0,
-    seconds: 0,
-    weightVolume: 0
+function computeHistoryEntries(dayISO, exercise){
+  if (!historyStore || !exercise || !exercise.name) return [];
+  const ejercicio = exercise.name.trim();
+  if (!ejercicio) return [];
+
+  const entries = [];
+  const weightValue = Number(exercise.weightKg);
+  const hasWeight = Number.isFinite(weightValue) && weightValue > 0;
+  const generalNotes = [];
+  if (exercise.failure) generalNotes.push("al fallo");
+  if (exercise.note && exercise.note.trim()) generalNotes.push(exercise.note.trim());
+  const weightNote = hasWeight ? `lastre ${weightValue} kg` : null;
+
+  const pushEntry = (tipo, valor, extraNotes = []) => {
+    const num = Number(valor);
+    if (!Number.isFinite(num) || num <= 0) return;
+    const notes = [];
+    if (tipo !== "peso" && weightNote) notes.push(weightNote);
+    notes.push(...extraNotes.filter(Boolean));
+    notes.push(...generalNotes);
+    const notasText = notes.filter(Boolean).join(" · ") || undefined;
+    entries.push({
+      fechaISO: dayISO,
+      ejercicio,
+      tipo,
+      valor: num,
+      notas: notasText
+    });
   };
 
-  const dailyStats = [];
-  const perExercise = new Map();
+  const sets = Math.max(1, Number(exercise.sets || 1));
+  const doneValues = Array.isArray(exercise.done) ? exercise.done : [];
+  const hasDoneValues = doneValues.some((v) => Number.isFinite(Number(v)));
 
-  daysWithExercises.forEach(({day, exercises})=>{
-    const dayStats = {date: day, sets:0, reps:0, seconds:0, weightVolume:0};
-    totals.exercises += exercises.length;
-
-    exercises.forEach((ex)=>{
-      const sets = Math.max(1, Number(ex.sets||0));
-      totals.sets += sets;
-      dayStats.sets += sets;
-
-      const actual = actualWork(ex);
-      if (actual.reps){
-        totals.reps += actual.reps;
-        dayStats.reps += actual.reps;
+  if (exercise.goal === "reps" || exercise.goal === "emom"){
+    let totalReps = 0;
+    if (exercise.goal === "emom"){
+      const minutes = Number(exercise.emomMinutes || 0);
+      const repsPerMinute = Number(exercise.emomReps || 0);
+      if (minutes > 0 && repsPerMinute > 0){
+        totalReps = minutes * repsPerMinute;
       }
-      if (actual.seconds){
-        totals.seconds += actual.seconds;
-        dayStats.seconds += actual.seconds;
+    } else if (hasDoneValues){
+      totalReps = sumNumbers(doneValues);
+    } else if (Number.isFinite(Number(exercise.reps))){
+      const planned = Number(exercise.reps);
+      if (planned > 0){
+        totalReps = planned * sets;
       }
-
-      const weightContribution = Number.isFinite(ex.weightKg)
-        ? (actual.reps || actual.seconds) * Number(ex.weightKg)
-        : 0;
-      if (weightContribution){
-        totals.weightVolume += weightContribution;
-        dayStats.weightVolume += weightContribution;
-      }
-
-      const name = ex.name || "Ejercicio";
-      const info = perExercise.get(name) || {
-        name,
-        sessions: 0,
-        totalSets: 0,
-        totalReps: 0,
-        totalSeconds: 0,
-        bestWeight: null,
-        lastDate: null
-      };
-
-      info.sessions += 1;
-      info.totalSets += sets;
-      info.totalReps += actual.reps;
-      info.totalSeconds += actual.seconds;
-      if (Number.isFinite(ex.weightKg)){
-        info.bestWeight = info.bestWeight!=null ? Math.max(info.bestWeight, Number(ex.weightKg)) : Number(ex.weightKg);
-      }
-      if (!info.lastDate || day > info.lastDate){
-        info.lastDate = day;
-      }
-      perExercise.set(name, info);
-    });
-
-    dailyStats.push(dayStats);
-  });
-
-  const summaryItems = [
-    {label:"Días registrados", value: totals.days},
-    {label:"Ejercicios guardados", value: totals.exercises},
-    {label:"Series totales", value: totals.sets},
-    {label:"Promedio series/día", value: totals.days ? totals.sets / totals.days : 0, decimals:1},
-    {label:"Reps totales", value: totals.reps},
-    {label:"Segundos totales", value: totals.seconds, formatter: formatDuration},
-    {label:"Volumen con lastre", value: totals.weightVolume, suffix:"kg·reps"}
-  ];
-
-  analyticsSummary.innerHTML = summaryItems
-    .map((item)=>{
-      const display = item.formatter
-        ? item.formatter(item.value)
-        : formatNumber(item.value, item.decimals || 0);
-      const suffix = item.suffix ? `<div class="stat-sub">${item.suffix}</div>` : "";
-      return `<article class="stat-card"><span>${item.label}</span><div class="stat-value">${display}</div>${suffix}</article>`;
-    })
-    .join("");
-
-  const metrics = [
-    {key:"sets", label:"Series por día"},
-    {key:"reps", label:"Reps por día"},
-    {key:"seconds", label:"Segundos por día", formatter: formatDuration}
-  ];
-  if (totals.weightVolume > 0){
-    metrics.push({key:"weightVolume", label:"Volumen con lastre", suffix:"kg·reps"});
-  }
-
-  const recentStats = dailyStats.slice(-14);
-  analyticsCharts.innerHTML = metrics.map((metric)=>{
-    if (!recentStats.length){
-      return `<div class="chart-item"><h4>${metric.label}</h4><div class="chart-placeholder">Sin datos</div></div>`;
     }
-    const values = recentStats.map((s)=>({date:s.date, value: s[metric.key] || 0}));
-    const chart = sparkline(values);
-    const last = values[values.length-1];
-    const max = values.reduce((acc, curr)=> curr.value > acc.value ? curr : acc, values[0]);
-    const lastLabel = metric.formatter ? metric.formatter(last.value) : formatNumber(last.value, metric.decimals || 0);
-    const maxLabel = metric.formatter ? metric.formatter(max.value) : formatNumber(max.value, metric.decimals || 0);
-    const rangeLabel = values.length > 1
-      ? `${formatShortDate(values[0].date)} → ${formatShortDate(values[values.length-1].date)}`
-      : formatShortDate(values[0].date);
-    const suffix = metric.suffix ? ` ${metric.suffix}` : "";
-    return `<div class="chart-item"><h4>${metric.label}</h4>${chart}<div class="chart-meta"><span>Último: ${lastLabel}${suffix}</span><span>Máx: ${maxLabel}${suffix}</span></div><div class="chart-meta"><span>${rangeLabel}</span><span>${values.length} día(s)</span></div></div>`;
-  }).join("");
+    if (totalReps > 0){
+      pushEntry("reps", totalReps);
+    }
+  }
 
-  const exerciseRows = Array.from(perExercise.values())
-    .sort((a,b)=>{
-      if (a.lastDate !== b.lastDate){
-        return (b.lastDate||"").localeCompare(a.lastDate||"");
+  if (exercise.goal === "seconds"){
+    let totalSeconds = 0;
+    if (hasDoneValues){
+      totalSeconds = sumNumbers(doneValues);
+    } else if (Number.isFinite(Number(exercise.seconds))){
+      const secs = Number(exercise.seconds);
+      if (secs > 0){
+        totalSeconds = secs * sets;
       }
-      if (a.sessions !== b.sessions){
-        return b.sessions - a.sessions;
+    }
+    if (totalSeconds > 0){
+      pushEntry("tiempo", totalSeconds);
+    }
+  }
+
+  if (exercise.goal === "cardio"){
+    const minutes = Number(exercise.cardioMinutes || 0);
+    const seconds = minutesToSeconds(minutes * sets);
+    if (seconds > 0){
+      pushEntry("tiempo", seconds);
+    }
+  }
+
+  if (hasWeight){
+    pushEntry("peso", weightValue, [weightNote]);
+  }
+
+  return entries;
+}
+
+function recordHistoryFromExercise(dayISO, exercise, options = {}){
+  if (!historyStore || !exercise) return;
+  const nombre = exercise.name ? exercise.name.trim() : "";
+  if (!nombre) return;
+
+  const previousName = options.previousName && options.previousName.trim();
+  if (previousName && previousName !== nombre){
+    ["reps", "tiempo", "peso"].forEach((tipo)=>{
+      historyStore
+        .getEntriesByExerciseAndType(previousName, tipo)
+        .filter((item)=> item.fechaISO === dayISO)
+        .forEach((item)=> historyStore.updateEntry(item.id, { ejercicio: nombre }));
+    });
+  }
+
+  const computed = computeHistoryEntries(dayISO, { ...exercise, name: nombre });
+  const expectedTypes = new Set(computed.map((entry) => entry.tipo));
+  const processedIds = new Set();
+
+  computed.forEach((entry) => {
+    const existing = historyStore
+      .getEntriesByExerciseAndType(nombre, entry.tipo)
+      .find((item) => item.fechaISO === entry.fechaISO);
+    if (existing){
+      const updated = historyStore.updateEntry(existing.id, {
+        fechaISO: entry.fechaISO,
+        valor: entry.valor,
+        notas: entry.notas ?? "",
+        ejercicio: nombre
+      });
+      if (updated) processedIds.add(updated.id);
+    } else {
+      const diff = historyStore.compareWithLast(nombre, entry.tipo, entry.valor);
+      const created = historyStore.addEntry(entry);
+      processedIds.add(created.id);
+      if (options.showToast !== false && diff?.message){
+        showHistoryToast(diff.message);
       }
-      return a.name.localeCompare(b.name);
-    })
-    .map((info)=>{
-      const bestWeight = info.bestWeight!=null ? `${formatNumber(info.bestWeight, info.bestWeight % 1 ? 1 : 0)} kg` : "—";
-      const lastDate = info.lastDate ? formatFullDate(info.lastDate) : "—";
-      return `<tr>
-        <td>${info.name}</td>
-        <td data-align="right">${formatNumber(info.sessions)}</td>
-        <td data-align="right">${formatNumber(info.totalSets)}</td>
-        <td data-align="right">${formatNumber(info.totalReps)}</td>
-        <td data-align="right">${info.totalSeconds ? formatDuration(info.totalSeconds) : "0 s"}</td>
-        <td data-align="right">${bestWeight}</td>
-        <td>${lastDate}</td>
-      </tr>`;
-    })
-    .join("");
-
-  analyticsExerciseTable.innerHTML = exerciseRows;
-}
-
-function actualWork(ex){
-  const sets = Math.max(1, Number(ex.sets||0));
-  const doneArray = Array.isArray(ex.done) ? ex.done : [];
-  if (ex.goal === "reps"){
-    const done = doneArray.filter((v)=> Number.isFinite(v));
-    const base = Number(ex.reps)||0;
-    const total = done.length ? sum(done) : sets * base;
-    return {reps: total, seconds: 0};
-  }
-  if (ex.goal === "seconds"){
-    const done = doneArray.filter((v)=> Number.isFinite(v));
-    const base = Number(ex.seconds)||0;
-    const total = done.length ? sum(done) : sets * base;
-    return {reps: 0, seconds: total};
-  }
-  if (ex.goal === "emom"){
-    const minutes = Number(ex.emomMinutes)||0;
-    const reps = Number(ex.emomReps)||0;
-    return {reps: minutes * reps, seconds: 0};
-  }
-  if (ex.goal === "cardio"){
-    const minutes = Number(ex.cardioMinutes)||0;
-    const sets = Math.max(1, Number(ex.sets||0));
-    return {reps: 0, seconds: minutes * 60 * sets};
-  }
-  return {reps:0, seconds:0};
-}
-
-function sum(values){
-  return values.reduce((acc, val)=> acc + (Number.isFinite(val) ? Number(val) : 0), 0);
-}
-
-function formatNumber(value, decimals=0){
-  const options = {minimumFractionDigits: decimals, maximumFractionDigits: decimals};
-  const safeValue = Number.isFinite(value) ? value : 0;
-  return new Intl.NumberFormat("es-ES", options).format(safeValue);
-}
-
-function formatDuration(totalSeconds){
-  const seconds = Math.max(0, Math.round(Number(totalSeconds)||0));
-  const minutes = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  if (minutes && secs){
-    return `${minutes} min ${secs} s`;
-  }
-  if (minutes){
-    return `${minutes} min`;
-  }
-  return `${secs} s`;
-}
-
-function formatShortDate(iso){
-  const d = fromISO(iso);
-  return d.toLocaleDateString("es-ES", {day:"2-digit", month:"short"});
-}
-
-function formatFullDate(iso){
-  const d = fromISO(iso);
-  return d.toLocaleDateString("es-ES", {day:"2-digit", month:"short", year:"numeric"});
-}
-
-function sparkline(points){
-  if (!points.length){
-    return `<div class="chart-placeholder">Sin datos</div>`;
-  }
-  const width = 200;
-  const height = 70;
-  const values = points.map((p)=> Number(p.value)||0);
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const range = max - min;
-  const step = points.length > 1 ? width / (points.length - 1) : 0;
-
-  const coords = points.map((p, idx)=>{
-    const value = Number(p.value)||0;
-    const ratio = range === 0 ? 0.5 : (value - min) / range;
-    const x = points.length === 1 ? width / 2 : idx * step;
-    const y = height - ratio * height;
-    return `${x.toFixed(2)},${y.toFixed(2)}`;
+    }
   });
 
-  const polygonPoints = [`0,${height}`].concat(coords).concat([`${width},${height}`]).join(" ");
-  const lastPair = coords[coords.length-1].split(",").map(Number);
-
-  return `<div class="sparkline"><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-hidden="true">
-    <polygon class="bg" points="${polygonPoints}"></polygon>
-    <polyline class="line" points="${coords.join(" ")}"></polyline>
-    <circle class="point" cx="${lastPair[0]}" cy="${lastPair[1]}" r="3"></circle>
-  </svg></div>`;
+  ["reps", "tiempo", "peso"].forEach((tipo)=>{
+    if (expectedTypes.has(tipo)) return;
+    historyStore
+      .getEntriesByExerciseAndType(nombre, tipo)
+      .filter((item)=> item.fechaISO === dayISO && !processedIds.has(item.id))
+      .forEach((item)=> historyStore.deleteEntry(item.id));
+  });
 }
 
 function metaText(ex){
@@ -1063,6 +989,7 @@ function button(text, cls=""){
 function buildEditForm(ex){
   const box = document.createElement("div");
   box.className = "grid";
+  const previousName = ex.name;
 
   // Nombre
   const fName = field("Nombre", "text", ex.name);
@@ -1190,8 +1117,11 @@ function buildEditForm(ex){
     const editWrapper = box.parentElement;
     editWrapper?.classList.add("hidden");
     save();
+    recordHistoryFromExercise(state.selectedDate, ex, { showToast: false, previousName });
     renderDay(state.selectedDate);
-    renderAnalytics();
+    if (seguimientoModule?.refresh) {
+      seguimientoModule.refresh();
+    }
   });
   cancelBtn.addEventListener("click", ()=>{
     box.parentElement?.classList.add("hidden");
@@ -1235,12 +1165,26 @@ function removeExercise(dayISO, id){
   const list = Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO] : [];
   const idx = list.findIndex(x=>x.id===id);
   if (idx>=0){
+    const removed = list[idx];
     list.splice(idx,1);
     state.workouts[dayISO] = list;
+    if (historyStore && removed?.name){
+      const nombre = removed.name.trim();
+      if (nombre){
+        ["reps", "tiempo", "peso"].forEach((tipo)=>{
+          historyStore
+            .getEntriesByExerciseAndType(nombre, tipo)
+            .filter((entry)=> entry.fechaISO === dayISO)
+            .forEach((entry)=> historyStore.deleteEntry(entry.id));
+        });
+      }
+    }
     save();
     renderDay(dayISO);
     renderMiniCalendar();
-    renderAnalytics();
+    if (seguimientoModule?.refresh) {
+      seguimientoModule.refresh();
+    }
   }
 }
 
@@ -1270,7 +1214,9 @@ copyDayBtn.addEventListener("click", ()=>{
   alert("Día copiado.");
   copyDayBox.classList.add("hidden");
   renderMiniCalendar();
-  renderAnalytics();
+  if (seguimientoModule?.refresh) {
+    seguimientoModule.refresh();
+  }
 });
 
 /* ========= Cambiar de día (prev/next) ========= */
