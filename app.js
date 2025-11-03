@@ -111,6 +111,8 @@ const humanDateSpan = dayTitle.querySelector('[data-bind="humanDate"]');
 const exerciseList = document.getElementById("exerciseList");
 const emptyDayHint = document.getElementById("emptyDayHint");
 
+let activeDrag = null;
+
 const tabs = document.querySelectorAll(".tab");
 const tabPanels = {
   hoy: document.getElementById("tab-hoy"),
@@ -293,6 +295,7 @@ function renderDay(dayISO){
   emptyDayHint.style.display = list.length ? "none" : "block";
 
   list.forEach(ex=>{
+    if (!ex.id) ex.id = randomUUID();
     const li = document.createElement("li");
     li.className = "exercise";
     if (ex.completed) li.classList.add("completed");
@@ -300,6 +303,14 @@ function renderDay(dayISO){
 
     const title = document.createElement("div");
     title.className = "title";
+    const titleMain = document.createElement("div");
+    titleMain.className = "title-main";
+    const dragBtn = document.createElement("button");
+    dragBtn.type = "button";
+    dragBtn.className = "drag-handle";
+    dragBtn.setAttribute("aria-label", "Reordenar ejercicio");
+    dragBtn.title = "Reordenar ejercicio";
+    dragBtn.innerHTML = "<span aria-hidden=\"true\">☰</span>";
     const h3 = document.createElement("h3");
     h3.textContent = ex.name;
     h3.style.margin = "0";
@@ -319,7 +330,8 @@ function renderDay(dayISO){
       renderAnalytics();
     });
     controls.append(doneBtn, editBtn, delBtn);
-    title.append(h3, controls);
+    titleMain.append(dragBtn, h3);
+    title.append(titleMain, controls);
 
     const meta = document.createElement("div");
     meta.className = "meta";
@@ -354,36 +366,281 @@ function renderDay(dayISO){
     }
 
     
-editBtn.addEventListener("click", () => {
-  // Si ya existe un editBox visible, lo ocultamos
-  const existing = li.querySelector(".edit-box");
-  if (existing && !existing.classList.contains("hidden")) {
-    existing.classList.add("hidden");
-    return;
-  }
+    editBtn.addEventListener("click", () => {
+      // Si ya existe un editBox visible, lo ocultamos
+      const existing = li.querySelector(".edit-box");
+      if (existing && !existing.classList.contains("hidden")) {
+        existing.classList.add("hidden");
+        return;
+      }
 
-  // Si no existe, lo creamos dinámicamente
-  let editBox = li.querySelector(".edit-box");
-  if (!editBox) {
-    editBox = document.createElement("div");
-    editBox.className = "edit-box";
-    editBox.appendChild(buildEditForm(ex));
-    li.append(editBox);
-  }
+      // Si no existe, lo creamos dinámicamente
+      let editBox = li.querySelector(".edit-box");
+      if (!editBox) {
+        editBox = document.createElement("div");
+        editBox.className = "edit-box";
+        editBox.appendChild(buildEditForm(ex));
+        li.append(editBox);
+      }
 
-  editBox.classList.toggle("hidden");
-});
+      editBox.classList.toggle("hidden");
+    });
 
-delBtn.addEventListener("click", () => {
-  if (!confirm("¿Eliminar este ejercicio?")) return;
-  removeExercise(dayISO, ex.id);
-});
+    delBtn.addEventListener("click", () => {
+      if (!confirm("¿Eliminar este ejercicio?")) return;
+      removeExercise(dayISO, ex.id);
+    });
 
-li.append(title, meta);
-if (setsBox) li.append(setsBox);
-exerciseList.append(li);
+    li.append(title, meta);
+    if (setsBox) li.append(setsBox);
+    exerciseList.append(li);
+    setupExerciseDrag(li, dayISO);
 
   });
+}
+
+function setupExerciseDrag(li, dayISO){
+  const handle = li.querySelector(".drag-handle");
+
+  const onPointerMove = (event) => {
+    if (!activeDrag || event.pointerId !== activeDrag.pointerId) return;
+    event.preventDefault();
+    updateDragPosition(event);
+  };
+
+  const onPointerUp = (event) => {
+    if (!activeDrag || event.pointerId !== activeDrag.pointerId) return;
+    event.preventDefault();
+    finishExerciseDrag(true);
+  };
+
+  const onPointerCancel = (event) => {
+    if (!activeDrag || event.pointerId !== activeDrag.pointerId) return;
+    event.preventDefault();
+    finishExerciseDrag(false);
+  };
+
+  const registerTarget = (target) => {
+    if (!target) return;
+    target.addEventListener("pointermove", onPointerMove);
+    target.addEventListener("pointerup", onPointerUp);
+    target.addEventListener("pointercancel", onPointerCancel);
+    target.addEventListener("lostpointercapture", onPointerCancel);
+  };
+
+  registerTarget(handle);
+  registerTarget(li);
+
+  if (handle){
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button && event.button !== 0) return;
+      event.preventDefault();
+      beginExerciseDrag(event, handle, li, dayISO);
+    });
+  }
+
+  let longPressTimer = null;
+  let lastPressEvent = null;
+  const startCoords = {x:0, y:0};
+
+  const clearLongPress = () => {
+    if (longPressTimer){
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+    lastPressEvent = null;
+    li.removeEventListener("pointermove", preDragMove);
+    li.removeEventListener("pointerup", clearLongPress);
+    li.removeEventListener("pointercancel", clearLongPress);
+    li.removeEventListener("pointerleave", clearLongPress);
+  };
+
+  const preDragMove = (moveEvent) => {
+    if (!lastPressEvent) return;
+    lastPressEvent = moveEvent;
+    const dx = Math.abs(moveEvent.clientX - startCoords.x);
+    const dy = Math.abs(moveEvent.clientY - startCoords.y);
+    if (dx > 8 || dy > 8){
+      clearLongPress();
+    }
+  };
+
+  li.addEventListener("pointerdown", (event) => {
+    if (activeDrag) return;
+    if (event.pointerType === "mouse") return;
+    if (event.target.closest(".drag-handle")) return;
+    if (event.target.closest(".controls") || event.target.closest(".edit-box") || event.target.closest(".sets-grid") || event.target.closest("input") || event.target.closest("select") || event.target.closest("textarea") || event.target.closest("button")) return;
+
+    startCoords.x = event.clientX;
+    startCoords.y = event.clientY;
+    lastPressEvent = event;
+    longPressTimer = window.setTimeout(() => {
+      if (!lastPressEvent) return;
+      beginExerciseDrag(lastPressEvent, li, li, dayISO);
+      clearLongPress();
+    }, 250);
+
+    li.addEventListener("pointermove", preDragMove);
+    li.addEventListener("pointerup", clearLongPress);
+    li.addEventListener("pointercancel", clearLongPress);
+    li.addEventListener("pointerleave", clearLongPress);
+  });
+}
+
+function beginExerciseDrag(event, source, li, dayISO){
+  if (activeDrag) return;
+  if (!li.dataset.id) return;
+
+  if (event && typeof event.preventDefault === "function"){
+    event.preventDefault();
+  }
+
+  const listRect = exerciseList.getBoundingClientRect();
+  const itemRect = li.getBoundingClientRect();
+  const placeholder = createDragPlaceholder(itemRect.height);
+  const nextSibling = li.nextSibling;
+
+  placeholder.style.width = `${itemRect.width}px`;
+  placeholder.style.boxSizing = "border-box";
+
+  exerciseList.insertBefore(placeholder, nextSibling);
+
+  activeDrag = {
+    pointerId: event.pointerId ?? null,
+    li,
+    source,
+    dayISO,
+    offsetY: event.clientY - itemRect.top,
+    placeholder,
+    originalNextSibling: nextSibling,
+    originalTouchAction: source.style ? source.style.touchAction : undefined
+  };
+
+  if (source && source.style){
+    source.style.touchAction = "none";
+  }
+
+  document.body.classList.add("is-dragging");
+  li.classList.add("dragging");
+  li.style.width = `${itemRect.width}px`;
+  li.style.height = `${itemRect.height}px`;
+  li.style.position = "absolute";
+  li.style.left = "0px";
+  li.style.top = `${itemRect.top - listRect.top}px`;
+  li.style.zIndex = "20";
+  li.style.pointerEvents = "none";
+  li.style.boxSizing = "border-box";
+
+  if (source.setPointerCapture && activeDrag.pointerId != null){
+    try { source.setPointerCapture(activeDrag.pointerId); } catch(e){}
+  }
+
+  updateDragPosition(event);
+}
+
+function updateDragPosition(event){
+  if (!activeDrag) return;
+  const listRect = exerciseList.getBoundingClientRect();
+  const top = event.clientY - listRect.top - activeDrag.offsetY;
+  const maxTop = Math.max(0, exerciseList.scrollHeight - activeDrag.placeholder.offsetHeight);
+  const clampedTop = Math.min(Math.max(top, 0), maxTop);
+  activeDrag.li.style.top = `${clampedTop}px`;
+
+  const siblings = Array.from(exerciseList.children).filter((child) => child !== activeDrag.li && child !== activeDrag.placeholder);
+  let inserted = false;
+  for (const sibling of siblings){
+    const rect = sibling.getBoundingClientRect();
+    if (event.clientY < rect.top + rect.height / 2){
+      exerciseList.insertBefore(activeDrag.placeholder, sibling);
+      inserted = true;
+      break;
+    }
+  }
+  if (!inserted){
+    exerciseList.appendChild(activeDrag.placeholder);
+  }
+}
+
+function finishExerciseDrag(commit){
+  if (!activeDrag) return;
+  const { li, placeholder, source, pointerId, dayISO, originalNextSibling, originalTouchAction } = activeDrag;
+
+  if (!commit){
+    if (originalNextSibling && originalNextSibling.parentNode === exerciseList){
+      exerciseList.insertBefore(placeholder, originalNextSibling);
+    } else if (!originalNextSibling){
+      exerciseList.appendChild(placeholder);
+    }
+  }
+
+  if (placeholder.parentNode){
+    exerciseList.insertBefore(li, placeholder);
+    placeholder.remove();
+  }
+
+  if (pointerId != null && source && source.releasePointerCapture){
+    try { source.releasePointerCapture(pointerId); } catch(e){}
+  }
+
+  if (source && source.style){
+    if (originalTouchAction){
+      source.style.touchAction = originalTouchAction;
+    } else {
+      source.style.removeProperty("touch-action");
+    }
+  }
+
+  document.body.classList.remove("is-dragging");
+  li.classList.remove("dragging");
+  li.style.position = "";
+  li.style.left = "";
+  li.style.top = "";
+  li.style.width = "";
+  li.style.height = "";
+  li.style.zIndex = "";
+  li.style.pointerEvents = "";
+  li.style.boxSizing = "";
+
+  activeDrag = null;
+
+  if (commit){
+    finalizeExerciseOrder(dayISO);
+  }
+}
+
+function finalizeExerciseOrder(dayISO){
+  const ids = Array.from(exerciseList.querySelectorAll("li.exercise"))
+    .map((node) => node.dataset.id)
+    .filter(Boolean);
+  const current = Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO] : [];
+  if (!current.length) return;
+  const map = new Map(current.map((ex) => [ex.id, ex]));
+  const newOrder = ids.map((id) => map.get(id)).filter(Boolean);
+  if (newOrder.length !== current.length){
+    renderDay(dayISO);
+    return;
+  }
+  let changed = false;
+  for (let i = 0; i < newOrder.length; i++){
+    if (newOrder[i] !== current[i]){
+      changed = true;
+      break;
+    }
+  }
+  if (changed){
+    state.workouts[dayISO] = newOrder;
+    save();
+  }
+}
+
+function createDragPlaceholder(height){
+  const placeholder = document.createElement("li");
+  placeholder.className = "exercise-placeholder";
+  placeholder.style.height = `${height}px`;
+  placeholder.style.pointerEvents = "none";
+  placeholder.setAttribute("aria-hidden", "true");
+  placeholder.setAttribute("role", "presentation");
+  return placeholder;
 }
 
 function renderAnalytics(){
