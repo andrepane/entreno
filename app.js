@@ -133,7 +133,7 @@ let activeDrag = null;
 
 const tabs = document.querySelectorAll(".tab");
 const tabPanels = {
-  hoy: document.getElementById("tab-hoy"),
+  entreno: document.getElementById("tab-entreno"),
   nuevo: document.getElementById("tab-nuevo"),
   seguimiento: document.getElementById("tab-seguimiento")
 };
@@ -193,16 +193,17 @@ const normalizedWorkouts = normalizeWorkouts(state.workouts);
 const normalizedWorkoutsJSON = JSON.stringify(normalizedWorkouts);
 state.workouts = normalizedWorkouts;
 
-const initialDate = fromISO(state.selectedDate);
-const normalizedSelectedDate = fmt(initialDate);
-const selectedDateChanged = state.selectedDate !== normalizedSelectedDate;
-state.selectedDate = normalizedSelectedDate;
-mcRefDate = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
+const today = new Date();
+const todayISO = fmt(today);
+const normalizedSelectedDate = fmt(fromISO(state.selectedDate));
+const resetToToday = normalizedSelectedDate !== todayISO;
+state.selectedDate = todayISO;
+mcRefDate = new Date(today.getFullYear(), today.getMonth(), 1);
 selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
 formCategory.value = normalizeCategory(formCategory.value);
 renderAll();
-if (originalWorkoutsJSON !== normalizedWorkoutsJSON || selectedDateChanged) {
+if (originalWorkoutsJSON !== normalizedWorkoutsJSON || resetToToday) {
   save();
 }
 
@@ -323,7 +324,7 @@ addForm.addEventListener("submit", (e)=>{
   formSecondsFailure.checked = false;
   formCategory.value = CATEGORY_KEYS[0];
   renderDay(normalizedDay);
-  switchToTab("hoy");
+  switchToTab("entreno");
   state.selectedDate = normalizedDay;
   selectedDateInput.value = state.selectedDate;
   formDate.value = state.selectedDate;
@@ -1339,7 +1340,7 @@ function renderMiniCalendar(){
       mcRefDate = new Date(year, month, 1);
       save(); renderAll();
       highlightMiniCalSelected();
-      switchToTab("hoy");
+      switchToTab("entreno");
     });
 
     mcGrid.append(btn);

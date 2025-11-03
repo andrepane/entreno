@@ -1,6 +1,6 @@
 {
-  "name": "Calendario de Entrenos",
-  "short_name": "Entrenos",
+  "name": "CaliGym",
+  "short_name": "CaliGym",
   "description": "Gestiona tus entrenamientos diarios y lleva tu calendario siempre contigo.",
   "lang": "es",
   "start_url": "./",
