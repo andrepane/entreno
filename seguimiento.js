@@ -27,7 +27,6 @@
   };
 
   const state = {
-    search: "",
     selectedExercise: null,
     selectedType: null,
     range: "quarter",
@@ -38,6 +37,8 @@
 
   let unsubscribe = null;
   let toastTimer = null;
+  let resizeFrame = null;
+  let lastChartEntries = [];
 
   function $(id) {
     return document.getElementById(id);
@@ -53,7 +54,6 @@
   }
 
   function init() {
-    elements.search = $("historySearch");
     elements.exerciseList = $("historyExerciseList");
     elements.exerciseEmpty = $("historyExerciseEmpty");
     elements.detailPanel = $("historyDetailPanel");
@@ -67,38 +67,30 @@
     elements.tableBody = $("historyTableBody");
     elements.table = $("historyTable");
     elements.canvas = $("historyChart");
-    elements.exportBtn = $("historyExportBtn");
-    elements.importBtn = $("historyImportBtn");
-    elements.importInput = $("historyImportFile");
-    elements.clearBtn = $("historyClearBtn");
     elements.rebuildBtn = $("historyRebuildBtn");
     elements.toast = $("historyToast");
     elements.warnings = $("historyWarnings");
 
-    if (!elements.search) return;
+    if (!elements.exerciseList || !elements.detail || !elements.tableBody) return;
 
     renderRangeOptions();
 
-    elements.search.addEventListener("input", () => {
-      state.search = elements.search.value.toLowerCase();
-      renderExercises();
-    });
-
-    elements.rangeSelect.addEventListener("change", () => {
+    elements.rangeSelect?.addEventListener("change", () => {
       state.range = elements.rangeSelect.value;
       renderDetail();
     });
 
-    elements.orderBtn.addEventListener("click", () => {
+    elements.orderBtn?.addEventListener("click", () => {
       state.order = state.order === "desc" ? "asc" : "desc";
       renderDetail();
     });
 
-    elements.exportBtn?.addEventListener("click", handleExport);
-    elements.importBtn?.addEventListener("click", () => elements.importInput?.click());
-    elements.importInput?.addEventListener("change", handleImport);
-    elements.clearBtn?.addEventListener("click", handleClear);
     elements.rebuildBtn?.addEventListener("click", handleRebuild);
+
+    if (elements.canvas) {
+      updateCanvasDimensions();
+      window.addEventListener("resize", handleResize, { passive: true });
+    }
 
     unsubscribe = historyStore.subscribe(() => {
       updateWarnings();
@@ -140,11 +132,7 @@
 
   function getFilteredExercises() {
     const map = historyStore.listExercises();
-    const entries = Array.from(map.entries()).map(([name, info]) => ({ name, info }));
-    if (state.search) {
-      return entries.filter(({ name }) => name.toLowerCase().includes(state.search));
-    }
-    return entries;
+    return Array.from(map.entries()).map(([name, info]) => ({ name, info }));
   }
 
   function renderExercises() {
@@ -258,6 +246,7 @@
       elements.typeSelector.innerHTML = "";
       elements.summary.innerHTML = "";
       elements.tableBody.innerHTML = "";
+      lastChartEntries = [];
       clearCanvas();
       return;
     }
@@ -273,9 +262,11 @@
     elements.detailEmpty?.classList.add("hidden");
     elements.detail.classList.remove("hidden");
     elements.detailTitle.textContent = formatExerciseName(state.selectedExercise);
+    updateCanvasDimensions();
     renderTypeSelector(entries);
     renderSummary(filtered);
     renderTable(filtered);
+    lastChartEntries = filtered;
     renderChart(filtered);
     updateOrderButton();
   }
@@ -416,20 +407,32 @@
     const ctx = elements.canvas.getContext("2d");
     clearCanvas();
     if (!entries.length) return;
+    updateCanvasDimensions();
+    const width = elements.canvas.width;
+    const height = elements.canvas.height;
+    if (!width || !height) return;
     const sorted = entries.slice().sort((a, b) => a.fechaISO.localeCompare(b.fechaISO));
     const values = sorted.map((entry) => Number(entry.valor));
     const max = Math.max(...values);
     const min = Math.min(...values);
     const range = max - min || 1;
-    const width = elements.canvas.width;
-    const height = elements.canvas.height;
+    const paddingX = Math.max(12, Math.round(width * 0.05));
+    const paddingY = Math.max(12, Math.round(height * 0.15));
+    const plotWidth = width - paddingX * 2;
+    const plotHeight = height - paddingY * 2;
+    if (plotWidth <= 0 || plotHeight <= 0) return;
+    const denominator = Math.max(sorted.length - 1, 1);
     ctx.lineWidth = 2;
     ctx.strokeStyle = "#2563eb";
     ctx.fillStyle = "rgba(37,99,235,0.15)";
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
     ctx.beginPath();
     sorted.forEach((entry, index) => {
-      const x = (index / (sorted.length - 1 || 1)) * width;
-      const y = height - ((Number(entry.valor) - min) / range) * height;
+      const value = Number(entry.valor);
+      const x = paddingX + (index / denominator) * plotWidth;
+      const normalized = (value - min) / range;
+      const y = paddingY + (1 - normalized) * plotHeight;
       if (index === 0) {
         ctx.moveTo(x, y);
       } else {
@@ -437,8 +440,8 @@
       }
     });
     ctx.stroke();
-    ctx.lineTo(width, height);
-    ctx.lineTo(0, height);
+    ctx.lineTo(paddingX + plotWidth, paddingY + plotHeight);
+    ctx.lineTo(paddingX, paddingY + plotHeight);
     ctx.closePath();
     ctx.fill();
   }
@@ -447,6 +450,38 @@
     if (!elements.canvas) return;
     const ctx = elements.canvas.getContext("2d");
     ctx.clearRect(0, 0, elements.canvas.width, elements.canvas.height);
+  }
+
+  function updateCanvasDimensions() {
+    if (!elements.canvas) return;
+    const wrapper = elements.canvas.parentElement;
+    if (!wrapper) return;
+    const width = Math.floor(wrapper.clientWidth);
+    if (!width) return;
+    const desiredHeight = Math.max(160, Math.round(width * 0.45));
+    if (elements.canvas.style.width !== `${width}px`) {
+      elements.canvas.style.width = `${width}px`;
+    }
+    if (elements.canvas.style.height !== `${desiredHeight}px`) {
+      elements.canvas.style.height = `${desiredHeight}px`;
+    }
+    if (elements.canvas.width !== width) {
+      elements.canvas.width = width;
+    }
+    if (elements.canvas.height !== desiredHeight) {
+      elements.canvas.height = desiredHeight;
+    }
+  }
+
+  function handleResize() {
+    if (!elements.canvas) return;
+    if (elements.detail?.classList.contains("hidden")) return;
+    if (resizeFrame) cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = null;
+      updateCanvasDimensions();
+      renderChart(lastChartEntries);
+    });
   }
 
   function handleDeleteEntry(entry) {
@@ -580,25 +615,6 @@
     );
   }
 
-  function handleExport() {
-    try {
-      const data = historyStore.exportJSON();
-      const blob = new Blob([data], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `entreno-history-${Date.now()}.json`;
-      document.body.append(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      showToast("Historial exportado");
-    } catch (err) {
-      console.error(err);
-      showToast("No se pudo exportar el historial");
-    }
-  }
-
   function handleRebuild() {
     if (!historyStore) return;
     const calendarProvider = global.entrenoApp?.getCalendarSnapshot;
@@ -614,33 +630,6 @@
     renderDetail();
   }
 
-  async function handleImport(event) {
-    const file = event.target?.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const result = historyStore.importJSON(text);
-      showToast(`Importadas ${result.imported} entradas`);
-      autoSelectFirst();
-      renderExercises();
-      renderDetail();
-    } catch (err) {
-      console.error(err);
-      alert(err.message || "No se pudo importar el archivo");
-    }
-  }
-
-  function handleClear() {
-    if (!confirm("¿Seguro que quieres borrar todo el historial?")) return;
-    historyStore.clear();
-    state.selectedExercise = null;
-    state.selectedType = null;
-    renderExercises();
-    renderDetail();
-    showToast("Historial borrado");
-  }
-
   function showToast(message) {
     if (!elements.toast) return;
     elements.toast.textContent = message;
@@ -654,6 +643,11 @@
   function destroy() {
     if (unsubscribe) unsubscribe();
     if (toastTimer) clearTimeout(toastTimer);
+    if (resizeFrame) {
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = null;
+    }
+    window.removeEventListener("resize", handleResize);
   }
 
   document.addEventListener("DOMContentLoaded", init);
