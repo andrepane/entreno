@@ -55,6 +55,31 @@ let state = {
 
 const isPlainObject = (value) => value && typeof value === "object" && !Array.isArray(value);
 
+const CATEGORY_OPTIONS = [
+  { value: "calistenia", label: "Calistenia" },
+  { value: "musculacion", label: "Musculación" },
+  { value: "cardio", label: "Cardio" },
+  { value: "skill", label: "Skill" }
+];
+const DEFAULT_CATEGORY = CATEGORY_OPTIONS[0].value;
+const CATEGORY_LABEL_MAP = CATEGORY_OPTIONS.reduce((acc, opt) => {
+  acc[opt.value] = opt.label;
+  return acc;
+}, {});
+
+function normalizeCategory(value) {
+  if (typeof value === "string") {
+    const lower = value.toLowerCase();
+    if (CATEGORY_LABEL_MAP[lower]) return lower;
+  }
+  return DEFAULT_CATEGORY;
+}
+
+function getCategoryLabel(value) {
+  const key = normalizeCategory(value);
+  return CATEGORY_LABEL_MAP[key] || CATEGORY_LABEL_MAP[DEFAULT_CATEGORY];
+}
+
 function normalizeWorkouts(rawWorkouts) {
   if (!isPlainObject(rawWorkouts)) return {};
 
@@ -75,6 +100,7 @@ function normalizeWorkouts(rawWorkouts) {
         const cardioMinutesRaw = Number(exercise.cardioMinutes);
         return {
           ...exercise,
+          category: normalizeCategory(exercise.category),
           done: Array.isArray(exercise.done) ? exercise.done : [],
           completed: !!exercise.completed,
           note: typeof exercise.note === "string" ? exercise.note : "",
@@ -133,6 +159,7 @@ const addForm = document.getElementById("addForm");
 const formDate = document.getElementById("formDate");
 const formName = document.getElementById("formName");
 const formSets = document.getElementById("formSets");
+const formCategory = document.getElementById("formCategory");
 const goalReps = document.getElementById("goalReps");
 const goalSecs = document.getElementById("goalSecs");
 const goalEmom = document.getElementById("goalEmom");
@@ -236,6 +263,7 @@ addForm.addEventListener("submit", (e)=>{
     id: randomUUID(),
     name: (formName.value || "").trim(),
     sets: Math.max(1, Number(formSets.value||1)),
+    category: normalizeCategory(formCategory.value),
     goal: null,          // "reps" | "seconds" | "emom" | "cardio"
     reps: null,          // si goal="reps"
     failure: false,      // si goal="reps" o goal="seconds"
@@ -296,6 +324,7 @@ addForm.addEventListener("submit", (e)=>{
 
   // Ajustar UI
   formName.value = "";
+  formCategory.value = DEFAULT_CATEGORY;
   formFailure.checked = false;
   formSecondsFailure.checked = false;
   renderDay(normalizedDay);
@@ -328,6 +357,12 @@ function renderDay(dayISO){
     if (!ex.id) ex.id = randomUUID();
     const li = document.createElement("li");
     li.className = "exercise";
+    const categoryKey = normalizeCategory(ex.category);
+    ex.category = categoryKey;
+    li.classList.add(`category-${categoryKey}`);
+    const categoryTag = document.createElement("div");
+    categoryTag.className = "category-tag";
+    categoryTag.textContent = getCategoryLabel(categoryKey);
     if (ex.completed) li.classList.add("completed");
     li.dataset.id = ex.id;
 
@@ -487,7 +522,7 @@ function renderDay(dayISO){
       removeExercise(dayISO, ex.id);
     });
 
-    li.append(title, meta, noteBox);
+    li.append(categoryTag, title, meta, noteBox);
     if (setsBox) li.append(setsBox);
     exerciseList.append(li);
     setupExerciseDrag(li, dayISO);
@@ -1031,6 +1066,7 @@ function buildEditForm(ex){
   const fName = field("Nombre", "text", ex.name);
   // Series
   const fSets = field("Series", "number", ex.sets, {min:1});
+  const cField = selectField("Categoría", CATEGORY_OPTIONS, ex.category || DEFAULT_CATEGORY);
 
   // Tipo
   const typeWrap = document.createElement("div");
@@ -1092,7 +1128,7 @@ function buildEditForm(ex){
   const deleteBtn = button("Eliminar", "danger small");
   actions.append(saveBtn, cancelBtn, deleteBtn);
 
-  box.append(fName.wrap, fSets.wrap, typeWrap, wField.wrap, actions);
+  box.append(fName.wrap, fSets.wrap, cField.wrap, typeWrap, wField.wrap, actions);
 
   saveBtn.addEventListener("click", ()=>{
     ex.name = fName.input.value.trim() || ex.name;
@@ -1105,6 +1141,8 @@ function buildEditForm(ex){
       const weightNumber = Number(weightRaw);
       ex.weightKg = Number.isFinite(weightNumber) ? weightNumber : ex.weightKg;
     }
+
+    ex.category = normalizeCategory(cField.select.value);
 
     if (rReps.input.checked){
       ex.goal="reps";
@@ -1169,6 +1207,20 @@ function fieldInline(label, type, value, attrs={}){
   Object.entries(attrs).forEach(([k,v])=> input.setAttribute(k,v));
   wrap.append(span, input);
   return {wrap, input};
+}
+function selectField(label, options, value){
+  const wrap = document.createElement("label"); wrap.className="field";
+  const span = document.createElement("span"); span.textContent = label;
+  const select = document.createElement("select");
+  options.forEach(opt => {
+    const option = document.createElement("option");
+    option.value = opt.value;
+    option.textContent = opt.label;
+    select.append(option);
+  });
+  select.value = normalizeCategory(value);
+  wrap.append(span, select);
+  return {wrap, select};
 }
 function radioRow(text, name, checked=false){
   const row = document.createElement("label"); row.className="row";

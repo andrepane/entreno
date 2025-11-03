@@ -158,9 +158,19 @@ button.link{background:transparent; color:var(--accent); border:none; padding:0}
 .copy-box.hidden{display:none}
 
 .exercise-list{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:10px; position:relative}
-.exercise{padding:clamp(12px, 4vw, 20px); border:1px solid #2a3240; border-radius:14px; background:linear-gradient(180deg,#121722 0,#0f131d 100%)}
-.exercise.completed{border-color:#2f855a; box-shadow:0 0 0 1px rgba(47,133,90,.4)}
+.exercise{padding:clamp(12px, 4vw, 20px); border:1px solid #2a3240; border-radius:14px; background:linear-gradient(180deg,#121722 0,#0f131d 100%); position:relative; overflow:hidden}
 .exercise.completed .meta span{border-color:#234d36}
+.exercise .category-tag{position:absolute; top:0; left:24px; transform:translateY(-50%); padding:4px 14px; border-radius:999px; font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; font-weight:600; background:#0b1018; border:1px solid rgba(255,255,255,.1); color:var(--muted); box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.exercise.category-calistenia{border-color:rgba(94,234,212,.35)}
+.exercise.category-calistenia .category-tag{background:rgba(45,212,191,.16); border-color:rgba(45,212,191,.45); color:#5eead4; box-shadow:0 4px 18px rgba(45,212,191,.2)}
+.exercise.category-musculacion{border-color:rgba(251,191,36,.35)}
+.exercise.category-musculacion .category-tag{background:rgba(251,191,36,.16); border-color:rgba(251,191,36,.45); color:#facc15; box-shadow:0 4px 18px rgba(251,191,36,.2)}
+.exercise.category-cardio{border-color:rgba(248,113,113,.35)}
+.exercise.category-cardio .category-tag{background:rgba(248,113,113,.16); border-color:rgba(248,113,113,.45); color:#f87171; box-shadow:0 4px 18px rgba(248,113,113,.2)}
+.exercise.category-skill{border-color:rgba(196,181,253,.35)}
+.exercise.category-skill .category-tag{background:rgba(167,139,250,.16); border-color:rgba(167,139,250,.45); color:#c084fc; box-shadow:0 4px 18px rgba(167,139,250,.2)}
+.exercise.completed{border-color:#2f855a; box-shadow:0 0 0 1px rgba(47,133,90,.4)}
+.exercise.completed .category-tag{background:rgba(72,208,109,.16); border-color:rgba(72,208,109,.5); color:#48d06d; box-shadow:0 4px 18px rgba(72,208,109,.2)}
 .exercise .title{display:flex; align-items:center; justify-content:space-between; gap:12px}
 .exercise .title-main{display:flex; align-items:center; gap:10px; flex:1; min-width:0}
 .exercise .title-main h3{margin:0; flex:1; min-width:0}
