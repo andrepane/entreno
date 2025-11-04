@@ -66,13 +66,9 @@
             <button type="button" id="todayMobilityToggle" class="ghost small">Marcar movilidad</button>
           </article>
           <article class="insight-card">
-            <header>Macrociclo</header>
-            <label class="field compact" for="todayMacrocycle">
-              <span>Etiqueta</span>
-              <input id="todayMacrocycle" type="text" placeholder="Ej. Otoño · Fuerza" />
-            </label>
+            <header>Fase</header>
             <label class="field compact" for="todayPhase">
-              <span>Fase</span>
+              <span>Estado actual</span>
               <select id="todayPhase">
                 <option value="">Sin fase</option>
                 <option value="base">Base</option>
@@ -160,13 +156,6 @@
                 <span>Series</span>
                 <input type="number" id="formSets" min="1" value="3" required />
               </label>
-            </div>
-
-            <div class="preset-chips" role="list">
-              <span class="muted">Presets rápidos</span>
-              <button type="button" class="chip" data-preset="push">Empuje</button>
-              <button type="button" class="chip" data-preset="pull">Tirón</button>
-              <button type="button" class="chip" data-preset="legs">Piernas</button>
             </div>
 
             <aside id="formProgression" class="form-hint" aria-live="polite">
@@ -296,8 +285,6 @@
 
             <div id="historySummary" class="history-summary" aria-live="polite"></div>
 
-            <div id="historyMacroTag" class="macro-tag" aria-live="polite"></div>
-
             <div id="historyTrends" class="history-trends" aria-live="polite"></div>
 
             <div class="history-chart-wrapper">
@@ -311,7 +298,6 @@
                     <th scope="col">Fecha</th>
                     <th scope="col">Valor</th>
                     <th scope="col">Fase</th>
-                    <th scope="col">Macrociclo</th>
                     <th scope="col">Notas</th>
                     <th scope="col" class="actions-header">Acciones</th>
                   </tr>

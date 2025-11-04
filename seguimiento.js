@@ -79,14 +79,9 @@
     elements.warnings = $("historyWarnings");
     elements.phaseFilter = $("historyPhaseFilter");
     elements.trends = $("historyTrends");
-    elements.macroTag = $("historyMacroTag");
 
     if (elements.phaseFilter) {
       elements.phaseFilter.value = state.phase;
-    }
-    if (elements.macroTag) {
-      elements.macroTag.classList.add("hidden");
-      elements.macroTag.textContent = "";
     }
 
     if (!elements.exerciseList || !elements.detail || !elements.tableBody) return;
@@ -297,7 +292,6 @@
     elements.detailTitle.textContent = formatExerciseName(state.selectedExercise);
     updateCanvasDimensions();
     renderTypeSelector(entries);
-    updateMacroTag(phaseFiltered);
     renderSummary(phaseFiltered);
     renderTrends(phaseFiltered);
     renderTable(phaseFiltered);
@@ -337,10 +331,6 @@
       elements.summary.append(empty);
       if (elements.trends) {
         elements.trends.innerHTML = "";
-      }
-      if (elements.macroTag) {
-        elements.macroTag.classList.add("hidden");
-        elements.macroTag.textContent = "";
       }
       return;
     }
@@ -445,29 +435,6 @@
     );
   }
 
-  function updateMacroTag(entries) {
-    if (!elements.macroTag) return;
-    if (!entries.length) {
-      elements.macroTag.classList.add("hidden");
-      elements.macroTag.textContent = "";
-      return;
-    }
-    const latest = entries
-      .slice()
-      .sort((a, b) => b.fechaISO.localeCompare(a.fechaISO))[0];
-    const meta = getMetaForDate(latest.fechaISO);
-    if (!meta || (!meta.macrocycle && !meta.phase)) {
-      elements.macroTag.classList.add("hidden");
-      elements.macroTag.textContent = "";
-      return;
-    }
-    const parts = [];
-    if (meta.macrocycle) parts.push(meta.macrocycle);
-    if (meta.phase) parts.push(PHASE_LABELS[meta.phase] || meta.phase);
-    elements.macroTag.textContent = `Macrociclo: ${parts.join(" · ")}`.trim();
-    elements.macroTag.classList.remove("hidden");
-  }
-
   function summaryItem(label, value) {
     const wrapper = document.createElement("div");
     const dt = document.createElement("dt");
@@ -524,8 +491,6 @@
       const meta = getMetaForDate(entry.fechaISO) || {};
       const tdPhase = document.createElement("td");
       tdPhase.textContent = meta.phase ? PHASE_LABELS[meta.phase] || meta.phase : "—";
-      const tdMacro = document.createElement("td");
-      tdMacro.textContent = meta.macrocycle || "—";
       const tdNotes = document.createElement("td");
       tdNotes.textContent = entry.notas || "—";
       const tdActions = document.createElement("td");
@@ -540,7 +505,7 @@
       delBtn.textContent = "Eliminar";
       delBtn.addEventListener("click", () => handleDeleteEntry(entry));
       tdActions.append(editBtn, delBtn);
-      tr.append(tdDate, tdValue, tdPhase, tdMacro, tdNotes, tdActions);
+      tr.append(tdDate, tdValue, tdPhase, tdNotes, tdActions);
       elements.tableBody.append(tr);
     });
   }
