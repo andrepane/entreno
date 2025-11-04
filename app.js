@@ -62,12 +62,6 @@ const PHASE_LABELS = {
   descarga: "Descarga",
 };
 
-const FATIGUE_LEVELS = [
-  { value: "ligero", label: "Ligero", icon: "🙂" },
-  { value: "medio", label: "Medio", icon: "😐" },
-  { value: "alto", label: "Alto", icon: "😵" },
-];
-
 let state = {
   selectedDate: fmt(new Date()),
   workouts: {}, // { "YYYY-MM-DD": [exercise, ...] }
@@ -100,8 +94,6 @@ function normalizeWorkouts(rawWorkouts) {
       .map((exercise) => {
         const cardioMinutesRaw = Number(exercise.cardioMinutes);
         const perceivedRaw = Number(exercise.perceivedEffort);
-        const fatigueRaw = typeof exercise.fatigueLevel === "string" ? exercise.fatigueLevel.toLowerCase() : null;
-        const fatigue = FATIGUE_LEVELS.some((item) => item.value === fatigueRaw) ? fatigueRaw : null;
         return {
           ...exercise,
           category: normalizeCategory(exercise.category),
@@ -110,7 +102,6 @@ function normalizeWorkouts(rawWorkouts) {
           note: typeof exercise.note === "string" ? exercise.note : "",
           cardioMinutes: Number.isFinite(cardioMinutesRaw) ? cardioMinutesRaw : null,
           perceivedEffort: Number.isFinite(perceivedRaw) && perceivedRaw >= 1 && perceivedRaw <= 10 ? Math.round(perceivedRaw) : null,
-          fatigueLevel: fatigue,
         };
       });
 
@@ -133,7 +124,6 @@ function defaultDayMeta(){
     sessionRPE: null,
     habits: { sleep: false, mobility: false, handstand: false },
     phase: "",
-    macrocycle: "",
   };
 }
 
@@ -154,7 +144,6 @@ function normalizeDayMeta(rawMeta){
     };
     const phase = typeof src.phase === "string" ? src.phase.trim().toLowerCase() : "";
     base.phase = PHASE_KEYS.includes(phase) ? phase : "";
-    base.macrocycle = typeof src.macrocycle === "string" ? src.macrocycle.trim() : "";
     normalized[dayISO] = base;
   }
   return normalized;
@@ -214,13 +203,6 @@ function setDayMeta(dayISO, patch = {}){
       changed = true;
     }
   }
-  if (patch.macrocycle !== undefined){
-    const normalized = typeof patch.macrocycle === "string" ? patch.macrocycle.trim() : "";
-    if (meta.macrocycle !== normalized){
-      meta.macrocycle = normalized;
-      changed = true;
-    }
-  }
 
   state.dayMeta[key] = meta;
 
@@ -240,7 +222,6 @@ function getDayMeta(dayISO){
     sessionRPE: meta.sessionRPE,
     habits: { ...meta.habits },
     phase: meta.phase,
-    macrocycle: meta.macrocycle,
   };
 }
 
@@ -276,10 +257,8 @@ const todayRPEBadge = document.getElementById("todayRPEBadge");
 const todayRPEClear = document.getElementById("todayRPEClear");
 const todayBadges = document.getElementById("todayBadges");
 const todayHabitInputs = todayPanel ? todayPanel.querySelectorAll('[data-habit]') : [];
-const todayMacrocycleInput = document.getElementById("todayMacrocycle");
 const todayPhaseSelect = document.getElementById("todayPhase");
 let suppressDayMetaEvents = false;
-let macrocycleDebounce = null;
 
 let activeDrag = null;
 
@@ -322,7 +301,6 @@ const formPrev = document.getElementById("formPrev");
 const formNext = document.getElementById("formNext");
 const formSubmitBtn = document.getElementById("formSubmit");
 const formProgression = document.getElementById("formProgression");
-const presetButtons = document.querySelectorAll(".preset-chips .chip");
 let currentFormStep = 0;
 
 /* Copiar día */
@@ -421,36 +399,6 @@ function updateGoalRows() {
 [goalReps, goalSecs, goalEmom, goalCardio].forEach(el=>el.addEventListener("change", updateGoalRows));
 updateGoalRows();
 
-const FORM_PRESETS = {
-  push: {
-    name: "Flexiones declinadas",
-    category: "calistenia",
-    sets: 4,
-    goal: "reps",
-    reps: 12,
-    failure: false,
-    note: "Progresión: flexiones regulares → declinadas → pseudo plancha",
-  },
-  pull: {
-    name: "Dominadas pronas",
-    category: "calistenia",
-    sets: 4,
-    goal: "reps",
-    reps: 8,
-    failure: false,
-    note: "Sigue la progresión: dominadas pronas → supinas → lastradas",
-  },
-  legs: {
-    name: "Sentadillas búlgaras",
-    category: "musculacion",
-    sets: 4,
-    goal: "reps",
-    reps: 10,
-    failure: false,
-    note: "Añade tempo descendente para intensificar sin peso extra",
-  },
-};
-
 function validateStep(stepIndex){
   const step = formSteps[stepIndex];
   if (!step) return true;
@@ -493,28 +441,6 @@ function goToStep(target){
   setFormStep(target);
 }
 
-function applyPreset(key){
-  const preset = FORM_PRESETS[key];
-  if (!preset) return;
-  formName.value = preset.name;
-  formCategory.value = normalizeCategory(preset.category);
-  formSets.value = preset.sets;
-  if (preset.goal === "reps") {
-    goalReps.checked = true;
-    goalSecs.checked = false;
-    goalEmom.checked = false;
-    goalCardio.checked = false;
-    formReps.value = preset.reps;
-    formFailure.checked = !!preset.failure;
-  }
-  updateGoalRows();
-  if (formQuickNote) {
-    formQuickNote.value = preset.note || "";
-  }
-  updateProgressionHint();
-  setFormStep(1);
-}
-
 function updateProgressionHint(){
   if (!formProgression) return;
   const key = normalizeCategory(formCategory.value);
@@ -542,12 +468,6 @@ formStepButtons.forEach((btn)=>{
   btn.addEventListener("click", ()=>{
     const target = Number(btn.dataset.stepTarget || "0");
     goToStep(target);
-  });
-});
-presetButtons.forEach((btn)=>{
-  btn.addEventListener("click", ()=>{
-    const key = btn.dataset.preset;
-    applyPreset(key);
   });
 });
 if (formCategory){
@@ -592,17 +512,6 @@ if (todayRPEClear){
     renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
   });
 }
-if (todayMacrocycleInput){
-  todayMacrocycleInput.addEventListener("input", ()=>{
-    if (suppressDayMetaEvents) return;
-    if (macrocycleDebounce) clearTimeout(macrocycleDebounce);
-    macrocycleDebounce = setTimeout(()=>{
-      setDayMeta(state.selectedDate, { macrocycle: todayMacrocycleInput.value });
-      renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
-      macrocycleDebounce = null;
-    }, 250);
-  });
-}
 if (todayPhaseSelect){
   todayPhaseSelect.addEventListener("change", ()=>{
     if (suppressDayMetaEvents) return;
@@ -644,7 +553,6 @@ addForm.addEventListener("submit", (e)=>{
     note: formQuickNote ? (formQuickNote.value || "").trim() : "",
     category: normalizeCategory(formCategory.value),
     perceivedEffort: null,
-    fatigueLevel: null,
   };
 
   if (!ex.name) { alert("Pon un nombre al ejercicio."); return; }
@@ -1098,9 +1006,6 @@ function renderTodayInsights(dayISO, exercises){
       input.checked = !!meta.habits[habitKey];
     });
   }
-  if (todayMacrocycleInput) {
-    todayMacrocycleInput.value = meta.macrocycle || "";
-  }
   if (todayPhaseSelect) {
     todayPhaseSelect.value = meta.phase || "";
   }
@@ -1157,35 +1062,7 @@ function buildRecoveryStrip(ex){
 
   effortBlock.append(effortLabel, slider, valueLabel, clearBtn);
 
-  const fatigueBlock = document.createElement("div");
-  fatigueBlock.className = "recovery-fatigue";
-  const fatigueLabel = document.createElement("span");
-  fatigueLabel.textContent = "Fatiga";
-  fatigueBlock.append(fatigueLabel);
-  const buttons = [];
-  FATIGUE_LEVELS.forEach((level)=>{
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "fatigue-btn ghost micro";
-    btn.dataset.level = level.value;
-    btn.textContent = `${level.icon} ${level.label}`;
-    btn.addEventListener("click", ()=>{
-      ex.fatigueLevel = ex.fatigueLevel === level.value ? null : level.value;
-      updateButtons();
-      save();
-    });
-    buttons.push(btn);
-    fatigueBlock.append(btn);
-  });
-
-  function updateButtons(){
-    buttons.forEach((btn)=>{
-      btn.classList.toggle("active", ex.fatigueLevel === btn.dataset.level);
-    });
-  }
-  updateButtons();
-
-  wrapper.append(effortBlock, fatigueBlock);
+  wrapper.append(effortBlock);
   return wrapper;
 }
 
