@@ -647,6 +647,20 @@ function setupExerciseDrag(li, dayISO){
   });
 }
 
+function getScrollableContainer(element){
+  const docEl = document.scrollingElement || document.documentElement;
+  let node = element;
+  while (node && node !== document.body && node !== document.documentElement){
+    const style = window.getComputedStyle(node);
+    const overflowY = style.overflowY;
+    if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight){
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return docEl;
+}
+
 function beginExerciseDrag(event, source, li, dayISO){
   if (activeDrag) return;
   if (!li.dataset.id) return;
@@ -659,6 +673,8 @@ function beginExerciseDrag(event, source, li, dayISO){
   const itemRect = li.getBoundingClientRect();
   const placeholder = createDragPlaceholder(itemRect.height);
   const nextSibling = li.nextSibling;
+  const scrollContainer = getScrollableContainer(exerciseList);
+  const initialScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
 
   placeholder.style.width = `${itemRect.width}px`;
   placeholder.style.boxSizing = "border-box";
@@ -673,7 +689,12 @@ function beginExerciseDrag(event, source, li, dayISO){
     offsetY: event.clientY - itemRect.top,
     placeholder,
     originalNextSibling: nextSibling,
-    originalTouchAction: source.style ? source.style.touchAction : undefined
+    originalTouchAction: source.style ? source.style.touchAction : undefined,
+    scrollContainer,
+    startScrollTop: initialScrollTop,
+    autoScrollVelocity: 0,
+    autoScrollFrame: null,
+    lastClientY: event.clientY
   };
 
   if (source && source.style){
@@ -698,10 +719,16 @@ function beginExerciseDrag(event, source, li, dayISO){
   updateDragPosition(event);
 }
 
-function updateDragPosition(event){
+function repositionActiveDrag(){
   if (!activeDrag) return;
+  const pointerY = typeof activeDrag.lastClientY === "number" ? activeDrag.lastClientY : null;
   const listRect = exerciseList.getBoundingClientRect();
-  const top = event.clientY - listRect.top - activeDrag.offsetY;
+  const scrollContainer = activeDrag.scrollContainer;
+  const scrollAdjustment = scrollContainer === exerciseList
+    ? (scrollContainer.scrollTop - activeDrag.startScrollTop)
+    : 0;
+  const referenceY = pointerY != null ? pointerY : (listRect.top + activeDrag.offsetY);
+  const top = referenceY - listRect.top - activeDrag.offsetY + scrollAdjustment;
   const maxTop = Math.max(0, exerciseList.scrollHeight - activeDrag.placeholder.offsetHeight);
   const clampedTop = Math.min(Math.max(top, 0), maxTop);
   activeDrag.li.style.top = `${clampedTop}px`;
@@ -710,7 +737,8 @@ function updateDragPosition(event){
   let inserted = false;
   for (const sibling of siblings){
     const rect = sibling.getBoundingClientRect();
-    if (event.clientY < rect.top + rect.height / 2){
+    const compareY = pointerY != null ? pointerY : (rect.top + rect.height / 2);
+    if (compareY < rect.top + rect.height / 2){
       exerciseList.insertBefore(activeDrag.placeholder, sibling);
       inserted = true;
       break;
@@ -721,9 +749,119 @@ function updateDragPosition(event){
   }
 }
 
+function computeAutoScrollSpeed(distance, margin){
+  if (margin <= 0) return 0;
+  const maxSpeed = 28;
+  const normalized = Math.min(1, Math.max(0, distance / margin));
+  const eased = normalized * normalized;
+  return eased * maxSpeed;
+}
+
+function stopAutoScroll(){
+  if (!activeDrag) return;
+  if (activeDrag.autoScrollFrame != null){
+    cancelAnimationFrame(activeDrag.autoScrollFrame);
+    activeDrag.autoScrollFrame = null;
+  }
+  activeDrag.autoScrollVelocity = 0;
+}
+
+function ensureAutoScrollLoop(){
+  if (!activeDrag) return;
+  if (activeDrag.autoScrollFrame != null) return;
+
+  const step = () => {
+    if (!activeDrag) return;
+    const { scrollContainer, autoScrollVelocity } = activeDrag;
+    if (!scrollContainer || Math.abs(autoScrollVelocity) < 0.01){
+      activeDrag.autoScrollFrame = null;
+      return;
+    }
+    const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+    if (maxScroll <= 0){
+      stopAutoScroll();
+      return;
+    }
+    const currentScroll = scrollContainer.scrollTop;
+    const nextScroll = Math.min(Math.max(currentScroll + autoScrollVelocity, 0), maxScroll);
+    if (nextScroll !== currentScroll){
+      scrollContainer.scrollTop = nextScroll;
+      repositionActiveDrag();
+    }
+    updateAutoScroll();
+    if (!activeDrag || Math.abs(activeDrag.autoScrollVelocity) < 0.01){
+      activeDrag.autoScrollFrame = null;
+      return;
+    }
+    activeDrag.autoScrollFrame = requestAnimationFrame(step);
+  };
+
+  activeDrag.autoScrollFrame = requestAnimationFrame(step);
+}
+
+function updateAutoScroll(){
+  if (!activeDrag) return;
+  const { scrollContainer } = activeDrag;
+  if (!scrollContainer){
+    stopAutoScroll();
+    return;
+  }
+
+  const pointerY = typeof activeDrag.lastClientY === "number" ? activeDrag.lastClientY : null;
+  if (pointerY == null){
+    stopAutoScroll();
+    return;
+  }
+
+  let rect;
+  if (scrollContainer === document.scrollingElement || scrollContainer === document.documentElement || scrollContainer === document.body){
+    rect = { top: 0, bottom: window.innerHeight };
+  } else {
+    rect = scrollContainer.getBoundingClientRect();
+  }
+
+  const marginBase = rect.bottom - rect.top;
+  const margin = Math.max(60, Math.min(120, marginBase / 4));
+  const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+  if (maxScroll <= 0){
+    stopAutoScroll();
+    return;
+  }
+
+  const scrollTop = scrollContainer.scrollTop;
+  let velocity = 0;
+
+  if (pointerY < rect.top + margin && scrollTop > 0){
+    const distance = rect.top + margin - pointerY;
+    velocity = -computeAutoScrollSpeed(distance, margin);
+  } else if (pointerY > rect.bottom - margin && scrollTop < maxScroll){
+    const distance = pointerY - (rect.bottom - margin);
+    velocity = computeAutoScrollSpeed(distance, margin);
+  }
+
+  activeDrag.autoScrollVelocity = velocity;
+
+  if (velocity !== 0){
+    ensureAutoScrollLoop();
+  } else {
+    stopAutoScroll();
+  }
+}
+
+function updateDragPosition(event){
+  if (!activeDrag) return;
+  if (event && typeof event.clientY === "number"){
+    activeDrag.lastClientY = event.clientY;
+  }
+  repositionActiveDrag();
+  updateAutoScroll();
+}
+
 function finishExerciseDrag(commit){
   if (!activeDrag) return;
   const { li, placeholder, source, pointerId, dayISO, originalNextSibling, originalTouchAction } = activeDrag;
+
+  stopAutoScroll();
 
   if (!commit){
     if (originalNextSibling && originalNextSibling.parentNode === exerciseList){
