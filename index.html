@@ -48,6 +48,74 @@
         </div>
       </div>
 
+      <section id="todayPanel" class="today-panel card" aria-live="polite">
+        <div class="today-overview">
+          <article class="insight-card">
+            <header>Duración estimada</header>
+            <strong id="todayDuration" aria-live="polite">—</strong>
+            <small id="todayVolumeHint" class="muted"></small>
+          </article>
+          <article class="insight-card">
+            <header>Foco del día</header>
+            <strong id="todayFocus">—</strong>
+            <small id="todayFocusDetail" class="muted"></small>
+          </article>
+          <article class="insight-card">
+            <header>Movilidad</header>
+            <p id="todayMobility">Registra tu movilidad para mantener la cadena abierta.</p>
+            <button type="button" id="todayMobilityToggle" class="ghost small">Marcar movilidad</button>
+          </article>
+          <article class="insight-card">
+            <header>Macrociclo</header>
+            <label class="field compact" for="todayMacrocycle">
+              <span>Etiqueta</span>
+              <input id="todayMacrocycle" type="text" placeholder="Ej. Otoño · Fuerza" />
+            </label>
+            <label class="field compact" for="todayPhase">
+              <span>Fase</span>
+              <select id="todayPhase">
+                <option value="">Sin fase</option>
+                <option value="base">Base</option>
+                <option value="intensificacion">Intensificación</option>
+                <option value="descarga">Descarga</option>
+              </select>
+            </label>
+          </article>
+        </div>
+
+        <div class="today-cta">
+          <div class="rpe-header">
+            <h3>Registra tu sensación (RPE)</h3>
+            <span id="todayRPEBadge" class="summary-badge">Sin registrar</span>
+          </div>
+          <div class="rpe-control">
+            <input type="range" id="todayRPE" min="1" max="10" step="1" />
+            <output id="todayRPEValue" for="todayRPE">—</output>
+            <button type="button" id="todayRPEClear" class="ghost small">Limpiar</button>
+          </div>
+        </div>
+
+        <div id="todayBadges" class="today-badges summary-grid" aria-live="polite"></div>
+
+        <div class="today-habits">
+          <h3>Hábitos complementarios</h3>
+          <div class="habit-list">
+            <label class="habit-chip">
+              <input type="checkbox" data-habit="sleep" />
+              <span>8h sueño</span>
+            </label>
+            <label class="habit-chip">
+              <input type="checkbox" data-habit="mobility" />
+              <span>Movilidad</span>
+            </label>
+            <label class="habit-chip">
+              <input type="checkbox" data-habit="handstand" />
+              <span>Handstand practice</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
       <ul id="exerciseList" class="exercise-list" aria-live="polite"></ul>
 
       <div class="empty-hint" id="emptyDayHint">
@@ -59,100 +127,133 @@
     <section id="tab-nuevo" class="tab-panel hidden" role="tabpanel">
       <h2>Añadir ejercicio</h2>
       <form id="addForm" class="card">
-        <div class="grid">
-          <label class="field">
-            <span>Día</span>
-            <input type="date" id="formDate" required />
-          </label>
+        <nav class="form-stepper" aria-label="Pasos del formulario">
+          <button type="button" class="form-step-btn active" data-step-target="0">1 · Detalles básicos</button>
+          <button type="button" class="form-step-btn" data-step-target="1">2 · Objetivo</button>
+          <button type="button" class="form-step-btn" data-step-target="2">3 · Cargas y notas</button>
+        </nav>
 
-          <label class="field">
-            <span>Nombre del ejercicio</span>
-            <input type="text" id="formName" placeholder="Dominadas / Plancha / EMOM…" required />
-          </label>
-
-          <label class="field">
-            <span>Categoría</span>
-            <select id="formCategory">
-              <option value="calistenia">Calistenia</option>
-              <option value="musculacion">Musculación</option>
-              <option value="cardio">Cardio</option>
-              <option value="skill">Skill</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Series</span>
-            <input type="number" id="formSets" min="1" value="3" required />
-          </label>
-
-          <div class="fieldset">
-            <span class="legend">Tipo de objetivo</span>
-
-            <label class="row">
-              <input type="radio" name="goalType" value="reps" id="goalReps" checked />
-              <span>Repeticiones</span>
-            </label>
-            <div class="row indent" id="rowReps">
-              <label class="field inline">
-                <span>Reps</span>
-                <input type="number" id="formReps" min="1" value="8" />
+        <div class="form-steps">
+          <section class="form-step active" data-form-step="0">
+            <div class="grid">
+              <label class="field">
+                <span>Día</span>
+                <input type="date" id="formDate" required />
               </label>
-              <label class="row inline">
-                <input type="checkbox" id="formFailure" />
-                <span>Al fallo</span>
+
+              <label class="field">
+                <span>Nombre del ejercicio</span>
+                <input type="text" id="formName" placeholder="Dominadas / Plancha / EMOM…" required />
+              </label>
+
+              <label class="field">
+                <span>Categoría</span>
+                <select id="formCategory">
+                  <option value="calistenia">Calistenia</option>
+                  <option value="musculacion">Musculación</option>
+                  <option value="cardio">Cardio</option>
+                  <option value="skill">Skill</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Series</span>
+                <input type="number" id="formSets" min="1" value="3" required />
               </label>
             </div>
 
-            <label class="row">
-              <input type="radio" name="goalType" value="seconds" id="goalSecs" />
-              <span>Isométrico (segundos)</span>
-            </label>
-            <div class="row indent hidden" id="rowSeconds">
-              <label class="field inline">
-                <span>Segundos</span>
-                <input type="number" id="formSeconds" min="1" value="30" />
-              </label>
-              <label class="row inline">
-                <input type="checkbox" id="formSecondsFailure" />
-                <span>Al fallo</span>
-              </label>
+            <div class="preset-chips" role="list">
+              <span class="muted">Presets rápidos</span>
+              <button type="button" class="chip" data-preset="push">Empuje</button>
+              <button type="button" class="chip" data-preset="pull">Tirón</button>
+              <button type="button" class="chip" data-preset="legs">Piernas</button>
             </div>
 
-            <label class="row">
-              <input type="radio" name="goalType" value="emom" id="goalEmom" />
-              <span>EMOM</span>
-            </label>
-            <div class="row indent hidden" id="rowEmom">
-              <label class="field inline">
-                <span>Minutos</span>
-                <input type="number" id="formEmomMinutes" min="1" value="10" />
+            <aside id="formProgression" class="form-hint" aria-live="polite">
+              Selecciona una categoría para ver recomendaciones.
+            </aside>
+          </section>
+
+          <section class="form-step" data-form-step="1">
+            <div class="fieldset">
+              <span class="legend">Tipo de objetivo</span>
+
+              <label class="row">
+                <input type="radio" name="goalType" value="reps" id="goalReps" checked />
+                <span>Repeticiones</span>
               </label>
-              <label class="field inline">
-                <span>Reps / min</span>
-                <input type="number" id="formEmomReps" min="1" value="10" />
+              <div class="row indent" id="rowReps">
+                <label class="field inline">
+                  <span>Reps</span>
+                  <input type="number" id="formReps" min="1" value="8" />
+                </label>
+                <label class="row inline">
+                  <input type="checkbox" id="formFailure" />
+                  <span>Al fallo</span>
+                </label>
+              </div>
+
+              <label class="row">
+                <input type="radio" name="goalType" value="seconds" id="goalSecs" />
+                <span>Isométrico (segundos)</span>
+              </label>
+              <div class="row indent hidden" id="rowSeconds">
+                <label class="field inline">
+                  <span>Segundos</span>
+                  <input type="number" id="formSeconds" min="1" value="30" />
+                </label>
+                <label class="row inline">
+                  <input type="checkbox" id="formSecondsFailure" />
+                  <span>Al fallo</span>
+                </label>
+              </div>
+
+              <label class="row">
+                <input type="radio" name="goalType" value="emom" id="goalEmom" />
+                <span>EMOM</span>
+              </label>
+              <div class="row indent hidden" id="rowEmom">
+                <label class="field inline">
+                  <span>Minutos</span>
+                  <input type="number" id="formEmomMinutes" min="1" value="10" />
+                </label>
+                <label class="field inline">
+                  <span>Reps / min</span>
+                  <input type="number" id="formEmomReps" min="1" value="10" />
+                </label>
+              </div>
+
+              <label class="row">
+                <input type="radio" name="goalType" value="cardio" id="goalCardio" />
+                <span>Cardio</span>
+              </label>
+              <div class="row indent hidden" id="rowCardio">
+                <label class="field inline">
+                  <span>Minutos</span>
+                  <input type="number" id="formCardioMinutes" min="1" value="20" />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="form-step" data-form-step="2">
+            <div class="grid">
+              <label class="field">
+                <span>Lastre (kg) — opcional</span>
+                <input type="number" id="formWeight" step="0.5" placeholder="0" />
+              </label>
+              <label class="field">
+                <span>Notas rápidas</span>
+                <textarea id="formQuickNote" rows="3" placeholder="Añade recordatorios o variantes"></textarea>
               </label>
             </div>
-
-            <label class="row">
-              <input type="radio" name="goalType" value="cardio" id="goalCardio" />
-              <span>Cardio</span>
-            </label>
-            <div class="row indent hidden" id="rowCardio">
-              <label class="field inline">
-                <span>Minutos</span>
-                <input type="number" id="formCardioMinutes" min="1" value="20" />
-              </label>
-            </div>
-          </div>
-
-          <label class="field">
-            <span>Lastre (kg) — opcional</span>
-            <input type="number" id="formWeight" step="0.5" placeholder="0" />
-          </label>
+          </section>
         </div>
 
-        <div class="actions">
-          <button type="submit" class="primary">Añadir</button>
+        <div class="actions step-actions">
+          <button type="button" id="formPrev" class="ghost">Anterior</button>
+          <button type="button" id="formNext" class="primary">Siguiente</button>
+          <button type="submit" id="formSubmit" class="primary hidden">Añadir</button>
           <button type="reset" class="ghost">Limpiar</button>
         </div>
       </form>
@@ -183,10 +284,21 @@
             <div class="history-controls">
               <label for="historyRange">Rango</label>
               <select id="historyRange" aria-label="Filtrar por rango"></select>
+              <label for="historyPhaseFilter">Fase</label>
+              <select id="historyPhaseFilter" aria-label="Filtrar por fase">
+                <option value="all">Todas</option>
+                <option value="base">Base</option>
+                <option value="intensificacion">Intensificación</option>
+                <option value="descarga">Descarga</option>
+              </select>
               <button id="historyOrderBtn" class="ghost" type="button">Ordenar</button>
             </div>
 
             <div id="historySummary" class="history-summary" aria-live="polite"></div>
+
+            <div id="historyMacroTag" class="macro-tag" aria-live="polite"></div>
+
+            <div id="historyTrends" class="history-trends" aria-live="polite"></div>
 
             <div class="history-chart-wrapper">
               <canvas id="historyChart" width="360" height="140" role="img" aria-label="Tendencia del ejercicio"></canvas>
@@ -198,6 +310,8 @@
                   <tr>
                     <th scope="col">Fecha</th>
                     <th scope="col">Valor</th>
+                    <th scope="col">Fase</th>
+                    <th scope="col">Macrociclo</th>
                     <th scope="col">Notas</th>
                     <th scope="col" class="actions-header">Acciones</th>
                   </tr>
