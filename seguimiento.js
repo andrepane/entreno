@@ -19,6 +19,12 @@
     peso: "kg"
   };
 
+  const PHASE_LABELS = {
+    base: "Base",
+    intensificacion: "Intensificación",
+    descarga: "Descarga",
+  };
+
   const RANGE_PRESETS = {
     week: { label: "Última semana", days: 7 },
     month: { label: "Último mes", days: 30 },
@@ -30,7 +36,8 @@
     selectedExercise: null,
     selectedType: null,
     range: "quarter",
-    order: "desc"
+    order: "desc",
+    phase: "all",
   };
 
   const elements = {};
@@ -70,6 +77,17 @@
     elements.rebuildBtn = $("historyRebuildBtn");
     elements.toast = $("historyToast");
     elements.warnings = $("historyWarnings");
+    elements.phaseFilter = $("historyPhaseFilter");
+    elements.trends = $("historyTrends");
+    elements.macroTag = $("historyMacroTag");
+
+    if (elements.phaseFilter) {
+      elements.phaseFilter.value = state.phase;
+    }
+    if (elements.macroTag) {
+      elements.macroTag.classList.add("hidden");
+      elements.macroTag.textContent = "";
+    }
 
     if (!elements.exerciseList || !elements.detail || !elements.tableBody) return;
 
@@ -82,6 +100,11 @@
 
     elements.orderBtn?.addEventListener("click", () => {
       state.order = state.order === "desc" ? "asc" : "desc";
+      renderDetail();
+    });
+
+    elements.phaseFilter?.addEventListener("change", () => {
+      state.phase = elements.phaseFilter.value;
       renderDetail();
     });
 
@@ -259,15 +282,27 @@
       return entryDate >= fromDate;
     });
 
+    const phaseFiltered = filtered.filter((entry) => {
+      if (state.phase === "all") return true;
+      const meta = getMetaForDate(entry.fechaISO);
+      return meta?.phase === state.phase;
+    });
+
+    if (elements.phaseFilter) {
+      elements.phaseFilter.value = state.phase;
+    }
+
     elements.detailEmpty?.classList.add("hidden");
     elements.detail.classList.remove("hidden");
     elements.detailTitle.textContent = formatExerciseName(state.selectedExercise);
     updateCanvasDimensions();
     renderTypeSelector(entries);
-    renderSummary(filtered);
-    renderTable(filtered);
-    lastChartEntries = filtered;
-    renderChart(filtered);
+    updateMacroTag(phaseFiltered);
+    renderSummary(phaseFiltered);
+    renderTrends(phaseFiltered);
+    renderTable(phaseFiltered);
+    lastChartEntries = phaseFiltered;
+    renderChart(phaseFiltered);
     updateOrderButton();
   }
 
@@ -300,6 +335,13 @@
       empty.className = "muted";
       empty.textContent = "No hay registros para mostrar en este rango.";
       elements.summary.append(empty);
+      if (elements.trends) {
+        elements.trends.innerHTML = "";
+      }
+      if (elements.macroTag) {
+        elements.macroTag.classList.add("hidden");
+        elements.macroTag.textContent = "";
+      }
       return;
     }
     if (!historyStore) {
@@ -340,6 +382,92 @@
     elements.summary.append(badge, list);
   }
 
+  function createTrendCard(title, value, variant = "") {
+    const card = document.createElement("article");
+    card.className = "trend-card";
+    if (variant) {
+      card.classList.add(`trend-${variant}`);
+    }
+    const heading = document.createElement("h4");
+    heading.textContent = title;
+    const strong = document.createElement("strong");
+    strong.textContent = value;
+    card.append(heading, strong);
+    if (variant === "pr") {
+      const badge = document.createElement("span");
+      badge.className = "trend-badge";
+      badge.textContent = "🔥 PR reciente";
+      card.append(badge);
+    }
+    return card;
+  }
+
+  function renderTrends(entries) {
+    if (!elements.trends) return;
+    elements.trends.innerHTML = "";
+    if (!entries.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "Añade sesiones para ver tendencias.";
+      elements.trends.append(empty);
+      return;
+    }
+    const sorted = entries
+      .slice()
+      .sort((a, b) => a.fechaISO.localeCompare(b.fechaISO));
+    const last = sorted[sorted.length - 1];
+    const best = sorted.reduce((acc, entry) => {
+      if (!acc) return entry;
+      return Number(entry.valor) > Number(acc.valor) ? entry : acc;
+    }, null);
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    const weeklyTotal = sorted.reduce((acc, entry) => {
+      const d = new Date(entry.fechaISO);
+      if (Number.isNaN(d.getTime()) || d < start) return acc;
+      return acc + Number(entry.valor || 0);
+    }, 0);
+    const suffix = TYPE_SUFFIX[state.selectedType] || "";
+    const volumeLabel = weeklyTotal
+      ? `${weeklyTotal % 1 === 0 ? weeklyTotal : weeklyTotal.toFixed(1)} ${suffix}`.trim()
+      : "—";
+
+    elements.trends.append(
+      createTrendCard(
+        "Mejor marca",
+        best ? `${formatValue(best)} · ${formatDate(best.fechaISO)}` : "—",
+        best && last && best.id === last.id ? "pr" : ""
+      ),
+      createTrendCard("Volumen 7 días", volumeLabel || "—"),
+      createTrendCard("Último registro", last ? `${formatValue(last)} · ${formatDate(last.fechaISO)}` : "—", "last")
+    );
+  }
+
+  function updateMacroTag(entries) {
+    if (!elements.macroTag) return;
+    if (!entries.length) {
+      elements.macroTag.classList.add("hidden");
+      elements.macroTag.textContent = "";
+      return;
+    }
+    const latest = entries
+      .slice()
+      .sort((a, b) => b.fechaISO.localeCompare(a.fechaISO))[0];
+    const meta = getMetaForDate(latest.fechaISO);
+    if (!meta || (!meta.macrocycle && !meta.phase)) {
+      elements.macroTag.classList.add("hidden");
+      elements.macroTag.textContent = "";
+      return;
+    }
+    const parts = [];
+    if (meta.macrocycle) parts.push(meta.macrocycle);
+    if (meta.phase) parts.push(PHASE_LABELS[meta.phase] || meta.phase);
+    elements.macroTag.textContent = `Macrociclo: ${parts.join(" · ")}`.trim();
+    elements.macroTag.classList.remove("hidden");
+  }
+
   function summaryItem(label, value) {
     const wrapper = document.createElement("div");
     const dt = document.createElement("dt");
@@ -370,6 +498,16 @@
     return date.toLocaleDateString("es-ES", { year: "numeric", month: "short", day: "numeric" });
   }
 
+  function getMetaForDate(iso) {
+    const provider = global.entrenoApp?.getDayMeta;
+    if (typeof provider !== "function") return null;
+    try {
+      return provider(iso) || null;
+    } catch (err) {
+      return null;
+    }
+  }
+
   function renderTable(entries) {
     elements.tableBody.innerHTML = "";
     if (!entries.length) return;
@@ -383,6 +521,11 @@
       tdDate.textContent = formatDate(entry.fechaISO);
       const tdValue = document.createElement("td");
       tdValue.textContent = formatValue(entry);
+      const meta = getMetaForDate(entry.fechaISO) || {};
+      const tdPhase = document.createElement("td");
+      tdPhase.textContent = meta.phase ? PHASE_LABELS[meta.phase] || meta.phase : "—";
+      const tdMacro = document.createElement("td");
+      tdMacro.textContent = meta.macrocycle || "—";
       const tdNotes = document.createElement("td");
       tdNotes.textContent = entry.notas || "—";
       const tdActions = document.createElement("td");
@@ -397,7 +540,7 @@
       delBtn.textContent = "Eliminar";
       delBtn.addEventListener("click", () => handleDeleteEntry(entry));
       tdActions.append(editBtn, delBtn);
-      tr.append(tdDate, tdValue, tdNotes, tdActions);
+      tr.append(tdDate, tdValue, tdPhase, tdMacro, tdNotes, tdActions);
       elements.tableBody.append(tr);
     });
   }

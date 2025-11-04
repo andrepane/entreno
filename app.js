@@ -55,9 +55,23 @@ const CATEGORY_LABELS = {
   cardio: "Cardio",
   skill: "Skill"
 };
+const PHASE_KEYS = ["base", "intensificacion", "descarga"];
+const PHASE_LABELS = {
+  base: "Base",
+  intensificacion: "Intensificación",
+  descarga: "Descarga",
+};
+
+const FATIGUE_LEVELS = [
+  { value: "ligero", label: "Ligero", icon: "🙂" },
+  { value: "medio", label: "Medio", icon: "😐" },
+  { value: "alto", label: "Alto", icon: "😵" },
+];
+
 let state = {
   selectedDate: fmt(new Date()),
-  workouts: {} // { "YYYY-MM-DD": [exercise, ...] }
+  workouts: {}, // { "YYYY-MM-DD": [exercise, ...] }
+  dayMeta: {},
 };
 
 const isPlainObject = (value) => value && typeof value === "object" && !Array.isArray(value);
@@ -85,13 +99,18 @@ function normalizeWorkouts(rawWorkouts) {
       .filter(isPlainObject)
       .map((exercise) => {
         const cardioMinutesRaw = Number(exercise.cardioMinutes);
+        const perceivedRaw = Number(exercise.perceivedEffort);
+        const fatigueRaw = typeof exercise.fatigueLevel === "string" ? exercise.fatigueLevel.toLowerCase() : null;
+        const fatigue = FATIGUE_LEVELS.some((item) => item.value === fatigueRaw) ? fatigueRaw : null;
         return {
           ...exercise,
           category: normalizeCategory(exercise.category),
           done: Array.isArray(exercise.done) ? exercise.done : [],
           completed: !!exercise.completed,
           note: typeof exercise.note === "string" ? exercise.note : "",
-          cardioMinutes: Number.isFinite(cardioMinutesRaw) ? cardioMinutesRaw : null
+          cardioMinutes: Number.isFinite(cardioMinutesRaw) ? cardioMinutesRaw : null,
+          perceivedEffort: Number.isFinite(perceivedRaw) && perceivedRaw >= 1 && perceivedRaw <= 10 ? Math.round(perceivedRaw) : null,
+          fatigueLevel: fatigue,
         };
       });
 
@@ -107,6 +126,122 @@ function normalizeWorkouts(rawWorkouts) {
   }
 
   return normalized;
+}
+
+function defaultDayMeta(){
+  return {
+    sessionRPE: null,
+    habits: { sleep: false, mobility: false, handstand: false },
+    phase: "",
+    macrocycle: "",
+  };
+}
+
+function normalizeDayMeta(rawMeta){
+  if (!isPlainObject(rawMeta)) return {};
+  const normalized = {};
+  for (const [day, value] of Object.entries(rawMeta)){
+    const dayISO = fmt(fromISO(day));
+    const base = defaultDayMeta();
+    const src = isPlainObject(value) ? value : {};
+    const rpe = Number(src.sessionRPE);
+    base.sessionRPE = Number.isFinite(rpe) && rpe >= 1 && rpe <= 10 ? Math.round(rpe) : null;
+    const habits = isPlainObject(src.habits) ? src.habits : {};
+    base.habits = {
+      sleep: !!habits.sleep,
+      mobility: !!habits.mobility,
+      handstand: !!habits.handstand,
+    };
+    const phase = typeof src.phase === "string" ? src.phase.trim().toLowerCase() : "";
+    base.phase = PHASE_KEYS.includes(phase) ? phase : "";
+    base.macrocycle = typeof src.macrocycle === "string" ? src.macrocycle.trim() : "";
+    normalized[dayISO] = base;
+  }
+  return normalized;
+}
+
+function ensureDayMeta(dayISO){
+  const key = fmt(fromISO(dayISO));
+  if (!state.dayMeta[key]){
+    state.dayMeta[key] = defaultDayMeta();
+  }
+  return state.dayMeta[key];
+}
+
+function setDayMeta(dayISO, patch = {}){
+  const key = fmt(fromISO(dayISO));
+  const existing = state.dayMeta[key];
+  const meta = ensureDayMeta(dayISO);
+  let changed = !existing;
+
+  if (patch.sessionRPE !== undefined){
+    const next = Number(patch.sessionRPE);
+    const normalized = Number.isFinite(next) && next >= 1 && next <= 10 ? Math.round(next) : null;
+    if (meta.sessionRPE !== normalized){
+      meta.sessionRPE = normalized;
+      changed = true;
+    }
+  }
+  if (patch.habits){
+    const habits = meta.habits;
+    if (patch.habits.sleep !== undefined){
+      const next = !!patch.habits.sleep;
+      if (habits.sleep !== next){
+        habits.sleep = next;
+        changed = true;
+      }
+    }
+    if (patch.habits.mobility !== undefined){
+      const next = !!patch.habits.mobility;
+      if (habits.mobility !== next){
+        habits.mobility = next;
+        changed = true;
+      }
+    }
+    if (patch.habits.handstand !== undefined){
+      const next = !!patch.habits.handstand;
+      if (habits.handstand !== next){
+        habits.handstand = next;
+        changed = true;
+      }
+    }
+  }
+  if (patch.phase !== undefined){
+    const nextPhase = typeof patch.phase === "string" ? patch.phase.trim().toLowerCase() : "";
+    const normalized = PHASE_KEYS.includes(nextPhase) ? nextPhase : "";
+    if (meta.phase !== normalized){
+      meta.phase = normalized;
+      changed = true;
+    }
+  }
+  if (patch.macrocycle !== undefined){
+    const normalized = typeof patch.macrocycle === "string" ? patch.macrocycle.trim() : "";
+    if (meta.macrocycle !== normalized){
+      meta.macrocycle = normalized;
+      changed = true;
+    }
+  }
+
+  state.dayMeta[key] = meta;
+
+  if (changed){
+    save();
+    if (seguimientoModule?.refresh) {
+      seguimientoModule.refresh();
+    }
+  }
+
+  return meta;
+}
+
+function getDayMeta(dayISO){
+  const meta = ensureDayMeta(dayISO);
+  return {
+    sessionRPE: meta.sessionRPE,
+    habits: { ...meta.habits },
+    phase: meta.phase,
+    macrocycle: meta.macrocycle,
+  };
 }
 
 function load() {
@@ -128,6 +263,23 @@ const dayTitle = document.getElementById("dayTitle");
 const humanDateSpan = dayTitle.querySelector('[data-bind="humanDate"]');
 const exerciseList = document.getElementById("exerciseList");
 const emptyDayHint = document.getElementById("emptyDayHint");
+const todayPanel = document.getElementById("todayPanel");
+const todayDurationEl = document.getElementById("todayDuration");
+const todayVolumeHint = document.getElementById("todayVolumeHint");
+const todayFocusEl = document.getElementById("todayFocus");
+const todayFocusDetail = document.getElementById("todayFocusDetail");
+const todayMobilityText = document.getElementById("todayMobility");
+const todayMobilityToggle = document.getElementById("todayMobilityToggle");
+const todayRPEInput = document.getElementById("todayRPE");
+const todayRPEValue = document.getElementById("todayRPEValue");
+const todayRPEBadge = document.getElementById("todayRPEBadge");
+const todayRPEClear = document.getElementById("todayRPEClear");
+const todayBadges = document.getElementById("todayBadges");
+const todayHabitInputs = todayPanel ? todayPanel.querySelectorAll('[data-habit]') : [];
+const todayMacrocycleInput = document.getElementById("todayMacrocycle");
+const todayPhaseSelect = document.getElementById("todayPhase");
+let suppressDayMetaEvents = false;
+let macrocycleDebounce = null;
 
 let activeDrag = null;
 
@@ -163,6 +315,15 @@ const formEmomMinutes = document.getElementById("formEmomMinutes");
 const formEmomReps = document.getElementById("formEmomReps");
 const formCardioMinutes = document.getElementById("formCardioMinutes");
 const formWeight = document.getElementById("formWeight");
+const formQuickNote = document.getElementById("formQuickNote");
+const formStepButtons = document.querySelectorAll(".form-step-btn");
+const formSteps = document.querySelectorAll(".form-step");
+const formPrev = document.getElementById("formPrev");
+const formNext = document.getElementById("formNext");
+const formSubmitBtn = document.getElementById("formSubmit");
+const formProgression = document.getElementById("formProgression");
+const presetButtons = document.querySelectorAll(".preset-chips .chip");
+let currentFormStep = 0;
 
 /* Copiar día */
 const copyDayToggleBtn = document.getElementById("copyDayToggleBtn");
@@ -186,9 +347,13 @@ const seguimientoModule = typeof window !== "undefined" ? window.seguimientoUI :
 /* ========= Inicialización ========= */
 load();
 const originalWorkoutsJSON = JSON.stringify(state.workouts || {});
+const originalDayMetaJSON = JSON.stringify(state.dayMeta || {});
 const normalizedWorkouts = normalizeWorkouts(state.workouts);
 const normalizedWorkoutsJSON = JSON.stringify(normalizedWorkouts);
+const normalizedDayMeta = normalizeDayMeta(state.dayMeta);
+const normalizedDayMetaJSON = JSON.stringify(normalizedDayMeta);
 state.workouts = normalizedWorkouts;
+state.dayMeta = normalizedDayMeta;
 
 function getCalendarSnapshot(){
   const snapshot = {};
@@ -213,7 +378,11 @@ selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
 formCategory.value = normalizeCategory(formCategory.value);
 renderAll();
-if (originalWorkoutsJSON !== normalizedWorkoutsJSON || resetToToday) {
+if (
+  originalWorkoutsJSON !== normalizedWorkoutsJSON ||
+  originalDayMetaJSON !== normalizedDayMetaJSON ||
+  resetToToday
+) {
   save();
 }
 
@@ -252,10 +421,203 @@ function updateGoalRows() {
 [goalReps, goalSecs, goalEmom, goalCardio].forEach(el=>el.addEventListener("change", updateGoalRows));
 updateGoalRows();
 
+const FORM_PRESETS = {
+  push: {
+    name: "Flexiones declinadas",
+    category: "calistenia",
+    sets: 4,
+    goal: "reps",
+    reps: 12,
+    failure: false,
+    note: "Progresión: flexiones regulares → declinadas → pseudo plancha",
+  },
+  pull: {
+    name: "Dominadas pronas",
+    category: "calistenia",
+    sets: 4,
+    goal: "reps",
+    reps: 8,
+    failure: false,
+    note: "Sigue la progresión: dominadas pronas → supinas → lastradas",
+  },
+  legs: {
+    name: "Sentadillas búlgaras",
+    category: "musculacion",
+    sets: 4,
+    goal: "reps",
+    reps: 10,
+    failure: false,
+    note: "Añade tempo descendente para intensificar sin peso extra",
+  },
+};
+
+function validateStep(stepIndex){
+  const step = formSteps[stepIndex];
+  if (!step) return true;
+  const fields = step.querySelectorAll("input, select, textarea");
+  for (const field of fields){
+    if (field.disabled || field.type === "button") continue;
+    if (!field.checkValidity()){ field.reportValidity(); return false; }
+  }
+  return true;
+}
+
+function setFormStep(index){
+  const max = formSteps.length ? formSteps.length - 1 : 0;
+  currentFormStep = Math.max(0, Math.min(index, max));
+  formSteps.forEach((step, idx)=>{
+    step.classList.toggle("active", idx === currentFormStep);
+  });
+  formStepButtons.forEach((btn)=>{
+    const target = Number(btn.dataset.stepTarget || "0");
+    btn.classList.toggle("active", target === currentFormStep);
+  });
+  if (formPrev){
+    formPrev.disabled = currentFormStep === 0;
+    formPrev.classList.toggle("hidden", currentFormStep === 0);
+  }
+  if (formNext){
+    formNext.classList.toggle("hidden", currentFormStep === max);
+  }
+  if (formSubmitBtn){
+    formSubmitBtn.classList.toggle("hidden", currentFormStep !== max);
+  }
+}
+
+function goToStep(target){
+  if (target > currentFormStep){
+    for (let i=currentFormStep; i<target; i+=1){
+      if (!validateStep(i)) return;
+    }
+  }
+  setFormStep(target);
+}
+
+function applyPreset(key){
+  const preset = FORM_PRESETS[key];
+  if (!preset) return;
+  formName.value = preset.name;
+  formCategory.value = normalizeCategory(preset.category);
+  formSets.value = preset.sets;
+  if (preset.goal === "reps") {
+    goalReps.checked = true;
+    goalSecs.checked = false;
+    goalEmom.checked = false;
+    goalCardio.checked = false;
+    formReps.value = preset.reps;
+    formFailure.checked = !!preset.failure;
+  }
+  updateGoalRows();
+  if (formQuickNote) {
+    formQuickNote.value = preset.note || "";
+  }
+  updateProgressionHint();
+  setFormStep(1);
+}
+
+function updateProgressionHint(){
+  if (!formProgression) return;
+  const key = normalizeCategory(formCategory.value);
+  if (key === "calistenia"){
+    formProgression.textContent = "Sugerencia: Dominadas pronas → supinas → lastradas. Añade hollow/arch para consolidar.";
+  } else if (key === "skill"){
+    formProgression.textContent = "Trabaja bloques cortos: entrada, control en isométrico y salida con calidad.";
+  } else if (key === "cardio"){
+    formProgression.textContent = "Alterna ritmos: 3' suave + 1' intenso para aumentar el volumen semanal.";
+  } else {
+    formProgression.textContent = "Combina variantes con tempo y descanso controlado para progresar semana a semana.";
+  }
+}
+
+if (formPrev){
+  formPrev.addEventListener("click", ()=> setFormStep(currentFormStep - 1));
+}
+if (formNext){
+  formNext.addEventListener("click", ()=>{
+    if (!validateStep(currentFormStep)) return;
+    setFormStep(currentFormStep + 1);
+  });
+}
+formStepButtons.forEach((btn)=>{
+  btn.addEventListener("click", ()=>{
+    const target = Number(btn.dataset.stepTarget || "0");
+    goToStep(target);
+  });
+});
+presetButtons.forEach((btn)=>{
+  btn.addEventListener("click", ()=>{
+    const key = btn.dataset.preset;
+    applyPreset(key);
+  });
+});
+if (formCategory){
+  formCategory.addEventListener("change", updateProgressionHint);
+}
+setFormStep(0);
+updateProgressionHint();
+
+if (todayMobilityToggle){
+  todayMobilityToggle.addEventListener("click", ()=>{
+    if (suppressDayMetaEvents) return;
+    const meta = getDayMeta(state.selectedDate);
+    setDayMeta(state.selectedDate, { habits: { mobility: !meta.habits.mobility } });
+    renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
+  });
+}
+if (todayHabitInputs?.length){
+  todayHabitInputs.forEach((input)=>{
+    input.addEventListener("change", ()=>{
+      if (suppressDayMetaEvents) return;
+      const habit = input.dataset.habit;
+      setDayMeta(state.selectedDate, { habits: { [habit]: input.checked } });
+      renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
+    });
+  });
+}
+if (todayRPEInput){
+  todayRPEInput.addEventListener("input", ()=>{
+    if (suppressDayMetaEvents) return;
+    if (todayRPEValue) todayRPEValue.textContent = todayRPEInput.value;
+  });
+  todayRPEInput.addEventListener("change", ()=>{
+    if (suppressDayMetaEvents) return;
+    setDayMeta(state.selectedDate, { sessionRPE: Number(todayRPEInput.value) });
+    renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
+  });
+}
+if (todayRPEClear){
+  todayRPEClear.addEventListener("click", ()=>{
+    if (suppressDayMetaEvents) return;
+    setDayMeta(state.selectedDate, { sessionRPE: null });
+    renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
+  });
+}
+if (todayMacrocycleInput){
+  todayMacrocycleInput.addEventListener("input", ()=>{
+    if (suppressDayMetaEvents) return;
+    if (macrocycleDebounce) clearTimeout(macrocycleDebounce);
+    macrocycleDebounce = setTimeout(()=>{
+      setDayMeta(state.selectedDate, { macrocycle: todayMacrocycleInput.value });
+      renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
+      macrocycleDebounce = null;
+    }, 250);
+  });
+}
+if (todayPhaseSelect){
+  todayPhaseSelect.addEventListener("change", ()=>{
+    if (suppressDayMetaEvents) return;
+    setDayMeta(state.selectedDate, { phase: todayPhaseSelect.value });
+    renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
+  });
+}
+
 addForm.addEventListener("reset", () => {
   requestAnimationFrame(() => {
     formCategory.value = CATEGORY_KEYS[0];
     updateGoalRows();
+    if (formQuickNote) formQuickNote.value = "";
+    setFormStep(0);
+    updateProgressionHint();
   });
 });
 
@@ -279,8 +641,10 @@ addForm.addEventListener("submit", (e)=>{
     weightKg: formWeight.value ? Number(formWeight.value) : null,
     done: [],            // array con reps logradas por serie (o segundos)
     completed: false,
-    note: "",
-    category: normalizeCategory(formCategory.value)
+    note: formQuickNote ? (formQuickNote.value || "").trim() : "",
+    category: normalizeCategory(formCategory.value),
+    perceivedEffort: null,
+    fatigueLevel: null,
   };
 
   if (!ex.name) { alert("Pon un nombre al ejercicio."); return; }
@@ -334,6 +698,7 @@ addForm.addEventListener("submit", (e)=>{
   formFailure.checked = false;
   formSecondsFailure.checked = false;
   formCategory.value = CATEGORY_KEYS[0];
+  if (formQuickNote) formQuickNote.value = "";
   renderDay(normalizedDay);
   switchToTab("entreno");
   state.selectedDate = normalizedDay;
@@ -346,6 +711,8 @@ addForm.addEventListener("submit", (e)=>{
   if (seguimientoModule?.refresh) {
     seguimientoModule.refresh();
   }
+  setFormStep(0);
+  updateProgressionHint();
 });
 
 /* ========= Render ========= */
@@ -357,12 +724,17 @@ function renderAll(){
   }
 }
 
-function renderDay(dayISO){
+function getDayExercises(dayISO){
   const source = Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO] : [];
-  const list = source.filter(isPlainObject);
+  return source.filter(isPlainObject);
+}
+
+function renderDay(dayISO){
+  const list = getDayExercises(dayISO);
   humanDateSpan.textContent = toHuman(dayISO);
   exerciseList.innerHTML = "";
   emptyDayHint.style.display = list.length ? "none" : "block";
+  renderTodayInsights(dayISO, list);
 
   list.forEach(ex=>{
     if (!ex.id) ex.id = randomUUID();
@@ -430,6 +802,7 @@ function renderDay(dayISO){
     meta.innerHTML = metaText(ex);
 
     let setsBox = null;
+    const recoveryStrip = buildRecoveryStrip(ex);
     const noteBox = document.createElement("div");
     noteBox.className = "note-box hidden";
     const noteField = document.createElement("div");
@@ -551,12 +924,269 @@ function renderDay(dayISO){
       removeExercise(dayISO, ex.id);
     });
 
-    li.append(categoryTag, title, meta, noteBox);
+    li.append(categoryTag, title, meta);
+    if (recoveryStrip) li.append(recoveryStrip);
+    li.append(noteBox);
     if (setsBox) li.append(setsBox);
     exerciseList.append(li);
     setupExerciseDrag(li, dayISO);
 
   });
+}
+
+function computeDurationSummary(exercises){
+  let minutes = 0;
+  let sets = 0;
+  exercises.forEach((ex) => {
+    const setsCount = Math.max(1, Number(ex.sets) || 0);
+    sets += setsCount;
+    if (ex.goal === "cardio") {
+      minutes += (Number(ex.cardioMinutes) || 0) * setsCount;
+    } else if (ex.goal === "seconds") {
+      minutes += ((Number(ex.seconds) || 0) * setsCount) / 60;
+    } else if (ex.goal === "emom") {
+      minutes += Number(ex.emomMinutes) || setsCount * 2;
+    } else {
+      minutes += setsCount * 3;
+    }
+  });
+  return { minutes: Math.round(minutes), sets };
+}
+
+function detectFocus(exercises){
+  if (!exercises.length) {
+    return { label: "Planifica", detail: "Añade ejercicios para ver un foco claro." };
+  }
+  const totals = { push: 0, pull: 0, skill: 0 };
+  exercises.forEach((ex) => {
+    const setsCount = Math.max(1, Number(ex.sets) || 0);
+    if (ex.category === "skill") {
+      totals.skill += setsCount;
+      return;
+    }
+    const name = (ex.name || "").toLowerCase();
+    const isPull = /(dominad|pull|remo|row|chin|tir[oó]n|australian)/.test(name);
+    const isPush = /(flex|push|fond|press|empuj|dip|handstand push)/.test(name);
+    if (isPull && !isPush) {
+      totals.pull += setsCount;
+    } else if (isPush && !isPull) {
+      totals.push += setsCount;
+    } else {
+      totals.push += setsCount / 2;
+      totals.pull += setsCount / 2;
+    }
+  });
+  const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+  const [key, amount] = sorted[0] || [];
+  if (!amount) {
+    return { label: "Balanceado", detail: "Mantén variedad o añade habilidades específicas." };
+  }
+  if (key === "skill") {
+    return { label: "Skill", detail: "Refina control técnico y progresiones estáticas." };
+  }
+  if (key === "push") {
+    return { label: "Empuje", detail: "Prioriza pectoral, hombros y tríceps." };
+  }
+  return { label: "Tirón", detail: "Carga dorsales y bíceps con variantes exigentes." };
+}
+
+function computeCompletion(dayISO){
+  const exercises = getDayExercises(dayISO);
+  const total = exercises.length;
+  const completed = exercises.filter((ex) => ex.completed).length;
+  const percent = total ? Math.round((completed / total) * 100) : 0;
+  return { total, completed, percent };
+}
+
+function computeStreaks(){
+  const days = Object.keys(state.workouts || {}).sort();
+  let best = 0;
+  let current = 0;
+  let previousCompleteDate = null;
+  days.forEach((dayISO) => {
+    const { total, completed } = computeCompletion(dayISO);
+    const isPerfect = total > 0 && completed === total;
+    const currentDate = fromISO(dayISO);
+    if (isPerfect) {
+      if (previousCompleteDate) {
+        const diff = Math.round((currentDate - previousCompleteDate) / (24 * 60 * 60 * 1000));
+        current = diff === 1 ? current + 1 : 1;
+      } else {
+        current = 1;
+      }
+      previousCompleteDate = currentDate;
+      best = Math.max(best, current);
+    } else {
+      previousCompleteDate = null;
+      current = 0;
+    }
+  });
+  return { best, current };
+}
+
+function renderTodayBadges(dayISO){
+  if (!todayBadges) return;
+  todayBadges.innerHTML = "";
+  const completion = computeCompletion(dayISO);
+  const streaks = computeStreaks();
+
+  const createBadge = (label, value) => {
+    const box = document.createElement("div");
+    box.className = "today-badge";
+    const title = document.createElement("span");
+    title.className = "muted";
+    title.textContent = label;
+    const strong = document.createElement("strong");
+    strong.textContent = value;
+    box.append(title, strong);
+    return box;
+  };
+
+  todayBadges.append(
+    createBadge(
+      "Cumplimiento",
+      completion.total ? `${completion.percent}% (${completion.completed}/${completion.total})` : "Sin ejercicios"
+    ),
+    createBadge("Mejor racha", `${streaks.best} ${streaks.best === 1 ? "día" : "días"}`),
+    createBadge("Racha actual", `${streaks.current} ${streaks.current === 1 ? "día" : "días"}`)
+  );
+}
+
+function renderTodayInsights(dayISO, exercises){
+  if (!todayPanel) return;
+  const meta = getDayMeta(dayISO);
+  const duration = computeDurationSummary(exercises);
+  const focus = detectFocus(exercises);
+
+  suppressDayMetaEvents = true;
+
+  if (todayDurationEl) {
+    todayDurationEl.textContent = duration.minutes ? `${duration.minutes} min` : exercises.length ? "≈10-15 min" : "—";
+  }
+  if (todayVolumeHint) {
+    todayVolumeHint.textContent = exercises.length ? `${duration.sets} series planificadas` : "Aún no hay series programadas.";
+  }
+  if (todayFocusEl) {
+    todayFocusEl.textContent = focus.label;
+  }
+  if (todayFocusDetail) {
+    todayFocusDetail.textContent = focus.detail;
+  }
+  if (todayMobilityText) {
+    todayMobilityText.textContent = meta.habits.mobility
+      ? "✅ Movilidad completada. Mantén la constancia."
+      : "Recuerda dedicar 5' a movilidad para desbloquear rangos.";
+  }
+  if (todayMobilityToggle) {
+    todayMobilityToggle.textContent = meta.habits.mobility ? "Desmarcar" : "Marcar movilidad";
+  }
+  if (todayRPEInput) {
+    todayRPEInput.value = meta.sessionRPE != null ? meta.sessionRPE : "6";
+  }
+  if (todayRPEValue) {
+    todayRPEValue.textContent = meta.sessionRPE != null ? meta.sessionRPE : "—";
+  }
+  if (todayRPEBadge) {
+    todayRPEBadge.textContent = meta.sessionRPE != null ? `RPE ${meta.sessionRPE}` : "Sin registrar";
+    todayRPEBadge.classList.toggle("up", meta.sessionRPE != null && meta.sessionRPE >= 8);
+    todayRPEBadge.classList.toggle("down", meta.sessionRPE != null && meta.sessionRPE <= 4);
+    todayRPEBadge.classList.toggle("same", meta.sessionRPE == null);
+  }
+  if (todayHabitInputs?.length){
+    todayHabitInputs.forEach((input)=>{
+      const habitKey = input.dataset.habit;
+      input.checked = !!meta.habits[habitKey];
+    });
+  }
+  if (todayMacrocycleInput) {
+    todayMacrocycleInput.value = meta.macrocycle || "";
+  }
+  if (todayPhaseSelect) {
+    todayPhaseSelect.value = meta.phase || "";
+  }
+
+  renderTodayBadges(dayISO);
+
+  suppressDayMetaEvents = false;
+}
+
+function buildRecoveryStrip(ex){
+  const wrapper = document.createElement("div");
+  wrapper.className = "recovery-strip";
+
+  const effortBlock = document.createElement("div");
+  effortBlock.className = "recovery-effort";
+  const effortLabel = document.createElement("span");
+  effortLabel.textContent = "Esfuerzo";
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = "1";
+  slider.max = "10";
+  slider.step = "1";
+  const valueLabel = document.createElement("span");
+  valueLabel.className = "recovery-value";
+  const clearBtn = button("Limpiar", "ghost micro");
+
+  function syncEffort(){
+    if (ex.perceivedEffort != null){
+      slider.value = String(ex.perceivedEffort);
+      valueLabel.textContent = ex.perceivedEffort;
+      valueLabel.classList.add("active");
+    } else {
+      slider.value = "6";
+      valueLabel.textContent = "—";
+      valueLabel.classList.remove("active");
+    }
+  }
+  syncEffort();
+
+  slider.addEventListener("input", ()=>{
+    valueLabel.textContent = slider.value;
+  });
+  slider.addEventListener("change", ()=>{
+    const numeric = Number(slider.value);
+    ex.perceivedEffort = Number.isFinite(numeric) ? numeric : null;
+    syncEffort();
+    save();
+  });
+  clearBtn.addEventListener("click", ()=>{
+    ex.perceivedEffort = null;
+    syncEffort();
+    save();
+  });
+
+  effortBlock.append(effortLabel, slider, valueLabel, clearBtn);
+
+  const fatigueBlock = document.createElement("div");
+  fatigueBlock.className = "recovery-fatigue";
+  const fatigueLabel = document.createElement("span");
+  fatigueLabel.textContent = "Fatiga";
+  fatigueBlock.append(fatigueLabel);
+  const buttons = [];
+  FATIGUE_LEVELS.forEach((level)=>{
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "fatigue-btn ghost micro";
+    btn.dataset.level = level.value;
+    btn.textContent = `${level.icon} ${level.label}`;
+    btn.addEventListener("click", ()=>{
+      ex.fatigueLevel = ex.fatigueLevel === level.value ? null : level.value;
+      updateButtons();
+      save();
+    });
+    buttons.push(btn);
+    fatigueBlock.append(btn);
+  });
+
+  function updateButtons(){
+    buttons.forEach((btn)=>{
+      btn.classList.toggle("active", ex.fatigueLevel === btn.dataset.level);
+    });
+  }
+  updateButtons();
+
+  wrapper.append(effortBlock, fatigueBlock);
+  return wrapper;
 }
 
 function setupExerciseDrag(li, dayISO){
@@ -1004,6 +1634,8 @@ if (typeof window !== "undefined") {
   window.entrenoApp = Object.assign(window.entrenoApp || {}, {
     getCalendarSnapshot,
     syncHistoryForDay,
+    getDayMeta,
+    setDayMeta,
   });
 }
 
