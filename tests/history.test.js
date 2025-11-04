@@ -7,9 +7,12 @@ function reset() {
 
 function testCompareWithLast() {
   reset();
-  let diff = history.compareWithLast('Dominadas', 'reps', 10);
-  assert.strictEqual(diff.last, null, 'Primer registro debería no tener último valor');
-  assert.ok(diff.message.includes('Primer registro'), 'Debe indicar primer registro');
+  let diff = history.compareProgress(
+    history.getEntriesByExerciseAndType('Dominadas', 'reps')
+  );
+  assert.strictEqual(diff.primero, null, 'Sin registros previos, primero debe ser null');
+  assert.strictEqual(diff.ultimo, null, 'Sin registros previos, último debe ser null');
+  assert.strictEqual(diff.delta, 0, 'Sin registros previos, delta debe ser 0');
 
   history.addEntry({
     fechaISO: '2024-01-01',
@@ -18,10 +21,20 @@ function testCompareWithLast() {
     valor: 10
   });
 
-  diff = history.compareWithLast('Dominadas', 'reps', 12);
-  assert.strictEqual(diff.last, 10, 'Último valor debe ser 10');
-  assert.strictEqual(diff.delta, 2, 'Delta debe ser 2');
-  assert.ok(diff.message.includes('+2'), 'Mensaje debe contener el incremento');
+  history.addEntry({
+    fechaISO: '2024-01-10',
+    ejercicio: 'Dominadas',
+    tipo: 'reps',
+    valor: 12
+  });
+
+  diff = history.compareProgress(
+    history.getEntriesByExerciseAndType('Dominadas', 'reps')
+  );
+  assert.strictEqual(diff.primero.valor, 10, 'El primer registro debe conservar el valor inicial');
+  assert.strictEqual(diff.ultimo.valor, 12, 'El último registro debe reflejar el valor más reciente');
+  assert.strictEqual(diff.delta, 2, 'La diferencia debe calcularse correctamente');
+  assert.ok(Math.abs(diff.pct - 20) < 0.0001, 'El porcentaje debe reflejar el progreso relativo');
 }
 
 function testMinutesToSeconds() {
@@ -30,9 +43,44 @@ function testMinutesToSeconds() {
   assert.strictEqual(history.minutesToSeconds('invalid'), 0, 'Valores inválidos devuelven 0');
 }
 
+function testAddOrUpdateFromDayRespectsHecho() {
+  reset();
+  const day = {
+    fechaISO: '2024-02-01',
+    ejercicios: [
+      {
+        name: 'Dominadas',
+        goal: 'reps',
+        sets: 3,
+        reps: 10,
+        done: [12, 10, 11],
+        hecho: false
+      }
+    ]
+  };
+
+  let result = history.addOrUpdateFromDay(day);
+  assert.strictEqual(result.entries.length, 0, 'No debe registrar ejercicios sin marcar como hechos');
+  assert.strictEqual(history.getAllEntries().length, 0, 'Historial debe permanecer vacío si no hay ejercicios hechos');
+
+  day.ejercicios[0].hecho = true;
+  result = history.addOrUpdateFromDay(day);
+  assert.strictEqual(result.entries.length, 1, 'Debe añadir el ejercicio al marcarlo como hecho');
+  let entries = history.getAllEntries();
+  assert.strictEqual(entries.length, 1, 'Debe existir un único registro para el ejercicio hecho');
+  assert.strictEqual(entries[0].valor, 33, 'Debe sumar las repeticiones realizadas al marcar como hecho');
+
+  day.ejercicios[0].hecho = false;
+  result = history.addOrUpdateFromDay(day);
+  entries = history.getAllEntries();
+  assert.strictEqual(entries.length, 0, 'Al desmarcar el ejercicio debe eliminarse del historial');
+  assert.strictEqual(result.entries.length, 0, 'No debe registrar nuevas entradas al desmarcar el ejercicio');
+}
+
 function run() {
   testCompareWithLast();
   testMinutesToSeconds();
+  testAddOrUpdateFromDayRespectsHecho();
   console.log('All history tests passed');
 }
 

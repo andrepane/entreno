@@ -123,6 +123,32 @@
     return notes;
   }
 
+  function isMarkedDone(exercise) {
+    if (!exercise || typeof exercise !== "object") return false;
+
+    const truthy = (value) => {
+      if (value === true) return true;
+      if (value === 1) return true;
+      if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        return normalized === "true" || normalized === "1" || normalized === "sí" || normalized === "si";
+      }
+      return false;
+    };
+
+    if (truthy(exercise.hecho)) return true;
+    if (truthy(exercise.completed)) return true;
+
+    if (typeof exercise.estado === "string") {
+      const normalized = exercise.estado.trim().toLowerCase();
+      if (normalized === "hecho" || normalized === "completado" || normalized === "completed") {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   function extractEntriesFromDay(day) {
     const normalized = normalizeDay(day);
     if (!normalized) return [];
@@ -133,6 +159,7 @@
     normalized.ejercicios.forEach((exerciseRaw) => {
       const name = normalizeName(exerciseRaw.name || exerciseRaw.ejercicio);
       if (!name) return;
+      if (!isMarkedDone(exerciseRaw)) return;
 
       const sets = Math.max(1, Number(exerciseRaw.sets) || 1);
       const doneValues = Array.isArray(exerciseRaw.done) ? exerciseRaw.done : [];
