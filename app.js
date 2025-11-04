@@ -837,6 +837,7 @@ function buildHistoryDaySnapshot(dayISO){
       cardioMinutes: exercise.cardioMinutes,
       weightKg: exercise.weightKg,
       note: exercise.note,
+      hecho: exercise.completed === true,
     }));
   return { fechaISO: dayISO, sourceDayId: dayISO, ejercicios };
 }
