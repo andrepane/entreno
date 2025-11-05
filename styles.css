@@ -129,6 +129,14 @@ main{flex:1 1 auto; padding:clamp(14px, 5vw, 28px)}
 .summary-grid dt{font-size:.85rem; color:var(--muted); margin-bottom:4px;}
 .summary-grid dd{margin:0; font-weight:600;}
 
+.history-habits{display:flex; flex-direction:column; gap:12px; border:1px solid #252c3a; border-radius:14px; background:#0f131a; padding:14px;}
+.history-habits h3{margin:0; font-size:1rem;}
+.habit-stats-grid{display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(160px,1fr));}
+.habit-card{border:1px solid #1f2735; border-radius:12px; padding:12px; background:rgba(12,16,23,0.95); display:flex; flex-direction:column; gap:6px;}
+.habit-card h4{margin:0; font-size:.9rem; color:var(--muted); font-weight:600;}
+.habit-card strong{font-size:1.25rem;}
+.habit-card-detail{font-size:.8rem; color:var(--muted);}
+
 .history-chart-wrapper{border:1px solid #252c3a; border-radius:14px; background:#0f131a; padding:12px;}
 
 .data-table .actions-header{text-align:right;}

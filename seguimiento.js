@@ -25,6 +25,12 @@
     descarga: "Descarga",
   };
 
+  const HABIT_CONFIG = [
+    { key: "sleep", label: "8h sueño" },
+    { key: "mobility", label: "Movilidad" },
+    { key: "handstand", label: "Handstand practice" }
+  ];
+
   const RANGE_PRESETS = {
     week: { label: "Última semana", days: 7 },
     month: { label: "Último mes", days: 30 },
@@ -79,6 +85,7 @@
     elements.warnings = $("historyWarnings");
     elements.phaseFilter = $("historyPhaseFilter");
     elements.trends = $("historyTrends");
+    elements.habits = $("historyHabits");
 
     if (elements.phaseFilter) {
       elements.phaseFilter.value = state.phase;
@@ -263,6 +270,9 @@
       elements.detailTitle.textContent = "";
       elements.typeSelector.innerHTML = "";
       elements.summary.innerHTML = "";
+      if (elements.habits) {
+        elements.habits.innerHTML = "";
+      }
       elements.tableBody.innerHTML = "";
       lastChartEntries = [];
       clearCanvas();
@@ -294,6 +304,7 @@
     renderTypeSelector(entries);
     renderSummary(phaseFiltered);
     renderTrends(phaseFiltered);
+    renderHabitOverview();
     renderTable(phaseFiltered);
     lastChartEntries = phaseFiltered;
     renderChart(phaseFiltered);
@@ -433,6 +444,85 @@
       createTrendCard("Volumen 7 días", volumeLabel || "—"),
       createTrendCard("Último registro", last ? `${formatValue(last)} · ${formatDate(last.fechaISO)}` : "—", "last")
     );
+  }
+
+  function renderHabitOverview() {
+    if (!elements.habits) return;
+    elements.habits.innerHTML = "";
+
+    const heading = document.createElement("h3");
+    heading.textContent = "Días con hábitos complementarios";
+    elements.habits.append(heading);
+
+    const provider = global.entrenoApp?.getAllDayMeta;
+    if (typeof provider !== "function") {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "No hay datos de hábitos disponibles.";
+      elements.habits.append(empty);
+      return;
+    }
+
+    let metaMap = null;
+    try {
+      metaMap = provider();
+    } catch (err) {
+      metaMap = null;
+    }
+    const dayEntries = metaMap && typeof metaMap === "object" ? Object.entries(metaMap) : [];
+    if (!dayEntries.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "Aún no has registrado hábitos complementarios.";
+      elements.habits.append(empty);
+      return;
+    }
+
+    const counts = {};
+    HABIT_CONFIG.forEach(({ key }) => {
+      counts[key] = 0;
+    });
+    let totalDays = 0;
+
+    dayEntries.forEach(([, meta]) => {
+      if (!meta || typeof meta !== "object") return;
+      totalDays += 1;
+      const habits = meta.habits && typeof meta.habits === "object" ? meta.habits : {};
+      HABIT_CONFIG.forEach(({ key }) => {
+        if (habits[key]) {
+          counts[key] += 1;
+        }
+      });
+    });
+
+    if (!totalDays) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "Aún no has registrado hábitos complementarios.";
+      elements.habits.append(empty);
+      return;
+    }
+
+    const grid = document.createElement("div");
+    grid.className = "habit-stats-grid";
+
+    HABIT_CONFIG.forEach(({ key, label }) => {
+      const card = document.createElement("article");
+      card.className = "habit-card";
+      const title = document.createElement("h4");
+      title.textContent = label;
+      const strong = document.createElement("strong");
+      const count = counts[key] || 0;
+      strong.textContent = `${count} ${count === 1 ? "día" : "días"}`;
+      const detail = document.createElement("span");
+      detail.className = "habit-card-detail";
+      const pct = Math.round((count / totalDays) * 100);
+      detail.textContent = `${pct}% de ${totalDays} días`;
+      card.append(title, strong, detail);
+      grid.append(card);
+    });
+
+    elements.habits.append(grid);
   }
 
   function summaryItem(label, value) {

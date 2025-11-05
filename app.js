@@ -225,6 +225,24 @@ function getDayMeta(dayISO){
   };
 }
 
+function getAllDayMeta(){
+  const meta = {};
+  Object.entries(state.dayMeta || {}).forEach(([day, value]) => {
+    if (!value || typeof value !== "object") return;
+    const habits = value.habits && typeof value.habits === "object" ? value.habits : {};
+    meta[day] = {
+      sessionRPE: value.sessionRPE != null ? value.sessionRPE : null,
+      phase: typeof value.phase === "string" ? value.phase : "",
+      habits: {
+        sleep: !!habits.sleep,
+        mobility: !!habits.mobility,
+        handstand: !!habits.handstand,
+      },
+    };
+  });
+  return meta;
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -1513,6 +1531,7 @@ if (typeof window !== "undefined") {
     syncHistoryForDay,
     getDayMeta,
     setDayMeta,
+    getAllDayMeta,
   });
 }
 
