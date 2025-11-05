@@ -19,6 +19,12 @@
     peso: "kg"
   };
 
+  const HABIT_LABELS = {
+    sleep: "8h sueño",
+    mobility: "Movilidad",
+    handstand: "Handstand practice"
+  };
+
   const PHASE_LABELS = {
     base: "Base",
     intensificacion: "Intensificación",
@@ -424,15 +430,29 @@
       ? `${weeklyTotal % 1 === 0 ? weeklyTotal : weeklyTotal.toFixed(1)} ${suffix}`.trim()
       : "—";
 
-    elements.trends.append(
+    const cards = [
       createTrendCard(
         "Mejor marca",
         best ? `${formatValue(best)} · ${formatDate(best.fechaISO)}` : "—",
         best && last && best.id === last.id ? "pr" : ""
       ),
       createTrendCard("Volumen 7 días", volumeLabel || "—"),
-      createTrendCard("Último registro", last ? `${formatValue(last)} · ${formatDate(last.fechaISO)}` : "—", "last")
-    );
+      createTrendCard("Último registro", last ? `${formatValue(last)} · ${formatDate(last.fechaISO)}` : "—", "last"),
+    ];
+
+    const metaStats = aggregateMetaStats(sorted);
+    if (metaStats.totalDays) {
+      if (metaStats.rpeCount) {
+        const average = metaStats.rpeTotal / metaStats.rpeCount;
+        cards.push(createTrendCard("RPE medio", `RPE ${average.toFixed(1)}`));
+      }
+      const habitSummary = formatHabitSummary(metaStats.habitsCount, metaStats.totalDays);
+      if (habitSummary !== "—") {
+        cards.push(createTrendCard("Hábitos cumplidos", habitSummary, "habits"));
+      }
+    }
+
+    elements.trends.append(...cards);
   }
 
   function summaryItem(label, value) {
@@ -491,6 +511,10 @@
       const meta = getMetaForDate(entry.fechaISO) || {};
       const tdPhase = document.createElement("td");
       tdPhase.textContent = meta.phase ? PHASE_LABELS[meta.phase] || meta.phase : "—";
+      const tdRPE = document.createElement("td");
+      tdRPE.textContent = formatRPE(meta.sessionRPE);
+      const tdHabits = document.createElement("td");
+      tdHabits.textContent = formatHabits(meta.habits);
       const tdNotes = document.createElement("td");
       tdNotes.textContent = entry.notas || "—";
       const tdActions = document.createElement("td");
@@ -505,9 +529,66 @@
       delBtn.textContent = "Eliminar";
       delBtn.addEventListener("click", () => handleDeleteEntry(entry));
       tdActions.append(editBtn, delBtn);
-      tr.append(tdDate, tdValue, tdPhase, tdNotes, tdActions);
+      tr.append(tdDate, tdValue, tdPhase, tdRPE, tdHabits, tdNotes, tdActions);
       elements.tableBody.append(tr);
     });
+  }
+
+  function formatRPE(value) {
+    const num = Number(value);
+    return Number.isFinite(num) && num >= 1 && num <= 10 ? `RPE ${num}` : "—";
+  }
+
+  function formatHabits(habits) {
+    if (!habits || typeof habits !== "object") return "—";
+    const active = Object.entries(habits)
+      .filter(([, flag]) => !!flag)
+      .map(([key]) => HABIT_LABELS[key] || key)
+      .filter(Boolean);
+    return active.length ? active.join(" · ") : "—";
+  }
+
+  function aggregateMetaStats(entries) {
+    const perDay = new Map();
+    entries.forEach((entry) => {
+      if (!perDay.has(entry.fechaISO)) {
+        perDay.set(entry.fechaISO, getMetaForDate(entry.fechaISO) || {});
+      }
+    });
+    const habitsCount = {};
+    Object.keys(HABIT_LABELS).forEach((key) => {
+      habitsCount[key] = 0;
+    });
+    let rpeTotal = 0;
+    let rpeCount = 0;
+    perDay.forEach((meta) => {
+      const rpe = Number(meta.sessionRPE);
+      if (Number.isFinite(rpe) && rpe >= 1 && rpe <= 10) {
+        rpeTotal += rpe;
+        rpeCount += 1;
+      }
+      const habits = meta.habits || {};
+      Object.keys(HABIT_LABELS).forEach((key) => {
+        if (habits[key]) {
+          habitsCount[key] += 1;
+        }
+      });
+    });
+    return {
+      totalDays: perDay.size,
+      habitsCount,
+      rpeTotal,
+      rpeCount,
+    };
+  }
+
+  function formatHabitSummary(habitsCount, totalDays) {
+    if (!totalDays) return "—";
+    const parts = Object.entries(HABIT_LABELS).map(([key, label]) => {
+      const count = habitsCount[key] || 0;
+      return `${label}: ${count}/${totalDays}`;
+    });
+    return parts.length ? parts.join(" · ") : "—";
   }
 
   function renderChart(entries) {
