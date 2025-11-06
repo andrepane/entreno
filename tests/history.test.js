@@ -77,10 +77,42 @@ function testAddOrUpdateFromDayRespectsHecho() {
   assert.strictEqual(result.entries.length, 0, 'No debe registrar nuevas entradas al desmarcar el ejercicio');
 }
 
+function testAddOrUpdateFromDayRespectsStatusField() {
+  reset();
+  const day = {
+    fechaISO: '2024-03-10',
+    ejercicios: [
+      {
+        name: 'Fondos',
+        goal: 'reps',
+        sets: 2,
+        reps: 10,
+        done: [10, 10],
+        status: 'not_done'
+      }
+    ]
+  };
+
+  let result = history.addOrUpdateFromDay(day);
+  assert.strictEqual(result.entries.length, 0, 'Los ejercicios marcados como "no hecho" no deben registrarse');
+  assert.strictEqual(history.getAllEntries().length, 0, 'Historial debe permanecer vacío si el estado es "no hecho"');
+
+  day.ejercicios[0].status = 'done';
+  result = history.addOrUpdateFromDay(day);
+  assert.strictEqual(result.entries.length, 1, 'Debe registrarse al marcar el estado como hecho');
+  assert.strictEqual(history.getAllEntries().length, 1, 'Historial debe incluir la entrada cuando el estado es hecho');
+
+  day.ejercicios[0].status = 'pending';
+  result = history.addOrUpdateFromDay(day);
+  assert.strictEqual(result.entries.length, 0, 'Cambiar el estado a pendiente debe eliminar la entrada existente');
+  assert.strictEqual(history.getAllEntries().length, 0, 'Historial debe limpiarse cuando el estado vuelve a pendiente');
+}
+
 function run() {
   testCompareWithLast();
   testMinutesToSeconds();
   testAddOrUpdateFromDayRespectsHecho();
+  testAddOrUpdateFromDayRespectsStatusField();
   console.log('All history tests passed');
 }
 

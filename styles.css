@@ -271,6 +271,8 @@ button.link{background:transparent; color:var(--accent); border:none; padding:0}
 }
 .exercise.completed{border-color:#2f855a; box-shadow:0 0 0 1px rgba(47,133,90,.4)}
 .exercise.completed .meta span{border-color:#234d36}
+.exercise.not-done{border-color:#c53030; box-shadow:0 0 0 1px rgba(229,62,62,.35)}
+.exercise.not-done .meta span{border-color:#742a2a}
 .exercise .title{display:flex; align-items:center; justify-content:space-between; gap:12px}
 .exercise .title-main{display:flex; align-items:center; gap:10px; flex:1; min-width:0}
 .exercise .title-main h3{margin:0; flex:1; min-width:0}
