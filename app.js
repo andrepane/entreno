@@ -62,6 +62,102 @@ const PHASE_LABELS = {
   descarga: "Descarga",
 };
 
+const EXERCISE_STATUS = {
+  PENDING: "pending",
+  DONE: "done",
+  NOT_DONE: "not_done",
+};
+
+const EXERCISE_STATUS_LABELS = {
+  [EXERCISE_STATUS.PENDING]: "Pendiente",
+  [EXERCISE_STATUS.DONE]: "Completado",
+  [EXERCISE_STATUS.NOT_DONE]: "No hecho",
+};
+
+const EXERCISE_STATUS_ALIASES = new Map([
+  ["done", EXERCISE_STATUS.DONE],
+  ["hecho", EXERCISE_STATUS.DONE],
+  ["completado", EXERCISE_STATUS.DONE],
+  ["completed", EXERCISE_STATUS.DONE],
+  ["ok", EXERCISE_STATUS.DONE],
+  ["listo", EXERCISE_STATUS.DONE],
+  ["terminado", EXERCISE_STATUS.DONE],
+  ["pending", EXERCISE_STATUS.PENDING],
+  ["pendiente", EXERCISE_STATUS.PENDING],
+  ["planificado", EXERCISE_STATUS.PENDING],
+  ["planificada", EXERCISE_STATUS.PENDING],
+  ["sin hacer", EXERCISE_STATUS.PENDING],
+  ["not_done", EXERCISE_STATUS.NOT_DONE],
+  ["not done", EXERCISE_STATUS.NOT_DONE],
+  ["no hecho", EXERCISE_STATUS.NOT_DONE],
+  ["no-hecho", EXERCISE_STATUS.NOT_DONE],
+  ["no realizado", EXERCISE_STATUS.NOT_DONE],
+  ["omitido", EXERCISE_STATUS.NOT_DONE],
+  ["omitida", EXERCISE_STATUS.NOT_DONE],
+  ["saltado", EXERCISE_STATUS.NOT_DONE],
+  ["saltada", EXERCISE_STATUS.NOT_DONE],
+  ["fallado", EXERCISE_STATUS.NOT_DONE],
+  ["fallida", EXERCISE_STATUS.NOT_DONE],
+  ["skipped", EXERCISE_STATUS.NOT_DONE],
+  ["skip", EXERCISE_STATUS.NOT_DONE],
+]);
+
+function normalizeExerciseStatus(rawStatus, fallbackCompleted, fallbackHecho) {
+  if (typeof rawStatus === "string") {
+    const normalized = rawStatus.trim().toLowerCase();
+    if (EXERCISE_STATUS_ALIASES.has(normalized)) {
+      return EXERCISE_STATUS_ALIASES.get(normalized);
+    }
+  }
+
+  const truthy = (value) => {
+    if (value === true || value === 1) return true;
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      return ["true", "1", "sí", "si", "hecho", "done", "completado", "completed"].includes(normalized);
+    }
+    return false;
+  };
+
+  if (truthy(fallbackCompleted) || truthy(fallbackHecho)) {
+    return EXERCISE_STATUS.DONE;
+  }
+
+  return EXERCISE_STATUS.PENDING;
+}
+
+function getExerciseStatus(exercise) {
+  if (!exercise || typeof exercise !== "object") {
+    return EXERCISE_STATUS.PENDING;
+  }
+  const status = exercise.status;
+  const normalized = normalizeExerciseStatus(status, exercise.completed, exercise.hecho);
+  if (!Object.values(EXERCISE_STATUS).includes(normalized)) {
+    return EXERCISE_STATUS.PENDING;
+  }
+  return normalized;
+}
+
+function setExerciseStatus(exercise, status) {
+  const normalized = Object.values(EXERCISE_STATUS).includes(status)
+    ? status
+    : EXERCISE_STATUS.PENDING;
+  if (exercise && typeof exercise === "object") {
+    exercise.status = normalized;
+    exercise.completed = normalized === EXERCISE_STATUS.DONE;
+    exercise.hecho = normalized === EXERCISE_STATUS.DONE;
+  }
+  return normalized;
+}
+
+function isExerciseDone(exercise) {
+  return getExerciseStatus(exercise) === EXERCISE_STATUS.DONE;
+}
+
+function isExerciseNotDone(exercise) {
+  return getExerciseStatus(exercise) === EXERCISE_STATUS.NOT_DONE;
+}
+
 let state = {
   selectedDate: fmt(new Date()),
   workouts: {}, // { "YYYY-MM-DD": [exercise, ...] }
@@ -95,11 +191,21 @@ function normalizeWorkouts(rawWorkouts) {
       .map((exercise) => {
         const cardioMinutesRaw = Number(exercise.cardioMinutes);
         const perceivedRaw = Number(exercise.perceivedEffort);
+        const inferredStatus = normalizeExerciseStatus(
+          typeof exercise.status === "string" ? exercise.status : exercise.estado,
+          exercise.completed,
+          exercise.hecho
+        );
+        const status = Object.values(EXERCISE_STATUS).includes(inferredStatus)
+          ? inferredStatus
+          : EXERCISE_STATUS.PENDING;
         return {
           ...exercise,
           category: normalizeCategory(exercise.category),
           done: Array.isArray(exercise.done) ? exercise.done : [],
-          completed: !!exercise.completed,
+          status,
+          completed: status === EXERCISE_STATUS.DONE,
+          hecho: status === EXERCISE_STATUS.DONE,
           note: typeof exercise.note === "string" ? exercise.note : "",
           cardioMinutes: Number.isFinite(cardioMinutesRaw) ? cardioMinutesRaw : null,
           perceivedEffort: Number.isFinite(perceivedRaw) && perceivedRaw >= 1 && perceivedRaw <= 10 ? Math.round(perceivedRaw) : null,
@@ -586,7 +692,9 @@ addForm.addEventListener("submit", (e)=>{
     cardioMinutes: null, // si goal="cardio"
     weightKg: formWeight.value ? Number(formWeight.value) : null,
     done: [],            // array con reps logradas por serie (o segundos)
+    status: EXERCISE_STATUS.PENDING,
     completed: false,
+    hecho: false,
     note: formQuickNote ? (formQuickNote.value || "").trim() : "",
     category: normalizeCategory(formCategory.value),
     perceivedEffort: null,
@@ -762,6 +870,18 @@ function getDayExercises(dayISO){
   return source.filter(isPlainObject);
 }
 
+function updateExerciseStatus(exercise, status, dayISO, options = {}) {
+  const normalized = setExerciseStatus(exercise, status);
+  save();
+  const shouldToast = options.showToast ?? normalized === EXERCISE_STATUS.DONE;
+  syncHistoryForDay(dayISO, { showToast: shouldToast });
+  renderDay(dayISO);
+  renderMiniCalendar();
+  if (seguimientoModule?.refresh) {
+    seguimientoModule.refresh();
+  }
+}
+
 function renderDay(dayISO){
   const list = getDayExercises(dayISO);
   humanDateSpan.textContent = toHuman(dayISO);
@@ -776,7 +896,10 @@ function renderDay(dayISO){
     li.className = "exercise";
     li.dataset.category = ex.category;
     li.classList.add(`category-${ex.category}`);
-    if (ex.completed) li.classList.add("completed");
+    const currentStatus = getExerciseStatus(ex);
+    li.dataset.status = currentStatus;
+    if (currentStatus === EXERCISE_STATUS.DONE) li.classList.add("completed");
+    if (currentStatus === EXERCISE_STATUS.NOT_DONE) li.classList.add("not-done");
     li.dataset.id = ex.id;
 
     const categoryName = CATEGORY_LABELS[ex.category] || CATEGORY_LABELS[CATEGORY_KEYS[0]];
@@ -809,24 +932,34 @@ function renderDay(dayISO){
     };
     updateNoteState();
     const doneBtn = button(
-      ex.completed ? "Marcar como pendiente" : "Marcar como hecho",
-      ex.completed ? "small ghost" : "small success"
+      isExerciseDone(ex) ? "Marcar como pendiente" : "Marcar como hecho",
+      isExerciseDone(ex) ? "small ghost" : "small success"
     );
+    const skipBtn = button(
+      isExerciseNotDone(ex) ? "Quitar \"no hecho\"" : "Marcar como no hecho",
+      isExerciseNotDone(ex) ? "small ghost" : "small danger"
+    );
+    doneBtn.setAttribute(
+      "aria-label",
+      isExerciseDone(ex) ? "Marcar ejercicio como pendiente" : "Marcar ejercicio como hecho"
+    );
+    skipBtn.setAttribute(
+      "aria-label",
+      isExerciseNotDone(ex) ? "Quitar estado no hecho" : "Marcar ejercicio como no hecho"
+    );
+    doneBtn.title = doneBtn.textContent;
+    skipBtn.title = skipBtn.textContent;
     const editBtn = button("Editar", "small ghost");
     const delBtn = button("Eliminar", "small danger");
     doneBtn.addEventListener("click", ()=>{
-      ex.completed = !ex.completed;
-      save();
-      if (ex.completed) {
-        syncHistoryForDay(dayISO, { showToast: true });
-      }
-      renderDay(dayISO);
-      renderMiniCalendar();
-      if (seguimientoModule?.refresh) {
-        seguimientoModule.refresh();
-      }
+      const nextStatus = isExerciseDone(ex) ? EXERCISE_STATUS.PENDING : EXERCISE_STATUS.DONE;
+      updateExerciseStatus(ex, nextStatus, dayISO, { showToast: nextStatus === EXERCISE_STATUS.DONE });
     });
-    controls.append(noteBtn, doneBtn, editBtn, delBtn);
+    skipBtn.addEventListener("click", ()=>{
+      const nextStatus = isExerciseNotDone(ex) ? EXERCISE_STATUS.PENDING : EXERCISE_STATUS.NOT_DONE;
+      updateExerciseStatus(ex, nextStatus, dayISO, { showToast: false });
+    });
+    controls.append(noteBtn, doneBtn, skipBtn, editBtn, delBtn);
     titleMain.append(dragBtn, h3);
     title.append(titleMain, controls);
 
@@ -1026,7 +1159,7 @@ function detectFocus(exercises){
 function computeCompletion(dayISO){
   const exercises = getDayExercises(dayISO);
   const total = exercises.length;
-  const completed = exercises.filter((ex) => ex.completed).length;
+  const completed = exercises.filter((ex) => isExerciseDone(ex)).length;
   const percent = total ? Math.round((completed / total) * 100) : 0;
   return { total, completed, percent };
 }
@@ -1594,21 +1727,26 @@ function minutesToSeconds(value){
 function buildHistoryDaySnapshot(dayISO){
   const ejercicios = (Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO] : [])
     .filter(isPlainObject)
-    .map((exercise) => ({
-      name: exercise.name || "",
-      goal: exercise.goal || "",
-      sets: exercise.sets,
-      done: Array.isArray(exercise.done) ? exercise.done.slice() : [],
-      failure: !!exercise.failure,
-      reps: exercise.reps,
-      seconds: exercise.seconds,
-      emomMinutes: exercise.emomMinutes,
-      emomReps: exercise.emomReps,
-      cardioMinutes: exercise.cardioMinutes,
-      weightKg: exercise.weightKg,
-      note: exercise.note,
-      hecho: exercise.completed === true,
-    }));
+    .map((exercise) => {
+      const status = getExerciseStatus(exercise);
+      return {
+        name: exercise.name || "",
+        goal: exercise.goal || "",
+        sets: exercise.sets,
+        done: Array.isArray(exercise.done) ? exercise.done.slice() : [],
+        failure: !!exercise.failure,
+        reps: exercise.reps,
+        seconds: exercise.seconds,
+        emomMinutes: exercise.emomMinutes,
+        emomReps: exercise.emomReps,
+        cardioMinutes: exercise.cardioMinutes,
+        weightKg: exercise.weightKg,
+        note: exercise.note,
+        estado: status,
+        status,
+        hecho: status === EXERCISE_STATUS.DONE,
+      };
+    });
   return { fechaISO: dayISO, sourceDayId: dayISO, ejercicios };
 }
 
@@ -1648,7 +1786,8 @@ function metaText(ex){
 
   parts.unshift(`<span><strong>Categoría:</strong> ${categoryName}</span>`);
 
-  parts.push(`<span><strong>Estado:</strong> ${ex.completed ? "Completado" : "Pendiente"}</span>`);
+  const statusLabel = EXERCISE_STATUS_LABELS[getExerciseStatus(ex)] || EXERCISE_STATUS_LABELS[EXERCISE_STATUS.PENDING];
+  parts.push(`<span><strong>Estado:</strong> ${statusLabel}</span>`);
 
   if (ex.goal==="reps") {
     const repsLabel = ex.reps && ex.reps > 0 ? ex.reps : "—";
@@ -1884,7 +2023,9 @@ copyDayBtn.addEventListener("click", ()=>{
     ...x,
     id: randomUUID(),
     done: x.failure ? Array.from({length: x.sets}, ()=>null) : [],
-    completed: false
+    status: EXERCISE_STATUS.PENDING,
+    completed: false,
+    hecho: false
   }));
   const targetList = Array.isArray(state.workouts?.[dst]) ? state.workouts[dst] : [];
   state.workouts[dst] = targetList.concat(items);

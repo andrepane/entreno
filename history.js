@@ -13,6 +13,24 @@
   const TYPE_UNITS = { reps: "reps", tiempo: "seg", peso: "kg" };
   const TYPE_LABEL = { reps: "repeticiones", tiempo: "tiempo", peso: "peso" };
 
+  const STATUS_DONE_VALUES = new Set(["done", "hecho", "completado", "completed"]);
+  const STATUS_NOT_DONE_VALUES = new Set([
+    "not_done",
+    "not done",
+    "no hecho",
+    "no-hecho",
+    "no realizado",
+    "omitido",
+    "omitida",
+    "saltado",
+    "saltada",
+    "fallado",
+    "fallida",
+    "skipped",
+    "skip",
+  ]);
+  const STATUS_PENDING_VALUES = new Set(["pending", "pendiente", "planificado", "planificada", "sin hacer"]);
+
   const ALIAS_MAP = new Map([
     ["dominada", "dominadas"],
     ["dominadas", "dominadas"],
@@ -138,6 +156,22 @@
 
     if (truthy(exercise.hecho)) return true;
     if (truthy(exercise.completed)) return true;
+
+    const interpretStatus = (value) => {
+      if (typeof value !== "string") return null;
+      const normalized = value.trim().toLowerCase();
+      if (!normalized) return null;
+      if (STATUS_DONE_VALUES.has(normalized)) return true;
+      if (STATUS_NOT_DONE_VALUES.has(normalized)) return false;
+      if (STATUS_PENDING_VALUES.has(normalized)) return false;
+      return null;
+    };
+
+    const estadoResult = interpretStatus(exercise.estado);
+    if (estadoResult != null) return estadoResult;
+
+    const statusResult = interpretStatus(exercise.status);
+    if (statusResult != null) return statusResult;
 
     if (typeof exercise.estado === "string") {
       const normalized = exercise.estado.trim().toLowerCase();
