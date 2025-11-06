@@ -1780,11 +1780,7 @@ if (typeof window !== "undefined") {
 }
 
 function metaText(ex){
-  const normalizedCategory = normalizeCategory(ex.category);
-  const categoryName = CATEGORY_LABELS[normalizedCategory] || CATEGORY_LABELS[CATEGORY_KEYS[0]];
   const parts = [`<span><strong>Series:</strong> ${ex.sets}</span>`];
-
-  parts.unshift(`<span><strong>Categoría:</strong> ${categoryName}</span>`);
 
   const statusLabel = EXERCISE_STATUS_LABELS[getExerciseStatus(ex)] || EXERCISE_STATUS_LABELS[EXERCISE_STATUS.PENDING];
   parts.push(`<span><strong>Estado:</strong> ${statusLabel}</span>`);
