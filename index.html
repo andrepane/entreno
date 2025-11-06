@@ -246,6 +246,29 @@
           <button type="reset" class="ghost">Limpiar</button>
         </div>
       </form>
+
+      <section class="card future-section" aria-labelledby="futureExercisesTitle">
+        <div class="future-intro">
+          <div class="future-copy">
+            <h2 id="futureExercisesTitle">Ejercicios futuros</h2>
+            <p class="muted">
+              Guarda ideas para las próximas programaciones y recuérdalas cuando planifiques tus rutinas.
+            </p>
+          </div>
+          <form id="futureForm" class="future-form" autocomplete="off">
+            <label class="field">
+              <span>Nombre del ejercicio</span>
+              <input type="text" id="futureInput" placeholder="Ej: Dominadas explosivas" />
+            </label>
+            <button type="submit" class="primary">Añadir a la lista</button>
+          </form>
+        </div>
+
+        <ul id="futureList" class="future-list" aria-live="polite"></ul>
+        <div id="futureEmpty" class="empty-hint">
+          No hay ejercicios guardados. Añade alguno para que no se te olviden las siguientes ideas.
+        </div>
+      </section>
     </section>
 
     <!-- Sección SEGUIMIENTO -->

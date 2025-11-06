@@ -66,6 +66,7 @@ let state = {
   selectedDate: fmt(new Date()),
   workouts: {}, // { "YYYY-MM-DD": [exercise, ...] }
   dayMeta: {},
+  futureExercises: [],
 };
 
 const isPlainObject = (value) => value && typeof value === "object" && !Array.isArray(value);
@@ -147,6 +148,31 @@ function normalizeDayMeta(rawMeta){
     normalized[dayISO] = base;
   }
   return normalized;
+}
+
+function normalizeFutureExercises(rawList){
+  if (!Array.isArray(rawList)) return [];
+  const result = [];
+  rawList.forEach((entry)=>{
+    if (typeof entry === "string"){
+      const name = entry.trim();
+      if (name) {
+        result.push({
+          id: randomUUID(),
+          name,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      return;
+    }
+    if (!isPlainObject(entry)) return;
+    const name = typeof entry.name === "string" ? entry.name.trim() : "";
+    if (!name) return;
+    const createdAt = typeof entry.createdAt === "string" && entry.createdAt ? entry.createdAt : new Date().toISOString();
+    const id = typeof entry.id === "string" && entry.id ? entry.id : randomUUID();
+    result.push({ id, name, createdAt });
+  });
+  return result;
 }
 
 function ensureDayMeta(dayISO){
@@ -303,6 +329,12 @@ const formSubmitBtn = document.getElementById("formSubmit");
 const formProgression = document.getElementById("formProgression");
 let currentFormStep = 0;
 
+/* Ejercicios futuros */
+const futureForm = document.getElementById("futureForm");
+const futureInput = document.getElementById("futureInput");
+const futureList = document.getElementById("futureList");
+const futureEmpty = document.getElementById("futureEmpty");
+
 /* Copiar día */
 const copyDayToggleBtn = document.getElementById("copyDayToggleBtn");
 const copyDayBox = document.getElementById("copyDayBox");
@@ -326,12 +358,16 @@ const seguimientoModule = typeof window !== "undefined" ? window.seguimientoUI :
 load();
 const originalWorkoutsJSON = JSON.stringify(state.workouts || {});
 const originalDayMetaJSON = JSON.stringify(state.dayMeta || {});
+const originalFutureJSON = JSON.stringify(state.futureExercises || []);
 const normalizedWorkouts = normalizeWorkouts(state.workouts);
 const normalizedWorkoutsJSON = JSON.stringify(normalizedWorkouts);
 const normalizedDayMeta = normalizeDayMeta(state.dayMeta);
 const normalizedDayMetaJSON = JSON.stringify(normalizedDayMeta);
+const normalizedFutureExercises = normalizeFutureExercises(state.futureExercises);
+const normalizedFutureJSON = JSON.stringify(normalizedFutureExercises);
 state.workouts = normalizedWorkouts;
 state.dayMeta = normalizedDayMeta;
+state.futureExercises = normalizedFutureExercises;
 
 function getCalendarSnapshot(){
   const snapshot = {};
@@ -359,6 +395,7 @@ renderAll();
 if (
   originalWorkoutsJSON !== normalizedWorkoutsJSON ||
   originalDayMetaJSON !== normalizedDayMetaJSON ||
+  originalFutureJSON !== normalizedFutureJSON ||
   resetToToday
 ) {
   save();
@@ -623,13 +660,101 @@ addForm.addEventListener("submit", (e)=>{
   updateProgressionHint();
 });
 
+if (futureForm) {
+  futureForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const name = (futureInput?.value || "").trim();
+    if (!name) {
+      futureInput?.focus();
+      return;
+    }
+    const entry = {
+      id: randomUUID(),
+      name,
+      createdAt: new Date().toISOString(),
+    };
+    state.futureExercises = Array.isArray(state.futureExercises)
+      ? [...state.futureExercises, entry]
+      : [entry];
+    futureInput.value = "";
+    save();
+    renderFutureExercises();
+  });
+}
+
+if (futureList) {
+  futureList.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const action = target.dataset.action;
+    if (action !== "remove-future") return;
+    const id = target.dataset.id;
+    if (!id) return;
+    const items = Array.isArray(state.futureExercises) ? state.futureExercises : [];
+    const next = items.filter((item) => item.id !== id);
+    if (next.length === items.length) return;
+    state.futureExercises = next;
+    save();
+    renderFutureExercises();
+  });
+}
+
 /* ========= Render ========= */
 function renderAll(){
   renderDay(state.selectedDate);
   renderMiniCalendar();
+  renderFutureExercises();
   if (seguimientoModule?.refresh) {
     seguimientoModule.refresh();
   }
+}
+
+function renderFutureExercises(){
+  if (!futureList || !futureEmpty) return;
+  futureList.innerHTML = "";
+  const items = Array.isArray(state.futureExercises) ? state.futureExercises : [];
+  futureEmpty.style.display = items.length ? "none" : "block";
+  if (!items.length) {
+    return;
+  }
+  const formatDate = (iso) => {
+    if (!iso) return "";
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
+  };
+  items.forEach((item) => {
+    if (!item || typeof item !== "object") return;
+    const li = document.createElement("li");
+    li.className = "future-item";
+    li.dataset.id = item.id;
+
+    const text = document.createElement("span");
+    text.className = "future-item-text";
+    text.textContent = item.name;
+    li.append(text);
+
+    const metaText = formatDate(item.createdAt);
+    if (metaText) {
+      const meta = document.createElement("time");
+      meta.className = "future-item-meta";
+      meta.dateTime = item.createdAt;
+      meta.textContent = metaText;
+      li.append(meta);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "future-item-actions";
+    const removeBtn = button("Eliminar", "ghost micro");
+    removeBtn.type = "button";
+    removeBtn.dataset.action = "remove-future";
+    removeBtn.dataset.id = item.id;
+    removeBtn.setAttribute("aria-label", `Eliminar "${item.name}" de ejercicios futuros`);
+    actions.append(removeBtn);
+    li.append(actions);
+
+    futureList.append(li);
+  });
 }
 
 function getDayExercises(dayISO){
