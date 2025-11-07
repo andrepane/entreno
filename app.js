@@ -1859,7 +1859,7 @@ function renderDay(dayISO){
     dragBtn.setAttribute("aria-label", "Reordenar ejercicio");
     dragBtn.title = "Reordenar ejercicio";
     dragBtn.innerHTML = "<span aria-hidden=\"true\">☰</span>";
-    const thumb = createMiniatureElement(ex, { size: 42, className: "exercise-thumb", alt: ex.name });
+    const thumb = createMiniatureElement(ex, { size: 56, className: "exercise-thumb", alt: ex.name });
     const h3 = document.createElement("h3");
     h3.textContent = ex.name;
     h3.style.margin = "0";
