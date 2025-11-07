@@ -609,6 +609,7 @@ const librarySelectorList = document.getElementById("librarySelectorList");
 const librarySelectorEmpty = document.getElementById("librarySelectorEmpty");
 const librarySelectorSearch = document.getElementById("librarySelectorSearch");
 const librarySelectorCategory = document.getElementById("librarySelectorCategory");
+const modalPreviousFocus = new WeakMap();
 
 const goalConfigModal = document.getElementById("goalConfigModal");
 const goalConfigForm = document.getElementById("goalConfigForm");
@@ -1398,6 +1399,12 @@ let currentSelectorCallback = null;
 
 function openModal(modal){
   if (!modal) return;
+  const activeElement = document.activeElement;
+  if (activeElement && typeof activeElement.blur === "function") {
+    modalPreviousFocus.set(modal, activeElement);
+  } else {
+    modalPreviousFocus.delete(modal);
+  }
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
@@ -1405,10 +1412,23 @@ function openModal(modal){
 
 function closeModal(modal){
   if (!modal) return;
+  const activeElement = document.activeElement;
+  if (activeElement && modal.contains(activeElement) && typeof activeElement.blur === "function") {
+    activeElement.blur();
+  }
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
   if (modal === librarySelectorModal) {
     currentSelectorCallback = null;
+  }
+  const previousFocus = modalPreviousFocus.get(modal);
+  modalPreviousFocus.delete(modal);
+  if (previousFocus && typeof previousFocus.focus === "function") {
+    requestAnimationFrame(() => {
+      if (document.body.contains(previousFocus)) {
+        previousFocus.focus();
+      }
+    });
   }
   if (!document.querySelector(".modal:not(.hidden)")) {
     document.body.classList.remove("modal-open");
