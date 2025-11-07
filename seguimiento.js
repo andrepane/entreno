@@ -541,6 +541,25 @@
     }
   }
 
+  function createIconActionButton(iconName, label, className, options = {}) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    if (className) {
+      btn.className = className;
+    }
+    const showLabel = options.showLabel === true;
+    if (global.CaliGymIcons?.decorate) {
+      global.CaliGymIcons.decorate(btn, iconName, { label, showLabel });
+    } else {
+      btn.textContent = label;
+      if (!showLabel) {
+        btn.setAttribute("aria-label", label);
+      }
+      btn.title = label;
+    }
+    return btn;
+  }
+
   function renderTable(entries) {
     elements.tableBody.innerHTML = "";
     if (!entries.length) return;
@@ -560,15 +579,9 @@
       const tdNotes = document.createElement("td");
       tdNotes.textContent = entry.notas || "—";
       const tdActions = document.createElement("td");
-      const editBtn = document.createElement("button");
-      editBtn.type = "button";
-      editBtn.className = "link-button";
-      editBtn.textContent = "Editar";
+      const editBtn = createIconActionButton("edit", "Editar entrada", "ghost micro");
       editBtn.addEventListener("click", () => openEditModal(entry));
-      const delBtn = document.createElement("button");
-      delBtn.type = "button";
-      delBtn.className = "link-button danger";
-      delBtn.textContent = "Eliminar";
+      const delBtn = createIconActionButton("trash", "Eliminar entrada", "ghost micro danger");
       delBtn.addEventListener("click", () => handleDeleteEntry(entry));
       tdActions.append(editBtn, delBtn);
       tr.append(tdDate, tdValue, tdPhase, tdNotes, tdActions);
