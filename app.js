@@ -1852,11 +1852,11 @@ function renderDay(dayISO){
     };
     updateNoteState();
     const doneBtn = button(
-      isExerciseDone(ex) ? "Marcar como pendiente" : "Marcar como hecho",
+      isExerciseDone(ex) ? "↺" : "✔",
       isExerciseDone(ex) ? "small ghost" : "small success"
     );
     const skipBtn = button(
-      isExerciseNotDone(ex) ? "Quitar \"no hecho\"" : "Marcar como no hecho",
+      isExerciseNotDone(ex) ? "↺" : "✖",
       isExerciseNotDone(ex) ? "small ghost" : "small danger"
     );
     doneBtn.setAttribute(
@@ -1867,8 +1867,8 @@ function renderDay(dayISO){
       "aria-label",
       isExerciseNotDone(ex) ? "Quitar estado no hecho" : "Marcar ejercicio como no hecho"
     );
-    doneBtn.title = doneBtn.textContent;
-    skipBtn.title = skipBtn.textContent;
+    doneBtn.title = doneBtn.getAttribute("aria-label");
+    skipBtn.title = skipBtn.getAttribute("aria-label");
     const editBtn = button("Editar", "small ghost");
     const delBtn = button("Eliminar", "small danger");
     doneBtn.addEventListener("click", ()=>{
