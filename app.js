@@ -2763,15 +2763,15 @@ function metaText(ex){
   parts.push(`<span><strong>Estado:</strong> ${statusLabel}</span>`);
 
   if (goalType === "reps") {
-    const repsLabel = ex.reps && ex.reps > 0 ? ex.reps : "—";
-    parts.push(`<span><strong>Repeticiones:</strong> ${repsLabel}</span>`);
-    if (ex.failure) parts.push(`<span>Al fallo</span>`);
+    if (!ex.failure) {
+      const repsLabel = ex.reps && ex.reps > 0 ? ex.reps : "—";
+      parts.push(`<span><strong>Repeticiones:</strong> ${repsLabel}</span>`);
+    }
   } else if (goalType === "isometrico") {
-    const secsLabel = ex.seconds && ex.seconds > 0 ? ex.seconds : "—";
-    parts.push(`<span><strong>Segundos:</strong> ${secsLabel}</span>`);
-    if (ex.failure) parts.push(`<span>Al fallo</span>`);
-  } else if (goalType === "fallo") {
-    parts.push(`<span><strong>Objetivo:</strong> Series al fallo</span>`);
+    if (!ex.failure) {
+      const secsLabel = ex.seconds && ex.seconds > 0 ? ex.seconds : "—";
+      parts.push(`<span><strong>Segundos:</strong> ${secsLabel}</span>`);
+    }
   } else if (goalType === "emom") {
     const minutes = ex.emomMinutes && ex.emomMinutes > 0 ? ex.emomMinutes : "—";
     const reps = ex.emomReps && ex.emomReps > 0 ? ex.emomReps : "—";
