@@ -48,12 +48,15 @@ const toHuman = (iso) => {
 
 /* ========= Estado & almacenamiento ========= */
 const STORAGE_KEY = "workouts.v1";
-const CATEGORY_KEYS = ["calistenia", "musculacion", "cardio", "skill"];
+const CATEGORY_KEYS = ["calistenia", "musculacion", "piernas", "cardio", "skill", "movilidad", "otro"];
 const CATEGORY_LABELS = {
   calistenia: "Calistenia",
   musculacion: "Musculación",
+  piernas: "Piernas",
   cardio: "Cardio",
-  skill: "Skill"
+  skill: "Skill",
+  movilidad: "Movilidad",
+  otro: "Otro",
 };
 const PHASE_KEYS = ["base", "intensificacion", "descarga"];
 const PHASE_LABELS = {
@@ -163,6 +166,8 @@ let state = {
   workouts: {}, // { "YYYY-MM-DD": [exercise, ...] }
   dayMeta: {},
   futureExercises: [],
+  libraryExercises: [],
+  plannedExercises: [],
 };
 
 const isPlainObject = (value) => value && typeof value === "object" && !Array.isArray(value);
@@ -281,6 +286,139 @@ function normalizeFutureExercises(rawList){
   return result;
 }
 
+const GOAL_TYPES = ["reps", "isometrico", "fallo", "emom", "cardio"];
+
+function normalizeGoalType(value){
+  const key = (value || "").toString().toLowerCase();
+  return GOAL_TYPES.includes(key) ? key : "reps";
+}
+
+function normalizeTags(input){
+  if (!input) return [];
+  if (Array.isArray(input)) {
+    return input
+      .map((tag) => (typeof tag === "string" ? tag.trim() : ""))
+      .filter(Boolean);
+  }
+  if (typeof input === "string") {
+    return input
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function extractInitials(name){
+  if (!name) return "";
+  const parts = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase());
+  return parts.join("") || name.charAt(0).toUpperCase();
+}
+
+function normalizeLibraryExercises(rawList){
+  if (!Array.isArray(rawList)) return [];
+  const normalized = [];
+  const seen = new Set();
+  rawList.forEach((item) => {
+    if (!isPlainObject(item)) return;
+    const id = typeof item.id === "string" && item.id ? item.id : randomUUID();
+    if (seen.has(id)) return;
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    if (!name) return;
+    const category = normalizeCategory(item.category);
+    const iconType = item.iconType === "image" ? "image" : "emoji";
+    const emoji = typeof item.emoji === "string" ? item.emoji.trim() : "";
+    const imageDataUrl = typeof item.imageDataUrl === "string" ? item.imageDataUrl : "";
+    const notes = typeof item.notes === "string" ? item.notes : "";
+    const tags = normalizeTags(item.tags);
+    normalized.push({
+      id,
+      name,
+      category,
+      iconType,
+      emoji: iconType === "emoji" ? emoji || "" : "",
+      imageDataUrl: iconType === "image" ? imageDataUrl : "",
+      notes,
+      tags,
+    });
+    seen.add(id);
+  });
+  return normalized;
+}
+
+function normalizePlannedExercises(rawList){
+  if (!Array.isArray(rawList)) return [];
+  const normalized = [];
+  const seen = new Set();
+  rawList.forEach((item) => {
+    if (!isPlainObject(item)) return;
+    const id = typeof item.id === "string" && item.id ? item.id : randomUUID();
+    if (seen.has(id)) return;
+    const dateISO = fmt(fromISO(item.dateISO));
+    const goalType = normalizeGoalType(item.goalType);
+    const entry = {
+      id,
+      libraryId: typeof item.libraryId === "string" ? item.libraryId : "",
+      dateISO,
+      goalType,
+      series: item.series != null ? Math.max(1, Number(item.series) || 1) : null,
+      reps: item.reps != null ? Number(item.reps) : null,
+      segundos: item.segundos != null ? Number(item.segundos) : null,
+      minutos: item.minutos != null ? Number(item.minutos) : null,
+      repsPorMin: item.repsPorMin != null ? Number(item.repsPorMin) : null,
+      alFallo: !!item.alFallo,
+      lastreKg: item.lastreKg != null && item.lastreKg !== "" ? Number(item.lastreKg) : null,
+      notes: typeof item.notes === "string" ? item.notes : "",
+      phase: typeof item.phase === "string" ? item.phase : undefined,
+    };
+    normalized.push(entry);
+    seen.add(id);
+  });
+  return normalized;
+}
+
+function buildPlannedFromWorkouts(){
+  const planned = [];
+  Object.entries(state.workouts || {}).forEach(([dateISO, list]) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((exercise) => {
+      if (!isPlainObject(exercise)) return;
+      const goalType = exercise.goalType ? normalizeGoalType(exercise.goalType) : (() => {
+        if (exercise.goal === "seconds") return "isometrico";
+        if (exercise.goal === "emom") return "emom";
+        if (exercise.goal === "cardio") return "cardio";
+        if (exercise.goal === "fallo") return "fallo";
+        if (exercise.failure && !exercise.reps) return "fallo";
+        return "reps";
+      })();
+      planned.push({
+        id: typeof exercise.plannedId === "string" && exercise.plannedId ? exercise.plannedId : (exercise.id || randomUUID()),
+        libraryId: typeof exercise.libraryId === "string" ? exercise.libraryId : "",
+        dateISO: fmt(fromISO(dateISO)),
+        goalType,
+        series: Number.isFinite(Number(exercise.sets)) ? Number(exercise.sets) : null,
+        reps: Number.isFinite(Number(exercise.reps)) ? Number(exercise.reps) : null,
+        segundos: Number.isFinite(Number(exercise.seconds)) ? Number(exercise.seconds) : null,
+        minutos: (() => {
+          if (goalType === "cardio") return Number(exercise.cardioMinutes) || null;
+          if (goalType === "emom") return Number(exercise.emomMinutes) || null;
+          return null;
+        })(),
+        repsPorMin: goalType === "emom" ? Number(exercise.emomReps) || null : null,
+        alFallo: !!exercise.failure,
+        lastreKg: exercise.weightKg != null && exercise.weightKg !== "" ? Number(exercise.weightKg) : null,
+        notes: typeof exercise.note === "string" ? exercise.note : "",
+        phase: undefined,
+      });
+    });
+  });
+  return planned;
+}
+
 function ensureDayMeta(dayISO){
   const key = fmt(fromISO(dayISO));
   if (!state.dayMeta[key]){
@@ -367,6 +505,8 @@ function load() {
   } catch(e){ console.warn("Error loading storage", e); }
 }
 function save() {
+  state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
+  state.plannedExercises = buildPlannedFromWorkouts();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
@@ -398,6 +538,7 @@ const tabs = document.querySelectorAll(".tab");
 const tabPanels = {
   entreno: document.getElementById("tab-entreno"),
   nuevo: document.getElementById("tab-nuevo"),
+  libreria: document.getElementById("tab-libreria"),
   seguimiento: document.getElementById("tab-seguimiento")
 };
 
@@ -416,6 +557,7 @@ const goalEmom = document.getElementById("goalEmom");
 const goalCardio = document.getElementById("goalCardio");
 const rowReps = document.getElementById("rowReps");
 const rowSeconds = document.getElementById("rowSeconds");
+const rowFailure = document.getElementById("rowFailure");
 const rowEmom = document.getElementById("rowEmom");
 const rowCardio = document.getElementById("rowCardio");
 const formReps = document.getElementById("formReps");
@@ -427,6 +569,9 @@ const formEmomReps = document.getElementById("formEmomReps");
 const formCardioMinutes = document.getElementById("formCardioMinutes");
 const formWeight = document.getElementById("formWeight");
 const formQuickNote = document.getElementById("formQuickNote");
+const formLibraryPreview = document.getElementById("formLibraryPreview");
+const formFailureSets = document.getElementById("formFailureSets");
+const goalFailure = document.getElementById("goalFailure");
 const formStepButtons = document.querySelectorAll(".form-step-btn");
 const formSteps = document.querySelectorAll(".form-step");
 const formPrev = document.getElementById("formPrev");
@@ -434,6 +579,57 @@ const formNext = document.getElementById("formNext");
 const formSubmitBtn = document.getElementById("formSubmit");
 const formProgression = document.getElementById("formProgression");
 let currentFormStep = 0;
+let addFormSelectedLibrary = null;
+
+/* Librería */
+const openLibrarySelectorBtn = document.getElementById("openLibrarySelector");
+const openLibraryFormBtn = document.getElementById("openLibraryForm");
+const libraryListEl = document.getElementById("libraryList");
+const libraryEmptyEl = document.getElementById("libraryEmpty");
+const librarySearchInput = document.getElementById("librarySearch");
+const libraryCategoryFilter = document.getElementById("libraryCategoryFilter");
+const libraryTagsFilter = document.getElementById("libraryTagsFilter");
+const libraryFormModal = document.getElementById("libraryFormModal");
+const libraryForm = document.getElementById("libraryForm");
+const libraryFormId = document.getElementById("libraryFormId");
+const libraryFormName = document.getElementById("libraryFormName");
+const libraryFormCategory = document.getElementById("libraryFormCategory");
+const libraryIconEmoji = document.getElementById("libraryIconEmoji");
+const libraryIconImage = document.getElementById("libraryIconImage");
+const libraryEmojiRow = document.getElementById("libraryEmojiRow");
+const libraryImageRow = document.getElementById("libraryImageRow");
+const libraryFormEmoji = document.getElementById("libraryFormEmoji");
+const libraryFormImage = document.getElementById("libraryFormImage");
+const libraryImagePreview = document.getElementById("libraryImagePreview");
+const libraryFormNotes = document.getElementById("libraryFormNotes");
+const libraryFormTags = document.getElementById("libraryFormTags");
+
+const librarySelectorModal = document.getElementById("librarySelectorModal");
+const librarySelectorList = document.getElementById("librarySelectorList");
+const librarySelectorEmpty = document.getElementById("librarySelectorEmpty");
+const librarySelectorSearch = document.getElementById("librarySelectorSearch");
+const librarySelectorCategory = document.getElementById("librarySelectorCategory");
+
+const goalConfigModal = document.getElementById("goalConfigModal");
+const goalConfigForm = document.getElementById("goalConfigForm");
+const goalConfigLibraryId = document.getElementById("goalConfigLibraryId");
+const goalConfigDate = document.getElementById("goalConfigDate");
+const goalConfigWeight = document.getElementById("goalConfigWeight");
+const goalConfigNotes = document.getElementById("goalConfigNotes");
+const goalConfigSections = goalConfigForm ? Array.from(goalConfigForm.querySelectorAll("[data-goal-config]")) : [];
+const goalConfigTypeInputs = goalConfigForm ? Array.from(goalConfigForm.querySelectorAll('input[name="goalConfigType"]')) : [];
+const goalConfigPreview = document.getElementById("goalConfigPreview");
+const goalConfigTitleEl = document.getElementById("goalConfigTitle");
+const goalConfigRepsSeries = document.getElementById("goalConfigRepsSeries");
+const goalConfigRepsValue = document.getElementById("goalConfigRepsValue");
+const goalConfigRepsFailure = document.getElementById("goalConfigRepsFailure");
+const goalConfigIsoSeries = document.getElementById("goalConfigIsoSeries");
+const goalConfigIsoSeconds = document.getElementById("goalConfigIsoSeconds");
+const goalConfigIsoFailure = document.getElementById("goalConfigIsoFailure");
+const goalConfigFailSeries = document.getElementById("goalConfigFailSeries");
+const goalConfigEmomMinutes = document.getElementById("goalConfigEmomMinutes");
+const goalConfigEmomReps = document.getElementById("goalConfigEmomReps");
+const goalConfigCardioMinutes = document.getElementById("goalConfigCardioMinutes");
 
 /* Ejercicios futuros */
 const futureForm = document.getElementById("futureForm");
@@ -465,15 +661,22 @@ load();
 const originalWorkoutsJSON = JSON.stringify(state.workouts || {});
 const originalDayMetaJSON = JSON.stringify(state.dayMeta || {});
 const originalFutureJSON = JSON.stringify(state.futureExercises || []);
+const originalLibraryJSON = JSON.stringify(state.libraryExercises || []);
+const originalPlannedJSON = JSON.stringify(state.plannedExercises || []);
 const normalizedWorkouts = normalizeWorkouts(state.workouts);
 const normalizedWorkoutsJSON = JSON.stringify(normalizedWorkouts);
 const normalizedDayMeta = normalizeDayMeta(state.dayMeta);
 const normalizedDayMetaJSON = JSON.stringify(normalizedDayMeta);
 const normalizedFutureExercises = normalizeFutureExercises(state.futureExercises);
 const normalizedFutureJSON = JSON.stringify(normalizedFutureExercises);
+const normalizedLibraryExercises = normalizeLibraryExercises(state.libraryExercises);
+const normalizedLibraryJSON = JSON.stringify(normalizedLibraryExercises);
+const normalizedPlannedExercises = normalizePlannedExercises(state.plannedExercises);
 state.workouts = normalizedWorkouts;
 state.dayMeta = normalizedDayMeta;
 state.futureExercises = normalizedFutureExercises;
+state.libraryExercises = normalizedLibraryExercises;
+state.plannedExercises = normalizedPlannedExercises.length ? normalizedPlannedExercises : buildPlannedFromWorkouts();
 
 function getCalendarSnapshot(){
   const snapshot = {};
@@ -498,10 +701,13 @@ selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
 formCategory.value = normalizeCategory(formCategory.value);
 renderAll();
+attachLibraryEventListeners();
 if (
   originalWorkoutsJSON !== normalizedWorkoutsJSON ||
   originalDayMetaJSON !== normalizedDayMetaJSON ||
   originalFutureJSON !== normalizedFutureJSON ||
+  originalLibraryJSON !== normalizedLibraryJSON ||
+  originalPlannedJSON !== JSON.stringify(state.plannedExercises) ||
   resetToToday
 ) {
   save();
@@ -520,6 +726,24 @@ tabs.forEach(btn=>{
   });
 });
 
+document.querySelectorAll("[data-close-modal]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const targetId = btn.getAttribute("data-close-modal");
+    const modal = targetId ? document.getElementById(targetId) : btn.closest(".modal");
+    closeModal(modal);
+  });
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    const openModalEl = document.querySelector(".modal:not(.hidden)");
+    if (openModalEl) {
+      event.preventDefault();
+      closeModal(openModalEl);
+    }
+  }
+});
+
 prevDayBtn.addEventListener("click", ()=> shiftSelectedDay(-1));
 nextDayBtn.addEventListener("click", ()=> shiftSelectedDay(1));
 selectedDateInput.addEventListener("change", (e)=>{
@@ -534,12 +758,15 @@ selectedDateInput.addEventListener("change", (e)=>{
 
 /* ==== Lógica Toggle de tipo de objetivo ==== */
 function updateGoalRows() {
-  rowReps.classList.toggle("hidden", !goalReps.checked);
-  rowSeconds.classList.toggle("hidden", !goalSecs.checked);
-  rowEmom.classList.toggle("hidden", !goalEmom.checked);
-  rowCardio.classList.toggle("hidden", !goalCardio.checked);
+  if (rowReps) rowReps.classList.toggle("hidden", !goalReps?.checked);
+  if (rowSeconds) rowSeconds.classList.toggle("hidden", !goalSecs?.checked);
+  if (rowFailure) rowFailure.classList.toggle("hidden", !goalFailure?.checked);
+  if (rowEmom) rowEmom.classList.toggle("hidden", !goalEmom?.checked);
+  if (rowCardio) rowCardio.classList.toggle("hidden", !goalCardio?.checked);
 }
-[goalReps, goalSecs, goalEmom, goalCardio].forEach(el=>el.addEventListener("change", updateGoalRows));
+[goalReps, goalSecs, goalFailure, goalEmom, goalCardio]
+  .filter(Boolean)
+  .forEach((el) => el.addEventListener("change", updateGoalRows));
 updateGoalRows();
 
 function validateStep(stepIndex){
@@ -598,6 +825,35 @@ function updateProgressionHint(){
   }
 }
 
+function clearAddFormLibrarySelection(){
+  addFormSelectedLibrary = null;
+  if (formLibraryPreview) {
+    formLibraryPreview.classList.add("hidden");
+    formLibraryPreview.innerHTML = "";
+  }
+}
+
+function setAddFormLibrarySelection(item){
+  if (!item) {
+    clearAddFormLibrarySelection();
+    return;
+  }
+  addFormSelectedLibrary = item;
+  if (formName) formName.value = item.name;
+  if (formCategory) {
+    formCategory.value = item.category;
+    updateProgressionHint();
+  }
+  if (formLibraryPreview) {
+    formLibraryPreview.innerHTML = "";
+    const thumb = createMiniatureElement(item, { size: 32, className: "library-mini-thumb" });
+    const label = document.createElement("span");
+    label.textContent = `${item.name} · ${CATEGORY_LABELS[item.category] || item.category}`;
+    formLibraryPreview.append(thumb, label);
+    formLibraryPreview.classList.remove("hidden");
+  }
+}
+
 if (formPrev){
   formPrev.addEventListener("click", ()=> setFormStep(currentFormStep - 1));
 }
@@ -618,6 +874,30 @@ if (formCategory){
 }
 setFormStep(0);
 updateProgressionHint();
+
+if (openLibrarySelectorBtn){
+  openLibrarySelectorBtn.addEventListener("click", () => {
+    openLibrarySelector({
+      defaultCategory: formCategory?.value || "all",
+      onSelect: (item) => {
+        setAddFormLibrarySelection(item);
+      },
+    });
+  });
+}
+
+if (goalFailure && formFailureSets && formSets){
+  goalFailure.addEventListener("change", () => {
+    if (goalFailure.checked && (!formFailureSets.value || Number(formFailureSets.value) <= 0)) {
+      formFailureSets.value = formSets.value || 3;
+    }
+  });
+  formSets?.addEventListener("change", () => {
+    if (goalFailure.checked) {
+      formFailureSets.value = formSets.value || formFailureSets.value;
+    }
+  });
+}
 
 if (todayMobilityToggle){
   todayMobilityToggle.addEventListener("click", ()=>{
@@ -670,6 +950,7 @@ addForm.addEventListener("reset", () => {
     if (formQuickNote) formQuickNote.value = "";
     setFormStep(0);
     updateProgressionHint();
+    clearAddFormLibrarySelection();
   });
 });
 
@@ -683,7 +964,8 @@ addForm.addEventListener("submit", (e)=>{
     id: randomUUID(),
     name: (formName.value || "").trim(),
     sets: Math.max(1, Number(formSets.value||1)),
-    goal: null,          // "reps" | "seconds" | "emom" | "cardio"
+    goal: null,
+    goalType: "reps",
     reps: null,          // si goal="reps"
     failure: false,      // si goal="reps" o goal="seconds"
     seconds: null,       // si goal="seconds"
@@ -702,7 +984,19 @@ addForm.addEventListener("submit", (e)=>{
 
   if (!ex.name) { alert("Pon un nombre al ejercicio."); return; }
 
+  if (addFormSelectedLibrary) {
+    ex.libraryId = addFormSelectedLibrary.id;
+    ex.iconType = addFormSelectedLibrary.iconType;
+    ex.emoji = addFormSelectedLibrary.emoji;
+    ex.imageDataUrl = addFormSelectedLibrary.imageDataUrl;
+    ex.tags = Array.isArray(addFormSelectedLibrary.tags) ? addFormSelectedLibrary.tags.slice() : [];
+    if (addFormSelectedLibrary.notes) {
+      ex.note = [addFormSelectedLibrary.notes, ex.note].filter(Boolean).join("\n");
+    }
+  }
+
   if (goalReps.checked) {
+    ex.goalType = "reps";
     ex.goal = "reps";
     ex.reps = formReps.value ? Number(formReps.value) : null;
     ex.failure = !!formFailure.checked;
@@ -711,6 +1005,7 @@ addForm.addEventListener("submit", (e)=>{
     ex.emomReps = null;
     ex.cardioMinutes = null;
   } else if (goalSecs.checked) {
+    ex.goalType = "isometrico";
     ex.goal = "seconds";
     ex.seconds = Number(formSeconds.value||0);
     ex.failure = !!formSecondsFailure.checked;
@@ -718,7 +1013,21 @@ addForm.addEventListener("submit", (e)=>{
     ex.emomMinutes = null;
     ex.emomReps = null;
     ex.cardioMinutes = null;
+  } else if (goalFailure?.checked) {
+    ex.goalType = "fallo";
+    ex.goal = "reps";
+    const failureSets = formFailureSets?.value ? Number(formFailureSets.value) : null;
+    if (failureSets && failureSets > 0) {
+      ex.sets = failureSets;
+    }
+    ex.reps = null;
+    ex.seconds = null;
+    ex.failure = true;
+    ex.emomMinutes = null;
+    ex.emomReps = null;
+    ex.cardioMinutes = null;
   } else if (goalEmom.checked) {
+    ex.goalType = "emom";
     ex.goal = "emom";
     ex.emomMinutes = Number(formEmomMinutes.value||0);
     ex.emomReps = Number(formEmomReps.value||0);
@@ -727,6 +1036,7 @@ addForm.addEventListener("submit", (e)=>{
     ex.seconds = null;
     ex.cardioMinutes = null;
   } else {
+    ex.goalType = "cardio";
     ex.goal = "cardio";
     ex.cardioMinutes = Number(formCardioMinutes.value||0);
     ex.failure = false;
@@ -752,6 +1062,7 @@ addForm.addEventListener("submit", (e)=>{
   formSecondsFailure.checked = false;
   formCategory.value = CATEGORY_KEYS[0];
   if (formQuickNote) formQuickNote.value = "";
+  clearAddFormLibrarySelection();
   renderDay(normalizedDay);
   switchToTab("entreno");
   state.selectedDate = normalizedDay;
@@ -812,6 +1123,8 @@ function renderAll(){
   renderDay(state.selectedDate);
   renderMiniCalendar();
   renderFutureExercises();
+  renderLibrary();
+  renderLibrarySelector();
   if (seguimientoModule?.refresh) {
     seguimientoModule.refresh();
   }
@@ -863,6 +1176,612 @@ function renderFutureExercises(){
 
     futureList.append(li);
   });
+}
+
+/* ========= Librería ========= */
+function getLibrary(){
+  return Array.isArray(state.libraryExercises) ? state.libraryExercises.slice() : [];
+}
+
+function saveLibrary(list){
+  state.libraryExercises = normalizeLibraryExercises(list);
+  save();
+  renderLibrary();
+  renderLibrarySelector();
+}
+
+function addToLibrary(item){
+  const list = getLibrary();
+  list.push(item);
+  saveLibrary(list);
+  return item;
+}
+
+function updateLibrary(item){
+  const list = getLibrary();
+  const idx = list.findIndex((entry) => entry.id === item.id);
+  if (idx === -1) return null;
+  list[idx] = { ...list[idx], ...item };
+  saveLibrary(list);
+  return list[idx];
+}
+
+function removeFromLibrary(id){
+  const list = getLibrary();
+  const next = list.filter((item) => item.id !== id);
+  if (next.length === list.length) return false;
+  saveLibrary(next);
+  return true;
+}
+
+function findLibraryExercise(id){
+  if (!id) return null;
+  const list = getLibrary();
+  return list.find((item) => item.id === id) || null;
+}
+
+function resolveExerciseIcon(source){
+  if (!source || typeof source !== "object") {
+    return { iconType: "emoji", emoji: "", imageDataUrl: "", name: "" };
+  }
+  if (source.iconType === "image" && source.imageDataUrl) {
+    return { iconType: "image", imageDataUrl: source.imageDataUrl, emoji: "", name: source.name || "" };
+  }
+  if (source.iconType === "emoji" && source.emoji) {
+    return { iconType: "emoji", emoji: source.emoji, imageDataUrl: "", name: source.name || "" };
+  }
+  if (source.libraryId) {
+    const libraryExercise = findLibraryExercise(source.libraryId);
+    if (libraryExercise) {
+      return resolveExerciseIcon({ ...libraryExercise, name: source.name || libraryExercise.name });
+    }
+  }
+  const emoji = typeof source.emoji === "string" ? source.emoji : "";
+  const imageDataUrl = typeof source.imageDataUrl === "string" ? source.imageDataUrl : "";
+  if (imageDataUrl) {
+    return { iconType: "image", imageDataUrl, emoji: "", name: source.name || "" };
+  }
+  if (emoji) {
+    return { iconType: "emoji", emoji, imageDataUrl: "", name: source.name || "" };
+  }
+  return { iconType: "placeholder", emoji: "", imageDataUrl: "", name: source.name || "" };
+}
+
+function createMiniatureElement(source, options = {}){
+  const icon = resolveExerciseIcon(source);
+  const size = options.size || 48;
+  const alt = options.alt || source?.name || "Ejercicio";
+  const wrapper = document.createElement("div");
+  wrapper.className = options.className ? `miniature ${options.className}` : "miniature";
+  wrapper.style.setProperty("--miniature-size", `${size}px`);
+  wrapper.setAttribute("role", "img");
+  wrapper.setAttribute("aria-label", alt);
+  if (icon.iconType === "image" && icon.imageDataUrl) {
+    const img = document.createElement("img");
+    img.src = icon.imageDataUrl;
+    img.alt = alt;
+    img.loading = "lazy";
+    wrapper.append(img);
+  } else if (icon.iconType === "emoji" && icon.emoji) {
+    const span = document.createElement("span");
+    span.textContent = icon.emoji;
+    span.setAttribute("aria-hidden", "true");
+    wrapper.append(span);
+  } else {
+    const initials = extractInitials(alt || source?.name || "");
+    const span = document.createElement("span");
+    span.textContent = initials || "?";
+    span.setAttribute("aria-hidden", "true");
+    wrapper.append(span);
+  }
+  return wrapper;
+}
+
+function filterLibraryItems(items, filters){
+  const search = (filters.search || "").trim().toLowerCase();
+  const category = (filters.category || "all").toLowerCase();
+  const tags = normalizeTags(filters.tags || []);
+  return items.filter((item) => {
+    if (!item) return false;
+    if (category !== "all" && item.category !== category) return false;
+    if (search) {
+      const haystack = `${item.name} ${Array.isArray(item.tags) ? item.tags.join(" ") : ""}`.toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    if (tags.length) {
+      const itemTags = Array.isArray(item.tags) ? item.tags.map((tag) => tag.toLowerCase()) : [];
+      const matches = tags.some((tag) => itemTags.includes(tag.toLowerCase()));
+      if (!matches) return false;
+    }
+    return true;
+  });
+}
+
+function renderLibrary(){
+  if (!libraryListEl || !libraryEmptyEl) return;
+  const filters = {
+    search: librarySearchInput?.value || "",
+    category: libraryCategoryFilter?.value || "all",
+    tags: libraryTagsFilter?.value || [],
+  };
+  const items = filterLibraryItems(getLibrary(), filters);
+  libraryListEl.innerHTML = "";
+  libraryEmptyEl.classList.toggle("hidden", items.length > 0);
+  if (!items.length) {
+    return;
+  }
+  items.sort((a, b) => a.name.localeCompare(b.name));
+  items.forEach((item) => {
+    const card = document.createElement("article");
+    card.className = "library-card";
+    card.dataset.id = item.id;
+
+    const header = document.createElement("div");
+    header.className = "library-card-header";
+    const thumb = createMiniatureElement(item, { size: 48, className: "library-card-thumb" });
+    const titleWrap = document.createElement("div");
+    titleWrap.className = "library-card-title";
+    const title = document.createElement("h3");
+    title.textContent = item.name;
+    const category = document.createElement("span");
+    category.className = "library-card-category";
+    category.textContent = CATEGORY_LABELS[item.category] || item.category;
+    titleWrap.append(title, category);
+    header.append(thumb, titleWrap);
+
+    const body = document.createElement("div");
+    body.className = "library-card-body";
+    if (item.notes) {
+      const notes = document.createElement("p");
+      notes.className = "library-card-notes";
+      notes.textContent = item.notes;
+      body.append(notes);
+    }
+    if (Array.isArray(item.tags) && item.tags.length) {
+      const tagsWrap = document.createElement("div");
+      tagsWrap.className = "library-card-tags";
+      item.tags.forEach((tag) => {
+        const chip = document.createElement("span");
+        chip.className = "tag-chip";
+        chip.textContent = tag;
+        tagsWrap.append(chip);
+      });
+      body.append(tagsWrap);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "library-card-actions";
+    const useBtn = button("Usar en…", "primary small");
+    useBtn.type = "button";
+    useBtn.addEventListener("click", () => openGoalConfigModal(item));
+    const editBtn = button("Editar", "ghost small");
+    editBtn.type = "button";
+    editBtn.addEventListener("click", () => openLibraryForm(item));
+    const deleteBtn = button("Eliminar", "danger small");
+    deleteBtn.type = "button";
+    deleteBtn.addEventListener("click", () => {
+      const ok = confirm(`¿Eliminar "${item.name}" de la librería?`);
+      if (!ok) return;
+      removeFromLibrary(item.id);
+    });
+    actions.append(useBtn, editBtn, deleteBtn);
+
+    card.append(header, body, actions);
+    libraryListEl.append(card);
+  });
+}
+
+let currentSelectorCallback = null;
+
+function openModal(modal){
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+}
+
+function closeModal(modal){
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+  if (modal === librarySelectorModal) {
+    currentSelectorCallback = null;
+  }
+  if (!document.querySelector(".modal:not(.hidden)")) {
+    document.body.classList.remove("modal-open");
+  }
+}
+
+function renderLibrarySelector(){
+  if (!librarySelectorList || !librarySelectorEmpty) return;
+  const filters = {
+    search: librarySelectorSearch?.value || "",
+    category: librarySelectorCategory?.value || "all",
+    tags: [],
+  };
+  const items = filterLibraryItems(getLibrary(), filters);
+  librarySelectorList.innerHTML = "";
+  librarySelectorEmpty.classList.toggle("hidden", items.length > 0);
+  if (!items.length) return;
+  items.sort((a, b) => a.name.localeCompare(b.name));
+  items.forEach((item) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "library-select-card";
+    option.setAttribute("aria-label", `Seleccionar ${item.name}`);
+    const thumb = createMiniatureElement(item, { size: 40, className: "library-select-thumb" });
+    const info = document.createElement("div");
+    info.className = "library-select-info";
+    const title = document.createElement("strong");
+    title.textContent = item.name;
+    const category = document.createElement("span");
+    category.textContent = CATEGORY_LABELS[item.category] || item.category;
+    info.append(title, category);
+    option.append(thumb, info);
+    option.addEventListener("click", () => {
+      if (typeof currentSelectorCallback === "function") {
+        currentSelectorCallback(item);
+      }
+      currentSelectorCallback = null;
+      closeModal(librarySelectorModal);
+    });
+    librarySelectorList.append(option);
+  });
+}
+
+let currentLibraryImageDataUrl = "";
+
+function updateLibraryIconRows(){
+  const useImage = libraryIconImage?.checked;
+  if (libraryEmojiRow) libraryEmojiRow.classList.toggle("hidden", !!useImage);
+  if (libraryImageRow) libraryImageRow.classList.toggle("hidden", !useImage);
+}
+
+function resetLibraryForm(){
+  if (!libraryForm) return;
+  libraryForm.reset();
+  currentLibraryImageDataUrl = "";
+  if (libraryFormId) libraryFormId.value = "";
+  if (libraryFormEmoji) libraryFormEmoji.value = "";
+  if (libraryImagePreview) libraryImagePreview.innerHTML = "";
+  if (libraryIconEmoji) libraryIconEmoji.checked = true;
+  updateLibraryIconRows();
+}
+
+function openLibraryForm(item){
+  resetLibraryForm();
+  if (item) {
+    if (libraryFormId) libraryFormId.value = item.id;
+    if (libraryFormName) libraryFormName.value = item.name;
+    if (libraryFormCategory) libraryFormCategory.value = item.category;
+    if (item.iconType === "image") {
+      if (libraryIconImage) libraryIconImage.checked = true;
+      currentLibraryImageDataUrl = item.imageDataUrl || "";
+      if (libraryImagePreview) {
+        libraryImagePreview.innerHTML = "";
+        if (currentLibraryImageDataUrl) {
+          const img = document.createElement("img");
+          img.src = currentLibraryImageDataUrl;
+          img.alt = item.name;
+          libraryImagePreview.append(img);
+        }
+      }
+    } else {
+      if (libraryIconEmoji) libraryIconEmoji.checked = true;
+      if (libraryFormEmoji) libraryFormEmoji.value = item.emoji || "";
+    }
+    if (libraryFormNotes) libraryFormNotes.value = item.notes || "";
+    if (libraryFormTags) libraryFormTags.value = Array.isArray(item.tags) ? item.tags.join(", ") : "";
+  }
+  updateLibraryIconRows();
+  openModal(libraryFormModal);
+  requestAnimationFrame(() => {
+    libraryFormName?.focus();
+  });
+}
+
+function closeLibraryForm(){
+  closeModal(libraryFormModal);
+}
+
+function readFileAsDataURL(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(file);
+  });
+}
+
+function handleLibraryImageChange(event){
+  const file = event?.target?.files?.[0];
+  if (!file) return;
+  if (file.size > 120 * 1024) {
+    alert("La imagen es demasiado grande (máx. 120KB). Usa un archivo más ligero.");
+    event.target.value = "";
+    return;
+  }
+  readFileAsDataURL(file)
+    .then((dataUrl) => {
+      currentLibraryImageDataUrl = dataUrl;
+      if (libraryImagePreview) {
+        libraryImagePreview.innerHTML = "";
+        const img = document.createElement("img");
+        img.src = dataUrl;
+        img.alt = libraryFormName?.value || "Ejercicio";
+        libraryImagePreview.append(img);
+      }
+    })
+    .catch((err) => {
+      console.error("No se pudo leer la imagen", err);
+      alert("No se pudo cargar la imagen. Prueba con otro archivo.");
+    });
+}
+
+function serializeLibraryForm(){
+  const name = libraryFormName?.value?.trim();
+  if (!name) {
+    alert("Añade un nombre al ejercicio de la librería.");
+    return null;
+  }
+  const category = normalizeCategory(libraryFormCategory?.value);
+  const iconType = libraryIconImage?.checked ? "image" : "emoji";
+  let emoji = "";
+  let imageDataUrl = "";
+  if (iconType === "image") {
+    imageDataUrl = currentLibraryImageDataUrl;
+    if (!imageDataUrl) {
+      alert("Sube una imagen para este ejercicio o elige emoji.");
+      return null;
+    }
+  } else {
+    emoji = (libraryFormEmoji?.value || "").trim();
+    if (!emoji) {
+      emoji = extractInitials(name);
+    }
+  }
+  const notes = libraryFormNotes?.value || "";
+  const tags = normalizeTags(libraryFormTags?.value || []);
+  const base = {
+    id: libraryFormId?.value ? libraryFormId.value : randomUUID(),
+    name,
+    category,
+    iconType,
+    emoji,
+    imageDataUrl,
+    notes,
+    tags,
+  };
+  return base;
+}
+
+function attachLibraryEventListeners(){
+  if (libraryIconEmoji) libraryIconEmoji.addEventListener("change", updateLibraryIconRows);
+  if (libraryIconImage) libraryIconImage.addEventListener("change", updateLibraryIconRows);
+  if (libraryFormImage) libraryFormImage.addEventListener("change", handleLibraryImageChange);
+  if (openLibraryFormBtn) {
+    openLibraryFormBtn.addEventListener("click", () => openLibraryForm());
+  }
+  if (librarySearchInput) librarySearchInput.addEventListener("input", renderLibrary);
+  if (libraryCategoryFilter) libraryCategoryFilter.addEventListener("change", renderLibrary);
+  if (libraryTagsFilter) libraryTagsFilter.addEventListener("input", renderLibrary);
+  if (librarySelectorSearch) librarySelectorSearch.addEventListener("input", renderLibrarySelector);
+  if (librarySelectorCategory) librarySelectorCategory.addEventListener("change", renderLibrarySelector);
+  if (libraryForm) {
+    libraryForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const data = serializeLibraryForm();
+      if (!data) return;
+      if (libraryFormId?.value) {
+        updateLibrary(data);
+      } else {
+        addToLibrary(data);
+      }
+      closeLibraryForm();
+    });
+  }
+  if (goalConfigTypeInputs.length) {
+    goalConfigTypeInputs.forEach((input) => {
+      input.addEventListener("change", updateGoalConfigSections);
+    });
+  }
+  if (goalConfigForm) {
+    goalConfigForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const config = serializeGoalConfig();
+      if (!config) return;
+      scheduleExerciseFromLibrary(currentGoalConfigLibrary, config);
+      closeGoalConfigModal();
+    });
+  }
+}
+
+function openLibrarySelector(options = {}){
+  currentSelectorCallback = typeof options.onSelect === "function" ? options.onSelect : null;
+  if (librarySelectorSearch) librarySelectorSearch.value = options.search || "";
+  if (librarySelectorCategory) {
+    const cat = options.defaultCategory || "all";
+    librarySelectorCategory.value = CATEGORY_KEYS.includes(cat) ? cat : "all";
+  }
+  renderLibrarySelector();
+  openModal(librarySelectorModal);
+  requestAnimationFrame(() => {
+    librarySelectorSearch?.focus();
+  });
+}
+
+let currentGoalConfigLibrary = null;
+
+function updateGoalConfigSections(){
+  const selected = goalConfigTypeInputs.find((input) => input.checked)?.value || "reps";
+  goalConfigSections.forEach((section) => {
+    const type = section.getAttribute("data-goal-config");
+    section.classList.toggle("hidden", type !== selected);
+  });
+}
+
+function openGoalConfigModal(libraryExercise){
+  currentGoalConfigLibrary = libraryExercise;
+  if (!libraryExercise) return;
+  if (goalConfigLibraryId) goalConfigLibraryId.value = libraryExercise.id;
+  if (goalConfigDate) goalConfigDate.value = state.selectedDate;
+  if (goalConfigWeight) goalConfigWeight.value = "";
+  if (goalConfigNotes) goalConfigNotes.value = libraryExercise.notes || "";
+  if (goalConfigTitleEl) goalConfigTitleEl.textContent = `Configurar ${libraryExercise.name}`;
+  if (goalConfigPreview) {
+    goalConfigPreview.innerHTML = "";
+    const thumb = createMiniatureElement(libraryExercise, { size: 32, className: "library-mini-thumb" });
+    const label = document.createElement("span");
+    label.textContent = `${libraryExercise.name} · ${CATEGORY_LABELS[libraryExercise.category] || libraryExercise.category}`;
+    goalConfigPreview.append(thumb, label);
+    goalConfigPreview.classList.remove("hidden");
+  }
+  goalConfigTypeInputs.forEach((input, index) => {
+    input.checked = index === 0;
+  });
+  if (goalConfigRepsSeries) goalConfigRepsSeries.value = 3;
+  if (goalConfigRepsValue) goalConfigRepsValue.value = 8;
+  if (goalConfigRepsFailure) goalConfigRepsFailure.checked = false;
+  if (goalConfigIsoSeries) goalConfigIsoSeries.value = 3;
+  if (goalConfigIsoSeconds) goalConfigIsoSeconds.value = 30;
+  if (goalConfigIsoFailure) goalConfigIsoFailure.checked = false;
+  if (goalConfigFailSeries) goalConfigFailSeries.value = 3;
+  if (goalConfigEmomMinutes) goalConfigEmomMinutes.value = 10;
+  if (goalConfigEmomReps) goalConfigEmomReps.value = 10;
+  if (goalConfigCardioMinutes) goalConfigCardioMinutes.value = 20;
+  updateGoalConfigSections();
+  openModal(goalConfigModal);
+  requestAnimationFrame(() => {
+    goalConfigDate?.focus();
+  });
+}
+
+function closeGoalConfigModal(){
+  closeModal(goalConfigModal);
+  currentGoalConfigLibrary = null;
+  if (goalConfigPreview) {
+    goalConfigPreview.classList.add("hidden");
+    goalConfigPreview.innerHTML = "";
+  }
+  if (goalConfigTitleEl) goalConfigTitleEl.textContent = "Configurar objetivo";
+}
+
+function serializeGoalConfig(){
+  if (!currentGoalConfigLibrary) return null;
+  const typeInput = goalConfigTypeInputs.find((input) => input.checked);
+  const goalType = normalizeGoalType(typeInput ? typeInput.value : "reps");
+  const dateISO = fmt(fromISO(goalConfigDate?.value || state.selectedDate));
+  const payload = {
+    goalType,
+    dateISO,
+    weight: null,
+    notes: goalConfigNotes?.value || "",
+  };
+  const weightInput = goalConfigWeight?.value?.trim() ?? "";
+  if (weightInput) {
+    const weightNumber = Number(weightInput);
+    if (!Number.isFinite(weightNumber)) {
+      alert("Introduce un valor numérico para el lastre.");
+      return null;
+    }
+    payload.weight = weightNumber;
+  }
+  if (goalType === "reps") {
+    const series = Number(goalConfigRepsSeries?.value || 0);
+    const reps = Number(goalConfigRepsValue?.value || 0);
+    if (!series || !reps) {
+      alert("Indica series y repeticiones.");
+      return null;
+    }
+    payload.series = series;
+    payload.reps = reps;
+    payload.alFallo = !!goalConfigRepsFailure?.checked;
+  } else if (goalType === "isometrico") {
+    const series = Number(goalConfigIsoSeries?.value || 0);
+    const segundos = Number(goalConfigIsoSeconds?.value || 0);
+    if (!series || !segundos) {
+      alert("Indica series y segundos.");
+      return null;
+    }
+    payload.series = series;
+    payload.segundos = segundos;
+    payload.alFallo = !!goalConfigIsoFailure?.checked;
+  } else if (goalType === "fallo") {
+    const series = Number(goalConfigFailSeries?.value || 0);
+    if (!series) {
+      alert("Indica cuántas series harás al fallo.");
+      return null;
+    }
+    payload.series = series;
+    payload.alFallo = true;
+  } else if (goalType === "emom") {
+    const minutos = Number(goalConfigEmomMinutes?.value || 0);
+    const repsPorMin = Number(goalConfigEmomReps?.value || 0);
+    if (!minutos || !repsPorMin) {
+      alert("Indica minutos y reps por minuto del EMOM.");
+      return null;
+    }
+    payload.minutos = minutos;
+    payload.repsPorMin = repsPorMin;
+    payload.series = null;
+  } else if (goalType === "cardio") {
+    const minutos = Number(goalConfigCardioMinutes?.value || 0);
+    if (!minutos) {
+      alert("Indica los minutos de cardio.");
+      return null;
+    }
+    payload.minutos = minutos;
+    payload.series = null;
+  }
+  return payload;
+}
+
+function scheduleExerciseFromLibrary(libraryExercise, config){
+  if (!libraryExercise || !config) return;
+  const dayISO = fmt(fromISO(config.dateISO || state.selectedDate));
+  const goalType = config.goalType;
+  const exercise = {
+    id: randomUUID(),
+    plannedId: randomUUID(),
+    libraryId: libraryExercise.id,
+    name: libraryExercise.name,
+    category: libraryExercise.category,
+    iconType: libraryExercise.iconType,
+    emoji: libraryExercise.emoji,
+    imageDataUrl: libraryExercise.imageDataUrl,
+    tags: Array.isArray(libraryExercise.tags) ? libraryExercise.tags.slice() : [],
+    note: config.notes || libraryExercise.notes || "",
+    sets: config.series != null ? Math.max(1, Number(config.series) || 1) : 1,
+    goalType,
+    goal: goalType === "isometrico" ? "seconds" : goalType === "emom" ? "emom" : goalType === "cardio" ? "cardio" : "reps",
+    reps: goalType === "reps" ? Number(config.reps) : null,
+    seconds: goalType === "isometrico" ? Number(config.segundos) : null,
+    emomMinutes: goalType === "emom" ? Number(config.minutos) : null,
+    emomReps: goalType === "emom" ? Number(config.repsPorMin) : null,
+    cardioMinutes: goalType === "cardio" ? Number(config.minutos) : null,
+    failure: goalType === "fallo" ? true : !!config.alFallo,
+    done: [],
+    status: EXERCISE_STATUS.PENDING,
+    completed: false,
+    hecho: false,
+    weightKg: config.weight != null && config.weight !== "" ? Number(config.weight) : null,
+    perceivedEffort: null,
+  };
+  if (exercise.failure) {
+    exercise.done = Array.from({ length: exercise.sets }, () => null);
+  }
+  if (!Array.isArray(state.workouts[dayISO])) {
+    state.workouts[dayISO] = [];
+  }
+  state.workouts[dayISO].push(exercise);
+  save();
+  state.selectedDate = dayISO;
+  selectedDateInput.value = state.selectedDate;
+  formDate.value = state.selectedDate;
+  renderDay(dayISO);
+  renderMiniCalendar();
+  syncHistoryForDay(dayISO, { showToast: false });
+  switchToTab("entreno");
 }
 
 function getDayExercises(dayISO){
@@ -917,6 +1836,7 @@ function renderDay(dayISO){
     dragBtn.setAttribute("aria-label", "Reordenar ejercicio");
     dragBtn.title = "Reordenar ejercicio";
     dragBtn.innerHTML = "<span aria-hidden=\"true\">☰</span>";
+    const thumb = createMiniatureElement(ex, { size: 36, className: "exercise-thumb", alt: ex.name });
     const h3 = document.createElement("h3");
     h3.textContent = ex.name;
     h3.style.margin = "0";
@@ -960,7 +1880,7 @@ function renderDay(dayISO){
       updateExerciseStatus(ex, nextStatus, dayISO, { showToast: false });
     });
     controls.append(noteBtn, doneBtn, skipBtn, editBtn, delBtn);
-    titleMain.append(dragBtn, h3);
+    titleMain.append(dragBtn, thumb, h3);
     title.append(titleMain, controls);
 
     const meta = document.createElement("div");
@@ -1777,25 +2697,47 @@ if (typeof window !== "undefined") {
     getDayMeta,
     setDayMeta,
   });
+  window.entrenoLibrary = Object.assign(window.entrenoLibrary || {}, {
+    getLibrary,
+    saveLibrary,
+    addToLibrary,
+    updateLibrary,
+    removeFromLibrary,
+    findLibraryExercise,
+  });
 }
 
 function metaText(ex){
-  const parts = [`<span><strong>Series:</strong> ${ex.sets}</span>`];
+  const goalType = ex.goalType ? normalizeGoalType(ex.goalType) : (() => {
+    if (ex.goal === "seconds") return "isometrico";
+    if (ex.goal === "emom") return "emom";
+    if (ex.goal === "cardio") return "cardio";
+    if (ex.goal === "fallo") return "fallo";
+    return "reps";
+  })();
+  const parts = [];
+  if (goalType !== "cardio" && goalType !== "emom") {
+    parts.push(`<span><strong>Series:</strong> ${ex.sets}</span>`);
+  }
 
   const statusLabel = EXERCISE_STATUS_LABELS[getExerciseStatus(ex)] || EXERCISE_STATUS_LABELS[EXERCISE_STATUS.PENDING];
   parts.push(`<span><strong>Estado:</strong> ${statusLabel}</span>`);
 
-  if (ex.goal==="reps") {
+  if (goalType === "reps") {
     const repsLabel = ex.reps && ex.reps > 0 ? ex.reps : "—";
     parts.push(`<span><strong>Repeticiones:</strong> ${repsLabel}</span>`);
     if (ex.failure) parts.push(`<span>Al fallo</span>`);
-  } else if (ex.goal==="seconds") {
+  } else if (goalType === "isometrico") {
     const secsLabel = ex.seconds && ex.seconds > 0 ? ex.seconds : "—";
     parts.push(`<span><strong>Segundos:</strong> ${secsLabel}</span>`);
     if (ex.failure) parts.push(`<span>Al fallo</span>`);
-  } else if (ex.goal==="emom") {
-    parts.push(`<span><strong>EMOM:</strong> ${ex.emomMinutes}' · ${ex.emomReps} reps/min</span>`);
-  } else if (ex.goal==="cardio") {
+  } else if (goalType === "fallo") {
+    parts.push(`<span><strong>Objetivo:</strong> Series al fallo</span>`);
+  } else if (goalType === "emom") {
+    const minutes = ex.emomMinutes && ex.emomMinutes > 0 ? ex.emomMinutes : "—";
+    const reps = ex.emomReps && ex.emomReps > 0 ? ex.emomReps : "—";
+    parts.push(`<span><strong>EMOM:</strong> ${minutes}' · ${reps} reps/min</span>`);
+  } else if (goalType === "cardio") {
     const minutesLabel = ex.cardioMinutes && ex.cardioMinutes > 0 ? ex.cardioMinutes : "—";
     parts.push(`<span><strong>Cardio:</strong> ${minutesLabel} min</span>`);
   }
@@ -1843,15 +2785,24 @@ function buildEditForm(ex){
   legend.textContent = "Tipo de objetivo";
   typeWrap.appendChild(legend);
 
-  const rReps = radioRow("Repeticiones", "goalEdit-"+ex.id, ex.goal==="reps");
-  const rSecs = radioRow("Isométrico (segundos)", "goalEdit-"+ex.id, ex.goal==="seconds");
-  const rEmom = radioRow("EMOM", "goalEdit-"+ex.id, ex.goal==="emom");
-  const rCardio = radioRow("Cardio", "goalEdit-"+ex.id, ex.goal==="cardio");
+  const goalType = ex.goalType ? normalizeGoalType(ex.goalType) : (() => {
+    if (ex.goal === "seconds") return "isometrico";
+    if (ex.goal === "emom") return "emom";
+    if (ex.goal === "cardio") return "cardio";
+    if (ex.goal === "fallo") return "fallo";
+    return "reps";
+  })();
+
+  const rReps = radioRow("Repeticiones", "goalEdit-"+ex.id, goalType === "reps");
+  const rSecs = radioRow("Isométrico (segundos)", "goalEdit-"+ex.id, goalType === "isometrico");
+  const rFail = radioRow("Al fallo", "goalEdit-"+ex.id, goalType === "fallo");
+  const rEmom = radioRow("EMOM", "goalEdit-"+ex.id, goalType === "emom");
+  const rCardio = radioRow("Cardio", "goalEdit-"+ex.id, goalType === "cardio");
 
   const rowReps = document.createElement("div"); rowReps.className = "row indent";
   const repsField = fieldInline("Reps", "number", ex.reps ?? "", {min:1});
   const failRow = document.createElement("label"); failRow.className="row inline";
-  const failChk = document.createElement("input"); failChk.type="checkbox"; failChk.checked = !!ex.failure && ex.goal==="reps";
+  const failChk = document.createElement("input"); failChk.type="checkbox"; failChk.checked = !!ex.failure && goalType === "reps";
   const failLbl = document.createElement("span"); failLbl.textContent="Al fallo";
   failRow.append(failChk, failLbl);
   rowReps.append(repsField.wrap, failRow);
@@ -1859,10 +2810,15 @@ function buildEditForm(ex){
   const rowSecs = document.createElement("div"); rowSecs.className="row indent hidden";
   const secsField = fieldInline("Segundos", "number", ex.seconds ?? "", {min:1});
   const failSecsRow = document.createElement("label"); failSecsRow.className="row inline";
-  const failSecsChk = document.createElement("input"); failSecsChk.type="checkbox"; failSecsChk.checked = !!ex.failure && ex.goal==="seconds";
+  const failSecsChk = document.createElement("input"); failSecsChk.type="checkbox"; failSecsChk.checked = !!ex.failure && goalType === "isometrico";
   const failSecsLbl = document.createElement("span"); failSecsLbl.textContent="Al fallo";
   failSecsRow.append(failSecsChk, failSecsLbl);
   rowSecs.append(secsField.wrap, failSecsRow);
+
+  const rowFailure = document.createElement("div"); rowFailure.className="row indent hidden";
+  const failureHint = document.createElement("p"); failureHint.className = "muted";
+  failureHint.textContent = "Usa el campo de series para ajustar las rondas al fallo.";
+  rowFailure.append(failureHint);
 
   const rowEmom = document.createElement("div"); rowEmom.className="row indent hidden";
   const mField = fieldInline("Minutos", "number", ex.emomMinutes ?? "", {min:1});
@@ -1876,13 +2832,14 @@ function buildEditForm(ex){
   function toggleRows(){
     rowReps.classList.toggle("hidden", !rReps.input.checked);
     rowSecs.classList.toggle("hidden", !rSecs.input.checked);
+    rowFailure.classList.toggle("hidden", !rFail.input.checked);
     rowEmom.classList.toggle("hidden", !rEmom.input.checked);
     rowCardio.classList.toggle("hidden", !rCardio.input.checked);
   }
-  [rReps.input, rSecs.input, rEmom.input, rCardio.input].forEach(i=>i.addEventListener("change", toggleRows));
+  [rReps.input, rSecs.input, rFail.input, rEmom.input, rCardio.input].forEach(i=>i.addEventListener("change", toggleRows));
   toggleRows();
 
-  typeWrap.append(rReps.row, rowReps, rSecs.row, rowSecs, rEmom.row, rowEmom, rCardio.row, rowCardio);
+  typeWrap.append(rReps.row, rowReps, rSecs.row, rowSecs, rFail.row, rowFailure, rEmom.row, rowEmom, rCardio.row, rowCardio);
 
   // Lastre
   const wField = field("Lastre (kg)", "number", ex.weightKg ?? "", {step:0.5});
@@ -1910,20 +2867,33 @@ function buildEditForm(ex){
     }
 
     if (rReps.input.checked){
+      ex.goalType = "reps";
       ex.goal="reps";
       ex.reps = repsField.input.value ? Number(repsField.input.value) : null;
       ex.failure = !!failChk.checked;
       ex.seconds = null; ex.emomMinutes=null; ex.emomReps=null; ex.cardioMinutes=null;
     } else if (rSecs.input.checked){
+      ex.goalType = "isometrico";
       ex.goal="seconds";
       ex.seconds = Number(secsField.input.value||0);
       ex.reps = null; ex.failure=!!failSecsChk.checked; ex.emomMinutes=null; ex.emomReps=null; ex.cardioMinutes=null;
+    } else if (rFail.input.checked){
+      ex.goalType = "fallo";
+      ex.goal = "reps";
+      ex.reps = null;
+      ex.seconds = null;
+      ex.failure = true;
+      ex.emomMinutes = null;
+      ex.emomReps = null;
+      ex.cardioMinutes = null;
     } else if (rEmom.input.checked){
+      ex.goalType = "emom";
       ex.goal="emom";
       ex.emomMinutes = Number(mField.input.value||0);
       ex.emomReps = Number(rField.input.value||0);
       ex.reps = null; ex.failure=false; ex.seconds=null; ex.cardioMinutes=null;
     } else {
+      ex.goalType = "cardio";
       ex.goal="cardio";
       ex.cardioMinutes = Number(cardioField.input.value||0);
       ex.reps = null; ex.failure=false; ex.seconds=null; ex.emomMinutes=null; ex.emomReps=null;

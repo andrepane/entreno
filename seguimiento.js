@@ -60,6 +60,65 @@
       .join(" ");
   }
 
+  function getLibraryStore() {
+    return global.entrenoLibrary || null;
+  }
+
+  function normalizeKey(value) {
+    return typeof value === "string" ? value.trim().toLowerCase() : "";
+  }
+
+  function getInitials(name) {
+    if (!name) return "";
+    return name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("") || name.charAt(0).toUpperCase();
+  }
+
+  function findLibraryExerciseByName(name) {
+    const store = getLibraryStore();
+    if (!store || typeof store.getLibrary !== "function") return null;
+    const target = normalizeKey(name);
+    if (!target) return null;
+    const list = store.getLibrary();
+    return list.find((item) => normalizeKey(item.name) === target) || null;
+  }
+
+  function buildHistoryThumbnail(name) {
+    const exercise = findLibraryExerciseByName(name);
+    const wrapper = document.createElement("span");
+    wrapper.className = "miniature history-miniature";
+    const label = formatExerciseName(name);
+    wrapper.setAttribute("role", "img");
+    wrapper.setAttribute("aria-label", label);
+    if (exercise) {
+      if (exercise.iconType === "image" && exercise.imageDataUrl) {
+        const img = document.createElement("img");
+        img.src = exercise.imageDataUrl;
+        img.alt = label;
+        img.loading = "lazy";
+        wrapper.append(img);
+        return wrapper;
+      }
+      if (exercise.iconType === "emoji" && exercise.emoji) {
+        const span = document.createElement("span");
+        span.textContent = exercise.emoji;
+        span.setAttribute("aria-hidden", "true");
+        wrapper.append(span);
+        return wrapper;
+      }
+    }
+    const initials = getInitials(label);
+    const span = document.createElement("span");
+    span.textContent = initials || "?";
+    span.setAttribute("aria-hidden", "true");
+    wrapper.append(span);
+    return wrapper;
+  }
+
   function init() {
     elements.exerciseList = $("historyExerciseList");
     elements.exerciseEmpty = $("historyExerciseEmpty");
@@ -289,7 +348,14 @@
 
     elements.detailEmpty?.classList.add("hidden");
     elements.detail.classList.remove("hidden");
-    elements.detailTitle.textContent = formatExerciseName(state.selectedExercise);
+    if (elements.detailTitle) {
+      elements.detailTitle.innerHTML = "";
+      const thumb = buildHistoryThumbnail(state.selectedExercise);
+      elements.detailTitle.append(thumb);
+      const titleSpan = document.createElement("span");
+      titleSpan.textContent = formatExerciseName(state.selectedExercise);
+      elements.detailTitle.append(titleSpan);
+    }
     updateCanvasDimensions();
     renderTypeSelector(entries);
     renderSummary(phaseFiltered);

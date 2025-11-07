@@ -28,6 +28,7 @@
     <nav class="tabs" role="tablist" aria-label="Secciones">
       <button class="tab active" data-tab="entreno" role="tab" aria-selected="true">Entreno</button>
       <button class="tab" data-tab="nuevo" role="tab" aria-selected="false">Añadir</button>
+      <button class="tab" data-tab="libreria" role="tab" aria-selected="false">Librería</button>
       <button class="tab" data-tab="seguimiento" role="tab" aria-selected="false">Seguimiento</button>
     </nav>
   </header>
@@ -138,8 +139,12 @@
               </label>
 
               <label class="field">
-                <span>Nombre del ejercicio</span>
+                <div class="field-header">
+                  <span>Nombre del ejercicio</span>
+                  <button type="button" id="openLibrarySelector" class="ghost tiny">Elegir de librería</button>
+                </div>
                 <input type="text" id="formName" placeholder="Dominadas / Plancha / EMOM…" required />
+                <div id="formLibraryPreview" class="library-mini hidden" aria-live="polite"></div>
               </label>
 
               <label class="field">
@@ -147,8 +152,11 @@
                 <select id="formCategory">
                   <option value="calistenia">Calistenia</option>
                   <option value="musculacion">Musculación</option>
+                  <option value="piernas">Piernas</option>
                   <option value="cardio">Cardio</option>
                   <option value="skill">Skill</option>
+                  <option value="movilidad">Movilidad</option>
+                  <option value="otro">Otro</option>
                 </select>
               </label>
 
@@ -183,7 +191,7 @@
               </div>
 
               <label class="row">
-                <input type="radio" name="goalType" value="seconds" id="goalSecs" />
+                <input type="radio" name="goalType" value="isometrico" id="goalSecs" />
                 <span>Isométrico (segundos)</span>
               </label>
               <div class="row indent hidden" id="rowSeconds">
@@ -194,6 +202,17 @@
                 <label class="row inline">
                   <input type="checkbox" id="formSecondsFailure" />
                   <span>Al fallo</span>
+                </label>
+              </div>
+
+              <label class="row">
+                <input type="radio" name="goalType" value="fallo" id="goalFailure" />
+                <span>Al fallo</span>
+              </label>
+              <div class="row indent hidden" id="rowFailure">
+                <label class="field inline">
+                  <span>Series</span>
+                  <input type="number" id="formFailureSets" min="1" value="3" />
                 </label>
               </div>
 
@@ -271,6 +290,44 @@
       </section>
     </section>
 
+    <!-- Sección LIBRERÍA -->
+    <section id="tab-libreria" class="tab-panel hidden" role="tabpanel">
+      <div class="library-header">
+        <div>
+          <h2>Librería de ejercicios</h2>
+          <p class="muted">Crea tu colección y reutilízala en tus planes diarios o semanales.</p>
+        </div>
+        <button id="openLibraryForm" class="primary" type="button">Nuevo ejercicio</button>
+      </div>
+
+      <div class="library-filters card">
+        <label class="field inline">
+          <span>Búsqueda</span>
+          <input type="search" id="librarySearch" placeholder="Nombre o tag" />
+        </label>
+        <label class="field inline">
+          <span>Categoría</span>
+          <select id="libraryCategoryFilter">
+            <option value="all">Todas</option>
+            <option value="calistenia">Calistenia</option>
+            <option value="musculacion">Musculación</option>
+            <option value="piernas">Piernas</option>
+            <option value="cardio">Cardio</option>
+            <option value="skill">Skill</option>
+            <option value="movilidad">Movilidad</option>
+            <option value="otro">Otro</option>
+          </select>
+        </label>
+        <label class="field inline">
+          <span>Tags</span>
+          <input type="text" id="libraryTagsFilter" placeholder="calentamiento, explosivo…" />
+        </label>
+      </div>
+
+      <div id="libraryEmpty" class="empty-hint">Aún no hay ejercicios en la librería.</div>
+      <div id="libraryList" class="library-grid" aria-live="polite"></div>
+    </section>
+
     <!-- Sección SEGUIMIENTO -->
     <section id="tab-seguimiento" class="tab-panel hidden" role="tabpanel">
       <div class="seguimiento-header">
@@ -345,6 +402,204 @@
     </div>
     <div class="mini-cal-grid" id="mcGrid" role="grid" aria-label="Días del mes"></div>
   </aside>
+
+  <div id="libraryFormModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="libraryFormTitle">
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2 id="libraryFormTitle">Nuevo ejercicio</h2>
+        <button type="button" class="ghost" data-close-modal="libraryFormModal" aria-label="Cerrar">✕</button>
+      </header>
+      <form id="libraryForm" class="modal-body">
+        <input type="hidden" id="libraryFormId" />
+        <label class="field">
+          <span>Nombre</span>
+          <input type="text" id="libraryFormName" required />
+        </label>
+        <label class="field">
+          <span>Categoría</span>
+          <select id="libraryFormCategory" required>
+            <option value="calistenia">Calistenia</option>
+            <option value="musculacion">Musculación</option>
+            <option value="piernas">Piernas</option>
+            <option value="cardio">Cardio</option>
+            <option value="skill">Skill</option>
+            <option value="movilidad">Movilidad</option>
+            <option value="otro">Otro</option>
+          </select>
+        </label>
+        <fieldset class="fieldset">
+          <legend>Icono</legend>
+          <label class="row">
+            <input type="radio" name="libraryIconType" value="emoji" id="libraryIconEmoji" checked />
+            <span>Emoji</span>
+          </label>
+          <div class="row indent" id="libraryEmojiRow">
+            <label class="field inline">
+              <span>Emoji</span>
+              <input type="text" id="libraryFormEmoji" maxlength="4" placeholder="💪" />
+            </label>
+          </div>
+          <label class="row">
+            <input type="radio" name="libraryIconType" value="image" id="libraryIconImage" />
+            <span>Imagen</span>
+          </label>
+          <div class="row indent hidden" id="libraryImageRow">
+            <label class="field inline">
+              <span>Subir imagen</span>
+              <input type="file" id="libraryFormImage" accept="image/*" />
+            </label>
+            <div class="image-preview" id="libraryImagePreview" aria-live="polite"></div>
+          </div>
+        </fieldset>
+        <label class="field">
+          <span>Notas (opcional)</span>
+          <textarea id="libraryFormNotes" rows="3"></textarea>
+        </label>
+        <label class="field">
+          <span>Tags (separados por comas)</span>
+          <input type="text" id="libraryFormTags" placeholder="tirón, básico" />
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost" data-close-modal="libraryFormModal">Cancelar</button>
+          <button type="submit" class="primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="librarySelectorModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="librarySelectorTitle">
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2 id="librarySelectorTitle">Elegir de la librería</h2>
+        <button type="button" class="ghost" data-close-modal="librarySelectorModal" aria-label="Cerrar">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="library-selector-filters">
+          <label class="field inline">
+            <span>Búsqueda</span>
+            <input type="search" id="librarySelectorSearch" placeholder="Nombre o tag" />
+          </label>
+          <label class="field inline">
+            <span>Categoría</span>
+            <select id="librarySelectorCategory">
+              <option value="all">Todas</option>
+              <option value="calistenia">Calistenia</option>
+              <option value="musculacion">Musculación</option>
+              <option value="piernas">Piernas</option>
+              <option value="cardio">Cardio</option>
+              <option value="skill">Skill</option>
+              <option value="movilidad">Movilidad</option>
+              <option value="otro">Otro</option>
+            </select>
+          </label>
+        </div>
+        <div id="librarySelectorEmpty" class="empty-hint">No se encontraron ejercicios.</div>
+        <div id="librarySelectorList" class="library-grid compact"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="goalConfigModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="goalConfigTitle">
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2 id="goalConfigTitle">Configurar objetivo</h2>
+        <button type="button" class="ghost" data-close-modal="goalConfigModal" aria-label="Cerrar">✕</button>
+      </header>
+      <form id="goalConfigForm" class="modal-body">
+        <input type="hidden" id="goalConfigLibraryId" />
+        <div id="goalConfigPreview" class="library-mini hidden"></div>
+        <label class="field">
+          <span>Fecha</span>
+          <input type="date" id="goalConfigDate" required />
+        </label>
+        <fieldset class="fieldset">
+          <legend>Tipo de objetivo</legend>
+          <label class="row">
+            <input type="radio" name="goalConfigType" value="reps" checked />
+            <span>Repeticiones</span>
+          </label>
+          <div class="row indent" data-goal-config="reps">
+            <label class="field inline">
+              <span>Series</span>
+              <input type="number" id="goalConfigRepsSeries" min="1" value="3" />
+            </label>
+            <label class="field inline">
+              <span>Reps</span>
+              <input type="number" id="goalConfigRepsValue" min="1" value="8" />
+            </label>
+            <label class="row inline">
+              <input type="checkbox" id="goalConfigRepsFailure" />
+              <span>Al fallo</span>
+            </label>
+          </div>
+          <label class="row">
+            <input type="radio" name="goalConfigType" value="isometrico" />
+            <span>Isométrico</span>
+          </label>
+          <div class="row indent hidden" data-goal-config="isometrico">
+            <label class="field inline">
+              <span>Series</span>
+              <input type="number" id="goalConfigIsoSeries" min="1" value="3" />
+            </label>
+            <label class="field inline">
+              <span>Segundos</span>
+              <input type="number" id="goalConfigIsoSeconds" min="1" value="30" />
+            </label>
+            <label class="row inline">
+              <input type="checkbox" id="goalConfigIsoFailure" />
+              <span>Al fallo</span>
+            </label>
+          </div>
+          <label class="row">
+            <input type="radio" name="goalConfigType" value="fallo" />
+            <span>Al fallo</span>
+          </label>
+          <div class="row indent hidden" data-goal-config="fallo">
+            <label class="field inline">
+              <span>Series</span>
+              <input type="number" id="goalConfigFailSeries" min="1" value="3" />
+            </label>
+          </div>
+          <label class="row">
+            <input type="radio" name="goalConfigType" value="emom" />
+            <span>EMOM</span>
+          </label>
+          <div class="row indent hidden" data-goal-config="emom">
+            <label class="field inline">
+              <span>Minutos</span>
+              <input type="number" id="goalConfigEmomMinutes" min="1" value="10" />
+            </label>
+            <label class="field inline">
+              <span>Reps / min</span>
+              <input type="number" id="goalConfigEmomReps" min="1" value="10" />
+            </label>
+          </div>
+          <label class="row">
+            <input type="radio" name="goalConfigType" value="cardio" />
+            <span>Cardio</span>
+          </label>
+          <div class="row indent hidden" data-goal-config="cardio">
+            <label class="field inline">
+              <span>Minutos</span>
+              <input type="number" id="goalConfigCardioMinutes" min="1" value="20" />
+            </label>
+          </div>
+        </fieldset>
+        <label class="field">
+          <span>Lastre (kg) — opcional</span>
+          <input type="number" id="goalConfigWeight" step="0.5" placeholder="0" />
+        </label>
+        <label class="field">
+          <span>Notas</span>
+          <textarea id="goalConfigNotes" rows="3" placeholder="Añade recordatorios"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost" data-close-modal="goalConfigModal">Cancelar</button>
+          <button type="submit" class="primary">Añadir al día</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <footer class="app-footer">
     <small>Datos guardados en tu navegador.</small>
