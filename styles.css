@@ -213,6 +213,43 @@ button.success:focus-visible{outline:2px solid #68d391; outline-offset:2px}
 button.small{padding:6px 10px; font-size:.85rem; border-radius:10px}
 button.tiny{padding:4px 8px; font-size:.75rem; border-radius:999px}
 button.link{background:transparent; color:var(--accent); border:none; padding:0}
+button.ghost.danger{border-color:rgba(255,107,107,0.65); color:var(--danger);}
+button.ghost.danger:hover{background:rgba(255,107,107,0.12);}
+button.ghost.danger:focus-visible{outline:2px solid rgba(255,107,107,0.65); outline-offset:2px;}
+
+button.icon-button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:0;
+}
+button.icon-button .icon{
+  width:1.1em;
+  height:1.1em;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+button.icon-button .icon svg{
+  width:100%;
+  height:100%;
+  fill:currentColor;
+}
+button.icon-button.icon-with-label{
+  gap:8px;
+}
+button.icon-button.icon-with-label .icon{
+  width:1em;
+  height:1em;
+}
+.icon-button-label{line-height:1;}
+
+.icon{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+.icon svg{pointer-events:none;}
 
 .app-footer{padding:16px; text-align:center; color:var(--muted)}
 
@@ -268,7 +305,7 @@ button.link{background:transparent; color:var(--accent); border:none; padding:0}
 .exercise.not-done{border-color:#c53030; box-shadow:0 0 0 1px rgba(229,62,62,.35)}
 .exercise.not-done .meta span{border-color:#742a2a}
 .exercise .title{display:flex; align-items:center; justify-content:space-between; gap:12px}
-.exercise .title-main{display:flex; align-items:center; gap:10px; flex:1; min-width:0}
+.exercise .title-main{display:flex; align-items:center; gap:12px; flex:1; min-width:0}
 .exercise .title-main h3{margin:0; flex:1; min-width:0}
 .exercise .meta{color:var(--muted); font-size:.9rem; margin:6px 0; display:flex; flex-wrap:wrap; gap:6px}
 .exercise .meta span{background:#0b0f16; padding:2px 8px; border-radius:8px; border:1px solid #1e2633}

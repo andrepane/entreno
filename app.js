@@ -1166,11 +1166,18 @@ function renderFutureExercises(){
 
     const actions = document.createElement("div");
     actions.className = "future-item-actions";
-    const removeBtn = button("Eliminar", "ghost micro");
+    const removeBtn = button("", "ghost micro");
     removeBtn.type = "button";
     removeBtn.dataset.action = "remove-future";
     removeBtn.dataset.id = item.id;
-    removeBtn.setAttribute("aria-label", `Eliminar "${item.name}" de ejercicios futuros`);
+    const removeLabel = `Eliminar "${item.name}" de ejercicios futuros`;
+    if (globalThis.CaliGymIcons?.decorate) {
+      globalThis.CaliGymIcons.decorate(removeBtn, "trash", { label: removeLabel });
+    } else {
+      removeBtn.textContent = "Eliminar";
+      removeBtn.setAttribute("aria-label", removeLabel);
+      removeBtn.title = removeLabel;
+    }
     actions.append(removeBtn);
     li.append(actions);
 
@@ -1354,11 +1361,27 @@ function renderLibrary(){
     const useBtn = button("Usar en…", "primary small");
     useBtn.type = "button";
     useBtn.addEventListener("click", () => openGoalConfigModal(item));
-    const editBtn = button("Editar", "ghost small");
+    const editBtn = button("", "ghost small");
     editBtn.type = "button";
+    const editLabel = `Editar "${item.name}"`;
+    if (globalThis.CaliGymIcons?.decorate) {
+      globalThis.CaliGymIcons.decorate(editBtn, "edit", { label: editLabel });
+    } else {
+      editBtn.textContent = "Editar";
+      editBtn.setAttribute("aria-label", editLabel);
+      editBtn.title = editLabel;
+    }
     editBtn.addEventListener("click", () => openLibraryForm(item));
-    const deleteBtn = button("Eliminar", "danger small");
+    const deleteBtn = button("", "danger small");
     deleteBtn.type = "button";
+    const deleteLabel = `Eliminar "${item.name}" de la librería`;
+    if (globalThis.CaliGymIcons?.decorate) {
+      globalThis.CaliGymIcons.decorate(deleteBtn, "trash", { label: deleteLabel });
+    } else {
+      deleteBtn.textContent = "Eliminar";
+      deleteBtn.setAttribute("aria-label", deleteLabel);
+      deleteBtn.title = deleteLabel;
+    }
     deleteBtn.addEventListener("click", () => {
       const ok = confirm(`¿Eliminar "${item.name}" de la librería?`);
       if (!ok) return;
@@ -1836,7 +1859,7 @@ function renderDay(dayISO){
     dragBtn.setAttribute("aria-label", "Reordenar ejercicio");
     dragBtn.title = "Reordenar ejercicio";
     dragBtn.innerHTML = "<span aria-hidden=\"true\">☰</span>";
-    const thumb = createMiniatureElement(ex, { size: 36, className: "exercise-thumb", alt: ex.name });
+    const thumb = createMiniatureElement(ex, { size: 42, className: "exercise-thumb", alt: ex.name });
     const h3 = document.createElement("h3");
     h3.textContent = ex.name;
     h3.style.margin = "0";
@@ -1869,8 +1892,24 @@ function renderDay(dayISO){
     );
     doneBtn.title = doneBtn.getAttribute("aria-label");
     skipBtn.title = skipBtn.getAttribute("aria-label");
-    const editBtn = button("Editar", "small ghost");
-    const delBtn = button("Eliminar", "small danger");
+    const editBtn = button("", "small ghost");
+    const editLabel = `Editar "${ex.name}"`;
+    if (globalThis.CaliGymIcons?.decorate) {
+      globalThis.CaliGymIcons.decorate(editBtn, "edit", { label: editLabel });
+    } else {
+      editBtn.textContent = "Editar";
+      editBtn.setAttribute("aria-label", editLabel);
+      editBtn.title = editLabel;
+    }
+    const delBtn = button("", "small danger");
+    const deleteLabel = `Eliminar "${ex.name}"`;
+    if (globalThis.CaliGymIcons?.decorate) {
+      globalThis.CaliGymIcons.decorate(delBtn, "trash", { label: deleteLabel });
+    } else {
+      delBtn.textContent = "Eliminar";
+      delBtn.setAttribute("aria-label", deleteLabel);
+      delBtn.title = deleteLabel;
+    }
     doneBtn.addEventListener("click", ()=>{
       const nextStatus = isExerciseDone(ex) ? EXERCISE_STATUS.PENDING : EXERCISE_STATUS.DONE;
       updateExerciseStatus(ex, nextStatus, dayISO, { showToast: nextStatus === EXERCISE_STATUS.DONE });
@@ -2848,7 +2887,14 @@ function buildEditForm(ex){
   actions.className = "actions";
   const saveBtn = button("Guardar", "primary small");
   const cancelBtn = button("Cerrar", "ghost small");
-  const deleteBtn = button("Eliminar", "danger small");
+  const deleteBtn = button("", "danger small");
+  const deleteLabel = "Eliminar ejercicio";
+  if (globalThis.CaliGymIcons?.decorate) {
+    globalThis.CaliGymIcons.decorate(deleteBtn, "trash", { label: deleteLabel, showLabel: true });
+  } else {
+    deleteBtn.textContent = "Eliminar";
+    deleteBtn.title = deleteLabel;
+  }
   actions.append(saveBtn, cancelBtn, deleteBtn);
 
   box.append(fName.wrap, categoryWrap, fSets.wrap, typeWrap, wField.wrap, actions);
