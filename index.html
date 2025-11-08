@@ -440,15 +440,15 @@
             </label>
           </div>
           <label class="row">
-            <input type="radio" name="libraryIconType" value="image" id="libraryIconImage" />
-            <span>Imagen</span>
+            <input type="radio" name="libraryIconType" value="asset" id="libraryIconAsset" />
+            <span>Icono de la galería</span>
           </label>
-          <div class="row indent hidden" id="libraryImageRow">
+          <div class="row indent hidden" id="libraryAssetRow">
             <label class="field inline">
-              <span>Subir imagen</span>
-              <input type="file" id="libraryFormImage" accept="image/*" />
+              <span>Elegir icono</span>
+              <select id="libraryFormIcon"></select>
             </label>
-            <div class="image-preview" id="libraryImagePreview" aria-live="polite"></div>
+            <div class="image-preview" id="libraryIconPreview" aria-live="polite"></div>
           </div>
         </fieldset>
         <label class="field">
