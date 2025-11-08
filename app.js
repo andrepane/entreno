@@ -26,6 +26,124 @@ const randomUUID = (() => {
     });
 })();
 
+const MAX_IMAGE_BYTES = 60 * 1024; // FIX: límite máximo de bytes por imagen personalizada
+const MAX_IMAGE_DIMENSION = 256; // FIX: redimensionar imágenes para controlar el uso de memoria
+const STORAGE_BUDGET_BYTES = 4.5 * 1024 * 1024; // FIX: presupuesto aproximado de almacenamiento en localStorage
+const FALLBACK_ICON_EMOJI = "🏋️"; // FIX: emoji usado cuando no se puede conservar la imagen
+
+function estimateDataUrlBytes(dataUrl) { // FIX: calcula el peso aproximado de un dataURL
+  if (typeof dataUrl !== "string") return 0;
+  const trimmed = dataUrl.trim();
+  const commaIndex = trimmed.indexOf(",");
+  if (commaIndex === -1) return trimmed.length;
+  const base64 = trimmed.slice(commaIndex + 1);
+  const padding = (base64.match(/=+$/) || [""])[0].length;
+  return Math.max(0, Math.floor(base64.length * 0.75) - padding);
+}
+
+function isImageDataUrl(value) { // FIX: valida que el contenido sea un dataURL de imagen
+  return typeof value === "string" && /^data:image\//i.test(value.trim());
+}
+
+function isAcceptableImageSize(dataUrl) { // FIX: comprueba si la imagen cabe dentro del límite permitido
+  return isImageDataUrl(dataUrl) && estimateDataUrlBytes(dataUrl) <= MAX_IMAGE_BYTES;
+}
+
+function getByteSize(value) { // FIX: calcula el peso en bytes de una cadena UTF-8
+  if (typeof value !== "string") return 0;
+  if (typeof TextEncoder !== "undefined") {
+    return new TextEncoder().encode(value).length;
+  }
+  return value.length;
+}
+
+function createCanvasContext(width, height) { // FIX: crea un canvas seguro para redimensionar imágenes
+  if (typeof document === "undefined" || typeof document.createElement !== "function") {
+    return null;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  return ctx ? { canvas, ctx } : null;
+}
+
+function loadImageElement(dataUrl) { // FIX: carga una imagen desde un dataURL y devuelve una promesa
+  return new Promise((resolve, reject) => {
+    if (!isImageDataUrl(dataUrl) || typeof Image === "undefined") {
+      reject(new Error("Imagen inválida"));
+      return;
+    }
+    const img = new Image();
+    img.decoding = "async";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
+    img.src = dataUrl;
+  });
+}
+
+async function compressImageDataUrl(dataUrl, options = {}) { // FIX: comprime y convierte la imagen a WebP
+  try {
+    const img = await loadImageElement(dataUrl);
+    const maxWidth = options.maxWidth || MAX_IMAGE_DIMENSION;
+    const maxHeight = options.maxHeight || MAX_IMAGE_DIMENSION;
+    const scale = Math.min(1, maxWidth / (img.width || 1), maxHeight / (img.height || 1));
+    const width = Math.max(1, Math.round((img.width || maxWidth) * scale));
+    const height = Math.max(1, Math.round((img.height || maxHeight) * scale));
+    const surface = createCanvasContext(width, height);
+    if (!surface) return dataUrl;
+    const { canvas, ctx } = surface;
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+    const quality = options.quality != null ? options.quality : 0.82;
+    const compressed = canvas.toDataURL("image/webp", quality);
+    return compressed || dataUrl;
+  } catch (error) {
+    console.warn("No se pudo comprimir la imagen", error); // FIX: evita que errores silenciosos bloqueen el guardado
+    return null;
+  }
+}
+
+async function prepareImageForStorage(dataUrl, options = {}) { // FIX: procesa y valida una imagen antes de guardarla
+  if (!isImageDataUrl(dataUrl)) {
+    return { ok: false };
+  }
+  let sanitized = dataUrl.trim();
+  let bytes = estimateDataUrlBytes(sanitized);
+  const maxBytes = options.maxBytes || MAX_IMAGE_BYTES;
+  if (!/^data:image\/webp/i.test(sanitized) || bytes > maxBytes) {
+    const compressed = await compressImageDataUrl(sanitized, options);
+    if (compressed) {
+      sanitized = compressed;
+      bytes = estimateDataUrlBytes(sanitized);
+    }
+  }
+  if (bytes > maxBytes) {
+    return { ok: false, bytes };
+  }
+  return { ok: true, dataUrl: sanitized, bytes };
+}
+
+function sanitizeIconCandidateSync(payload, options = {}) { // FIX: versión síncrona para normalizadores
+  const fallbackEmoji = options.fallbackEmoji || payload.emoji || FALLBACK_ICON_EMOJI;
+  const base = {
+    iconType: payload.iconType,
+    emoji: payload.emoji,
+    imageDataUrl: payload.imageDataUrl,
+    iconName: payload.iconName,
+  };
+  if (base.iconType === "image") {
+    if (!isAcceptableImageSize(base.imageDataUrl)) {
+      return { iconType: "emoji", emoji: fallbackEmoji, imageDataUrl: "", iconName: "" };
+    }
+    return base;
+  }
+  if (base.iconType === "emoji") {
+    return { ...base, emoji: base.emoji || fallbackEmoji, imageDataUrl: "" };
+  }
+  return { ...base, emoji: base.emoji || "", imageDataUrl: "" };
+}
+
 /* ========= Utilidades de fecha ========= */
 const fmt = (d) => {
   const year = d.getFullYear();
@@ -246,6 +364,14 @@ function normalizeWorkouts(rawWorkouts) {
             iconType = "emoji";
           }
         }
+        const sanitizedIcon = sanitizeIconCandidateSync( // FIX: evita iconos corruptos o excesivos
+          { iconType, emoji, imageDataUrl, iconName },
+          { fallbackEmoji: emoji || extractInitials(exercise.name || "") || FALLBACK_ICON_EMOJI }
+        );
+        iconType = sanitizedIcon.iconType;
+        const normalizedEmoji = iconType === "emoji" ? sanitizedIcon.emoji : ""; // FIX: aplica emoji alternativo si procede
+        const normalizedImageDataUrl = iconType === "image" ? sanitizedIcon.imageDataUrl : ""; // FIX: elimina imágenes inválidas
+        const normalizedIconName = iconType === "asset" ? sanitizedIcon.iconName : ""; // FIX: limpia iconos obsoletos
         return {
           ...exercise,
           category: normalizeCategory(exercise.category),
@@ -257,9 +383,9 @@ function normalizeWorkouts(rawWorkouts) {
           cardioMinutes: Number.isFinite(cardioMinutesRaw) ? cardioMinutesRaw : null,
           perceivedEffort: Number.isFinite(perceivedRaw) && perceivedRaw >= 1 && perceivedRaw <= 10 ? Math.round(perceivedRaw) : null,
           iconType,
-          emoji: iconType === "emoji" ? emoji : "",
-          imageDataUrl: iconType === "image" ? imageDataUrl : "",
-          iconName: iconType === "asset" ? iconName : "",
+          emoji: normalizedEmoji,
+          imageDataUrl: normalizedImageDataUrl,
+          iconName: normalizedIconName,
         };
       });
 
@@ -400,14 +526,22 @@ function normalizeLibraryExercises(rawList){
     }
     const notes = typeof item.notes === "string" ? item.notes : "";
     const tags = normalizeTags(item.tags);
+    const sanitizedIcon = sanitizeIconCandidateSync( // FIX: garantiza que los iconos de la librería son seguros
+      { iconType, emoji, imageDataUrl, iconName },
+      { fallbackEmoji: emoji || extractInitials(name) || FALLBACK_ICON_EMOJI }
+    );
+    iconType = sanitizedIcon.iconType;
+    const normalizedEmoji = iconType === "emoji" ? sanitizedIcon.emoji : ""; // FIX: usa emoji alternativo si la imagen no es válida
+    const normalizedImageDataUrl = iconType === "image" ? sanitizedIcon.imageDataUrl : ""; // FIX: elimina imágenes demasiado grandes
+    const normalizedIconName = iconType === "asset" ? sanitizedIcon.iconName : ""; // FIX: descarta referencias rotas
     normalized.push({
       id,
       name,
       category,
       iconType,
-      emoji: iconType === "emoji" ? emoji || "" : "",
-      imageDataUrl: iconType === "image" ? imageDataUrl : "",
-      iconName: iconType === "asset" ? iconName : "",
+      emoji: normalizedEmoji,
+      imageDataUrl: normalizedImageDataUrl,
+      iconName: normalizedIconName,
       notes,
       tags,
     });
@@ -483,6 +617,10 @@ function buildPlannedFromWorkouts(){
     });
   });
   return planned;
+}
+
+function refreshPlannedExercises() { // FIX: recalcula plannedExercises solo cuando los entrenos cambian
+  state.plannedExercises = buildPlannedFromWorkouts();
 }
 
 function ensureDayMeta(dayISO){
@@ -571,6 +709,190 @@ function showStorageWarning(message) {
   storageWarningEl.classList.remove("hidden");
 }
 
+async function sanitizeExerciseForStorage(exercise, imageRegistry) { // FIX: prepara un ejercicio para almacenamiento seguro
+  if (!isPlainObject(exercise)) return null;
+  const clone = { ...exercise };
+  const fallbackEmoji = clone.emoji || extractInitials(clone.name || "") || FALLBACK_ICON_EMOJI;
+  if (clone.iconType === "image" && clone.imageDataUrl) {
+    const prepared = await prepareImageForStorage(clone.imageDataUrl, {
+      maxWidth: MAX_IMAGE_DIMENSION,
+      maxHeight: MAX_IMAGE_DIMENSION,
+      quality: 0.82,
+    });
+    if (prepared && prepared.ok) {
+      clone.imageDataUrl = prepared.dataUrl;
+      clone.emoji = "";
+      clone.iconName = ""; // FIX: asegura coherencia al conservar la imagen
+      imageRegistry.push({ clone, original: exercise, fallbackEmoji, bytes: prepared.bytes }); // FIX: registrar para posibles degradaciones posteriores
+    } else {
+      clone.iconType = "emoji";
+      clone.imageDataUrl = "";
+      clone.emoji = fallbackEmoji;
+      clone.iconName = ""; // FIX: evita referencias de iconos antiguos
+    }
+  } else if (clone.iconType === "emoji") {
+    clone.emoji = clone.emoji || fallbackEmoji;
+    clone.imageDataUrl = "";
+    clone.iconName = ""; // FIX: limpia valores residuales al usar emoji
+  } else {
+    clone.imageDataUrl = "";
+    if (clone.iconType !== "asset") clone.iconName = ""; // FIX: descarta iconos inconsistentes
+  }
+  exercise.iconType = clone.iconType;
+  exercise.emoji = clone.emoji;
+  exercise.imageDataUrl = clone.imageDataUrl;
+  exercise.iconName = clone.iconName;
+  return clone;
+}
+
+async function sanitizeLibraryItemForStorage(item, imageRegistry) { // FIX: garantiza iconos ligeros en la librería antes de persistir
+  if (!isPlainObject(item)) return null;
+  const clone = { ...item };
+  const fallbackEmoji = clone.emoji || extractInitials(clone.name || "") || FALLBACK_ICON_EMOJI;
+  if (clone.iconType === "image" && clone.imageDataUrl) {
+    const prepared = await prepareImageForStorage(clone.imageDataUrl, {
+      maxWidth: MAX_IMAGE_DIMENSION,
+      maxHeight: MAX_IMAGE_DIMENSION,
+      quality: 0.82,
+    });
+    if (prepared && prepared.ok) {
+      clone.imageDataUrl = prepared.dataUrl;
+      clone.emoji = "";
+      clone.iconName = ""; // FIX: al usar imagen no se guarda icono de asset
+      imageRegistry.push({ clone, original: item, fallbackEmoji, bytes: prepared.bytes }); // FIX: controla peso en revisiones posteriores
+    } else {
+      clone.iconType = "emoji";
+      clone.emoji = fallbackEmoji;
+      clone.imageDataUrl = "";
+      clone.iconName = "";
+    }
+  } else if (clone.iconType === "emoji") {
+    clone.emoji = clone.emoji || fallbackEmoji;
+    clone.imageDataUrl = "";
+    clone.iconName = ""; // FIX: limpia icono cuando se usa emoji
+  } else {
+    clone.imageDataUrl = "";
+  }
+  item.iconType = clone.iconType;
+  item.emoji = clone.emoji;
+  item.imageDataUrl = clone.imageDataUrl;
+  item.iconName = clone.iconName;
+  return clone;
+}
+
+function cloneDayMetaForStorage(source) { // FIX: crea una copia segura del meta diario
+  if (!isPlainObject(source)) return {};
+  const target = {};
+  Object.entries(source).forEach(([day, meta]) => {
+    if (!isPlainObject(meta)) return;
+    target[fmt(fromISO(day))] = {
+      sessionRPE: meta.sessionRPE != null ? meta.sessionRPE : null,
+      habits: isPlainObject(meta.habits)
+        ? {
+            sleep: !!meta.habits.sleep,
+            mobility: !!meta.habits.mobility,
+            handstand: !!meta.habits.handstand,
+          }
+        : { sleep: false, mobility: false, handstand: false },
+      phase: meta.phase || "",
+    };
+  });
+  return target;
+}
+
+function cloneFutureExercisesForStorage(list) { // FIX: limpia la lista de futuros ejercicios
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter(isPlainObject)
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      createdAt: item.createdAt,
+    }))
+    .filter((item) => typeof item.id === "string" && !!item.name);
+}
+
+function clonePlannedExercisesForStorage(list) { // FIX: evita duplicar datos innecesarios en plannedExercises
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter(isPlainObject)
+    .map((item) => ({ ...item }));
+}
+
+function safeStringifyState(value) { // FIX: serializa reduciendo campos vacíos sin perder información útil
+  try {
+    return JSON.stringify(value, (key, val) => {
+      if (key === "imageDataUrl" && !val) return undefined;
+      if ((key === "emoji" || key === "iconName") && val === "") return undefined;
+      if ((key === "done" || key === "tags") && Array.isArray(val) && val.length === 0) return undefined;
+      return val;
+    });
+  } catch (error) {
+    console.error("No se pudo serializar el estado", error); // FIX: evita rechazos silenciosos
+    return "{}";
+  }
+}
+
+async function prepareStateForStorage(currentState) { // FIX: genera una versión ligera y segura del estado global
+  const sanitized = {
+    selectedDate: fmt(fromISO(currentState.selectedDate)),
+    workouts: {},
+    dayMeta: cloneDayMetaForStorage(currentState.dayMeta),
+    futureExercises: cloneFutureExercisesForStorage(currentState.futureExercises),
+    libraryExercises: [],
+    plannedExercises: clonePlannedExercisesForStorage(currentState.plannedExercises),
+  }; // FIX: base del estado compacto a persistir
+  const imageRegistry = [];
+  for (const [dayISO, list] of Object.entries(currentState.workouts || {})) {
+    if (!Array.isArray(list)) continue;
+    const normalizedDay = fmt(fromISO(dayISO)); // FIX: guarda los días normalizados para evitar duplicados
+    const cleanList = [];
+    for (const exercise of list) {
+      const sanitizedExercise = await sanitizeExerciseForStorage(exercise, imageRegistry);
+      if (!sanitizedExercise) continue;
+      sanitizedExercise.done = Array.isArray(exercise.done) ? exercise.done.slice() : [];
+      cleanList.push(sanitizedExercise);
+    }
+    sanitized.workouts[normalizedDay] = cleanList;
+  }
+  if (Array.isArray(currentState.libraryExercises)) {
+    const filteredLibrary = []; // FIX: conservar solo las entradas válidas de la librería
+    for (const item of currentState.libraryExercises) {
+      const sanitizedItem = await sanitizeLibraryItemForStorage(item, imageRegistry);
+      if (!sanitizedItem) continue;
+      sanitized.libraryExercises.push({ ...sanitizedItem, tags: Array.isArray(sanitizedItem.tags) ? sanitizedItem.tags.slice() : [] });
+      filteredLibrary.push(item);
+    }
+    currentState.libraryExercises.length = 0;
+    currentState.libraryExercises.push(...filteredLibrary); // FIX: limpia la librería original manteniendo la referencia del array
+  }
+  currentState.futureExercises = sanitized.futureExercises.slice(); // FIX: elimina entradas inválidas del estado activo
+  let serialized = safeStringifyState(sanitized);
+  let totalBytes = getByteSize(serialized);
+  if (totalBytes > STORAGE_BUDGET_BYTES && imageRegistry.length) {
+    const sorted = imageRegistry
+      .slice()
+      .sort((a, b) => (b.bytes || 0) - (a.bytes || 0));
+    for (const entry of sorted) {
+      if (!entry.clone || entry.clone.iconType !== "image") continue;
+      entry.clone.iconType = "emoji";
+      entry.clone.emoji = entry.clone.emoji || entry.fallbackEmoji || FALLBACK_ICON_EMOJI;
+      entry.clone.imageDataUrl = "";
+      entry.clone.iconName = ""; // FIX: evita inconsistencias al degradar iconos de imagen
+      if (entry.original) {
+        entry.original.iconType = entry.clone.iconType;
+        entry.original.emoji = entry.clone.emoji;
+        entry.original.imageDataUrl = "";
+        if (entry.original.iconName) entry.original.iconName = ""; // FIX: mantiene sincronía con el objeto original
+      }
+      serialized = safeStringifyState(sanitized);
+      totalBytes = getByteSize(serialized);
+      if (totalBytes <= STORAGE_BUDGET_BYTES) break;
+    }
+  }
+  return { state: sanitized, serialized, bytes: totalBytes };
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -589,19 +911,47 @@ function load() {
     }
   } catch(e){ console.warn("Error loading storage", e); }
 }
-function save() {
-  state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
-  state.plannedExercises = buildPlannedFromWorkouts();
+async function save() { // FIX: guardado asíncrono con control de imágenes y serialización segura
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    state.libraryExercises = normalizeLibraryExercises(state.libraryExercises); // FIX: mantiene coherencia antes de serializar
+  } catch (normalizeError) {
+    console.warn("No se pudo normalizar la librería antes de guardar", normalizeError); // FIX: no interrumpe el flujo si falla la normalización
+  }
+  let prepared;
+  try {
+    prepared = await prepareStateForStorage(state); // FIX: compacta el estado y gestiona imágenes pesadas
+  } catch (prepError) {
+    console.error("No se pudo preparar el estado para guardarlo", prepError); // FIX: facilita depuración
+    if (!storageSaveFailed) {
+      showStorageWarning(STORAGE_SAVE_ERROR_MESSAGE);
+    }
+    storageSaveFailed = true;
+    return false;
+  }
+  if (prepared && prepared.state) {
+    state.selectedDate = prepared.state.selectedDate; // FIX: asegura que la fecha almacenada esté normalizada
+    state.dayMeta = prepared.state.dayMeta;
+    state.futureExercises = Array.isArray(prepared.state.futureExercises) ? prepared.state.futureExercises : [];
+    state.plannedExercises = Array.isArray(prepared.state.plannedExercises)
+      ? prepared.state.plannedExercises
+      : [];
+  }
+  if (prepared && prepared.bytes > STORAGE_BUDGET_BYTES) {
+    console.warn("El estado sigue excediendo el presupuesto de almacenamiento incluso tras la depuración"); // FIX: alerta de que pueden perderse datos
+  }
+  const payload = prepared && typeof prepared.serialized === "string" ? prepared.serialized : JSON.stringify(state); // FIX: garantiza que siempre haya un string serializado
+  try {
+    localStorage.setItem(STORAGE_KEY, payload);
     storageSaveFailed = false;
     clearStorageWarning();
+    return true;
   } catch (err) {
     console.warn("No se pudo guardar el estado de entreno", err);
     if (!storageSaveFailed) {
       showStorageWarning(STORAGE_SAVE_ERROR_MESSAGE);
     }
     storageSaveFailed = true;
+    return false;
   }
 }
 
@@ -827,7 +1177,11 @@ selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
 formCategory.value = normalizeCategory(formCategory.value);
 renderAll();
-Promise.resolve().then(ensureExerciseIconsLoaded);
+Promise.resolve()
+  .then(ensureExerciseIconsLoaded)
+  .catch((error) => {
+    console.warn("Carga diferida de iconos falló, la app continuará sin ellos", error); // FIX: evita que un fallo bloquee la inicialización
+  });
 attachLibraryEventListeners();
 if (
   originalWorkoutsJSON !== normalizedWorkoutsJSON ||
@@ -1194,6 +1548,7 @@ addForm.addEventListener("submit", (e)=>{
     ex.done = [];
   }
   state.workouts[normalizedDay].push(ex);
+  refreshPlannedExercises(); // FIX: mantiene plannedExercises sincronizado tras añadir un ejercicio
   save();
   syncHistoryForDay(normalizedDay, { showToast: true });
 
@@ -2067,6 +2422,7 @@ function scheduleExerciseFromLibrary(libraryExercise, config){
     state.workouts[dayISO] = [];
   }
   state.workouts[dayISO].push(exercise);
+  refreshPlannedExercises(); // FIX: al programar desde la librería se actualiza la planificación almacenada
   save();
   state.selectedDate = dayISO;
   selectedDateInput.value = state.selectedDate;
@@ -2913,6 +3269,7 @@ function finalizeExerciseOrder(dayISO){
   }
   if (changed){
     state.workouts[dayISO] = newOrder;
+    refreshPlannedExercises(); // FIX: preserva el orden en la planificación derivada
     save();
   }
 }
@@ -3005,6 +3362,12 @@ if (typeof window !== "undefined") {
     updateLibrary,
     removeFromLibrary,
     findLibraryExercise,
+  });
+  window.addEventListener("error", (event) => { // FIX: captura errores globales para facilitar depuración
+    console.error("Error global en la app de entrenos", event.error || event.message);
+  });
+  window.addEventListener("unhandledrejection", (event) => { // FIX: registra promesas rechazadas sin capturar
+    console.error("Promesa rechazada sin capturar", event.reason);
   });
 }
 
@@ -3220,6 +3583,7 @@ function buildEditForm(ex){
     if (editWrapper && editWrapper.classList) {
       editWrapper.classList.add("hidden");
     }
+    refreshPlannedExercises(); // FIX: refleja cambios de edición en los objetivos planificados
     save();
     syncHistoryForDay(state.selectedDate, { showToast: false });
     renderDay(state.selectedDate);
@@ -3272,6 +3636,7 @@ function removeExercise(dayISO, id){
   if (idx>=0){
     list.splice(idx,1);
     state.workouts[dayISO] = list;
+    refreshPlannedExercises(); // FIX: elimina objetivos planificados derivados del ejercicio borrado
     syncHistoryForDay(dayISO, { showToast: false });
     save();
     renderDay(dayISO);
@@ -3304,6 +3669,7 @@ copyDayBtn.addEventListener("click", ()=>{
   }));
   const targetList = getDayWorkouts(dst);
   state.workouts[dst] = targetList.concat(items);
+  refreshPlannedExercises(); // FIX: sincroniza planificación tras copiar un día completo
   save();
   syncHistoryForDay(dst, { showToast: false });
   alert("Día copiado.");
