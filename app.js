@@ -1536,29 +1536,38 @@ function readFileAsDataURL(file){
   });
 }
 
-function handleLibraryImageChange(event){
-  const file = event?.target?.files?.[0];
-  if (!file) return;
+function setLibraryImagePreview(dataUrl, alt){
+  if (!libraryImagePreview) return;
+  libraryImagePreview.innerHTML = "";
+  if (!dataUrl) return;
+  const img = document.createElement("img");
+  img.src = dataUrl;
+  img.alt = alt || libraryFormName?.value || "Ejercicio";
+  libraryImagePreview.append(img);
+}
+
+async function loadLibraryImageFromFile(file){
+  if (!file) return false;
   if (file.size > 120 * 1024) {
     alert("La imagen es demasiado grande (máx. 120KB). Usa un archivo más ligero.");
-    event.target.value = "";
-    return;
+    if (libraryFormImage) libraryFormImage.value = "";
+    return false;
   }
-  readFileAsDataURL(file)
-    .then((dataUrl) => {
-      currentLibraryImageDataUrl = dataUrl;
-      if (libraryImagePreview) {
-        libraryImagePreview.innerHTML = "";
-        const img = document.createElement("img");
-        img.src = dataUrl;
-        img.alt = libraryFormName?.value || "Ejercicio";
-        libraryImagePreview.append(img);
-      }
-    })
-    .catch((err) => {
-      console.error("No se pudo leer la imagen", err);
-      alert("No se pudo cargar la imagen. Prueba con otro archivo.");
-    });
+  try {
+    const dataUrl = await readFileAsDataURL(file);
+    currentLibraryImageDataUrl = dataUrl;
+    setLibraryImagePreview(dataUrl, libraryFormName?.value || "Ejercicio");
+    return true;
+  } catch (err) {
+    console.error("No se pudo leer la imagen", err);
+    alert("No se pudo cargar la imagen. Prueba con otro archivo.");
+    return false;
+  }
+}
+
+function handleLibraryImageChange(event){
+  const file = event?.target?.files?.[0];
+  loadLibraryImageFromFile(file);
 }
 
 function serializeLibraryForm(){
@@ -1611,8 +1620,15 @@ function attachLibraryEventListeners(){
   if (librarySelectorSearch) librarySelectorSearch.addEventListener("input", renderLibrarySelector);
   if (librarySelectorCategory) librarySelectorCategory.addEventListener("change", renderLibrarySelector);
   if (libraryForm) {
-    libraryForm.addEventListener("submit", (event) => {
+    libraryForm.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (libraryIconImage?.checked && !currentLibraryImageDataUrl) {
+        const fallbackFile = libraryFormImage?.files?.[0];
+        if (fallbackFile) {
+          const ok = await loadLibraryImageFromFile(fallbackFile);
+          if (!ok) return;
+        }
+      }
       const data = serializeLibraryForm();
       if (!data) return;
       if (libraryFormId?.value) {
