@@ -204,6 +204,28 @@ function normalizeWorkouts(rawWorkouts) {
         const status = Object.values(EXERCISE_STATUS).includes(inferredStatus)
           ? inferredStatus
           : EXERCISE_STATUS.PENDING;
+        const rawIconType = typeof exercise.iconType === "string" ? exercise.iconType.toLowerCase() : "";
+        let iconType = ["emoji", "image", "asset"].includes(rawIconType) ? rawIconType : "";
+        const emoji = typeof exercise.emoji === "string" ? exercise.emoji.trim() : "";
+        const imageDataUrl = typeof exercise.imageDataUrl === "string" ? exercise.imageDataUrl : "";
+        const iconName = typeof exercise.iconName === "string" ? exercise.iconName.trim() : "";
+        if (iconType === "asset" && !iconName) {
+          iconType = "";
+        }
+        if (iconType === "image" && !imageDataUrl) {
+          iconType = "";
+        }
+        if (!iconType) {
+          if (iconName) {
+            iconType = "asset";
+          } else if (imageDataUrl) {
+            iconType = "image";
+          } else if (emoji) {
+            iconType = "emoji";
+          } else {
+            iconType = "emoji";
+          }
+        }
         return {
           ...exercise,
           category: normalizeCategory(exercise.category),
@@ -214,6 +236,10 @@ function normalizeWorkouts(rawWorkouts) {
           note: typeof exercise.note === "string" ? exercise.note : "",
           cardioMinutes: Number.isFinite(cardioMinutesRaw) ? cardioMinutesRaw : null,
           perceivedEffort: Number.isFinite(perceivedRaw) && perceivedRaw >= 1 && perceivedRaw <= 10 ? Math.round(perceivedRaw) : null,
+          iconType,
+          emoji: iconType === "emoji" ? emoji : "",
+          imageDataUrl: iconType === "image" ? imageDataUrl : "",
+          iconName: iconType === "asset" ? iconName : "",
         };
       });
 
@@ -330,9 +356,28 @@ function normalizeLibraryExercises(rawList){
     const name = typeof item.name === "string" ? item.name.trim() : "";
     if (!name) return;
     const category = normalizeCategory(item.category);
-    const iconType = item.iconType === "image" ? "image" : "emoji";
+    const rawIconType = typeof item.iconType === "string" ? item.iconType.toLowerCase() : "";
+    let iconType = ["emoji", "image", "asset"].includes(rawIconType) ? rawIconType : "";
     const emoji = typeof item.emoji === "string" ? item.emoji.trim() : "";
     const imageDataUrl = typeof item.imageDataUrl === "string" ? item.imageDataUrl : "";
+    const iconName = typeof item.iconName === "string" ? item.iconName.trim() : "";
+    if (iconType === "asset" && !iconName) {
+      iconType = "";
+    }
+    if (iconType === "image" && !imageDataUrl) {
+      iconType = "";
+    }
+    if (!iconType) {
+      if (iconName) {
+        iconType = "asset";
+      } else if (imageDataUrl) {
+        iconType = "image";
+      } else if (emoji) {
+        iconType = "emoji";
+      } else {
+        iconType = "emoji";
+      }
+    }
     const notes = typeof item.notes === "string" ? item.notes : "";
     const tags = normalizeTags(item.tags);
     normalized.push({
@@ -342,6 +387,7 @@ function normalizeLibraryExercises(rawList){
       iconType,
       emoji: iconType === "emoji" ? emoji || "" : "",
       imageDataUrl: iconType === "image" ? imageDataUrl : "",
+      iconName: iconType === "asset" ? iconName : "",
       notes,
       tags,
     });
@@ -595,12 +641,12 @@ const libraryFormId = document.getElementById("libraryFormId");
 const libraryFormName = document.getElementById("libraryFormName");
 const libraryFormCategory = document.getElementById("libraryFormCategory");
 const libraryIconEmoji = document.getElementById("libraryIconEmoji");
-const libraryIconImage = document.getElementById("libraryIconImage");
+const libraryIconAsset = document.getElementById("libraryIconAsset");
 const libraryEmojiRow = document.getElementById("libraryEmojiRow");
-const libraryImageRow = document.getElementById("libraryImageRow");
+const libraryAssetRow = document.getElementById("libraryAssetRow");
 const libraryFormEmoji = document.getElementById("libraryFormEmoji");
-const libraryFormImage = document.getElementById("libraryFormImage");
-const libraryImagePreview = document.getElementById("libraryImagePreview");
+const libraryFormIcon = document.getElementById("libraryFormIcon");
+const libraryIconPreview = document.getElementById("libraryIconPreview");
 const libraryFormNotes = document.getElementById("libraryFormNotes");
 const libraryFormTags = document.getElementById("libraryFormTags");
 
@@ -702,6 +748,7 @@ selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
 formCategory.value = normalizeCategory(formCategory.value);
 renderAll();
+Promise.resolve().then(ensureExerciseIconsLoaded);
 attachLibraryEventListeners();
 if (
   originalWorkoutsJSON !== normalizedWorkoutsJSON ||
@@ -981,6 +1028,10 @@ addForm.addEventListener("submit", (e)=>{
     note: formQuickNote ? (formQuickNote.value || "").trim() : "",
     category: normalizeCategory(formCategory.value),
     perceivedEffort: null,
+    iconType: "emoji",
+    emoji: "",
+    imageDataUrl: "",
+    iconName: "",
   };
 
   if (!ex.name) { alert("Pon un nombre al ejercicio."); return; }
@@ -990,6 +1041,7 @@ addForm.addEventListener("submit", (e)=>{
     ex.iconType = addFormSelectedLibrary.iconType;
     ex.emoji = addFormSelectedLibrary.emoji;
     ex.imageDataUrl = addFormSelectedLibrary.imageDataUrl;
+    ex.iconName = addFormSelectedLibrary.iconName;
     ex.tags = Array.isArray(addFormSelectedLibrary.tags) ? addFormSelectedLibrary.tags.slice() : [];
     if (addFormSelectedLibrary.notes) {
       ex.note = [addFormSelectedLibrary.notes, ex.note].filter(Boolean).join("\n");
@@ -1230,13 +1282,16 @@ function findLibraryExercise(id){
 
 function resolveExerciseIcon(source){
   if (!source || typeof source !== "object") {
-    return { iconType: "emoji", emoji: "", imageDataUrl: "", name: "" };
+    return { iconType: "emoji", emoji: "", imageDataUrl: "", iconName: "", name: "" };
+  }
+  if (source.iconType === "asset" && source.iconName) {
+    return { iconType: "asset", iconName: source.iconName, emoji: "", imageDataUrl: "", name: source.name || "" };
   }
   if (source.iconType === "image" && source.imageDataUrl) {
-    return { iconType: "image", imageDataUrl: source.imageDataUrl, emoji: "", name: source.name || "" };
+    return { iconType: "image", imageDataUrl: source.imageDataUrl, emoji: "", iconName: "", name: source.name || "" };
   }
   if (source.iconType === "emoji" && source.emoji) {
-    return { iconType: "emoji", emoji: source.emoji, imageDataUrl: "", name: source.name || "" };
+    return { iconType: "emoji", emoji: source.emoji, imageDataUrl: "", iconName: "", name: source.name || "" };
   }
   if (source.libraryId) {
     const libraryExercise = findLibraryExercise(source.libraryId);
@@ -1246,13 +1301,17 @@ function resolveExerciseIcon(source){
   }
   const emoji = typeof source.emoji === "string" ? source.emoji : "";
   const imageDataUrl = typeof source.imageDataUrl === "string" ? source.imageDataUrl : "";
+  const iconName = typeof source.iconName === "string" ? source.iconName : "";
+  if (iconName) {
+    return { iconType: "asset", iconName, emoji: "", imageDataUrl: "", name: source.name || "" };
+  }
   if (imageDataUrl) {
-    return { iconType: "image", imageDataUrl, emoji: "", name: source.name || "" };
+    return { iconType: "image", imageDataUrl, emoji: "", iconName: "", name: source.name || "" };
   }
   if (emoji) {
-    return { iconType: "emoji", emoji, imageDataUrl: "", name: source.name || "" };
+    return { iconType: "emoji", emoji, imageDataUrl: "", iconName: "", name: source.name || "" };
   }
-  return { iconType: "placeholder", emoji: "", imageDataUrl: "", name: source.name || "" };
+  return { iconType: "placeholder", emoji: "", imageDataUrl: "", iconName: "", name: source.name || "" };
 }
 
 function createMiniatureElement(source, options = {}){
@@ -1264,7 +1323,13 @@ function createMiniatureElement(source, options = {}){
   wrapper.style.setProperty("--miniature-size", `${size}px`);
   wrapper.setAttribute("role", "img");
   wrapper.setAttribute("aria-label", alt);
-  if (icon.iconType === "image" && icon.imageDataUrl) {
+  if (icon.iconType === "asset" && icon.iconName) {
+    const img = document.createElement("img");
+    img.src = getExerciseIconUrl(icon.iconName);
+    img.alt = alt;
+    img.loading = "lazy";
+    wrapper.append(img);
+  } else if (icon.iconType === "image" && icon.imageDataUrl) {
     const img = document.createElement("img");
     img.src = icon.imageDataUrl;
     img.alt = alt;
@@ -1472,54 +1537,171 @@ function renderLibrarySelector(){
   });
 }
 
-let currentLibraryImageDataUrl = "";
+const EXERCISE_ICON_BASE_PATH = "./icons/exercises";
+let currentLibraryIconName = "";
+let exerciseIconList = [];
+let exerciseIconsLoaded = false;
+let exerciseIconsLoadingPromise = null;
+
+function getExerciseIconUrl(name) {
+  if (!name) return "";
+  return `${EXERCISE_ICON_BASE_PATH}/${encodeURIComponent(name)}`;
+}
+
+function setLibraryIconPreview(name) {
+  const iconName = name || currentLibraryIconName || "";
+  currentLibraryIconName = iconName;
+  if (!libraryIconPreview) return;
+  libraryIconPreview.innerHTML = "";
+  const url = getExerciseIconUrl(iconName);
+  if (iconName && url) {
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = libraryFormName?.value || "Icono del ejercicio";
+    img.loading = "lazy";
+    libraryIconPreview.append(img);
+  }
+}
+
+function populateLibraryIconSelect() {
+  if (!libraryFormIcon) return;
+  const previous = libraryFormIcon.value;
+  libraryFormIcon.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = exerciseIconList.length ? "Selecciona un icono" : "Sin iconos disponibles";
+  placeholder.disabled = exerciseIconList.length > 0;
+  placeholder.selected = true;
+  libraryFormIcon.append(placeholder);
+  exerciseIconList.forEach((fileName) => {
+    const option = document.createElement("option");
+    option.value = fileName;
+    option.textContent = fileName.replace(/\.[^.]+$/, "");
+    option.setAttribute("data-icon-name", fileName);
+    libraryFormIcon.append(option);
+  });
+  if (libraryIconAsset) {
+    const hasIcons = exerciseIconList.length > 0;
+    libraryIconAsset.disabled = !hasIcons;
+    if (!hasIcons && libraryIconAsset.checked && libraryIconEmoji) {
+      libraryIconEmoji.checked = true;
+    }
+  }
+  if (exerciseIconList.includes(previous)) {
+    libraryFormIcon.value = previous;
+  } else if (previous) {
+    const fallbackOption = document.createElement("option");
+    fallbackOption.value = previous;
+    fallbackOption.textContent = previous.replace(/\.[^.]+$/, "");
+    fallbackOption.selected = true;
+    fallbackOption.setAttribute("data-icon-name", previous);
+    libraryFormIcon.append(fallbackOption);
+  }
+  setLibraryIconPreview(libraryFormIcon.value);
+  updateLibraryIconRows();
+}
+
+function ensureExerciseIconsLoaded() {
+  if (exerciseIconsLoaded) {
+    return Promise.resolve(exerciseIconList);
+  }
+  if (exerciseIconsLoadingPromise) {
+    return exerciseIconsLoadingPromise;
+  }
+  exerciseIconsLoadingPromise = fetch(`${EXERCISE_ICON_BASE_PATH}/icons.json`)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`No se pudieron cargar los iconos (${response.status})`);
+      }
+      return response.json();
+    })
+    .then((data) => {
+      if (Array.isArray(data)) {
+        exerciseIconList = data.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
+        exerciseIconList.sort((a, b) => a.localeCompare(b, "es"));
+      } else {
+        exerciseIconList = [];
+      }
+      exerciseIconsLoaded = true;
+      populateLibraryIconSelect();
+      return exerciseIconList;
+    })
+    .catch((error) => {
+      console.error("No se pudieron cargar los iconos de ejercicios", error);
+      exerciseIconList = [];
+      exerciseIconsLoaded = true;
+      populateLibraryIconSelect();
+      return exerciseIconList;
+    });
+  return exerciseIconsLoadingPromise;
+}
 
 function updateLibraryIconRows(){
-  const useImage = libraryIconImage?.checked;
-  if (libraryEmojiRow) libraryEmojiRow.classList.toggle("hidden", !!useImage);
-  if (libraryImageRow) libraryImageRow.classList.toggle("hidden", !useImage);
+  const useAsset = libraryIconAsset?.checked;
+  if (libraryEmojiRow) libraryEmojiRow.classList.toggle("hidden", !!useAsset);
+  if (libraryAssetRow) libraryAssetRow.classList.toggle("hidden", !useAsset);
+  if (libraryFormIcon) libraryFormIcon.required = !!useAsset && exerciseIconList.length > 0;
+  if (useAsset) {
+    setLibraryIconPreview(libraryFormIcon?.value || currentLibraryIconName);
+  }
 }
 
 function resetLibraryForm(){
   if (!libraryForm) return;
   libraryForm.reset();
-  currentLibraryImageDataUrl = "";
+  currentLibraryIconName = "";
   if (libraryFormId) libraryFormId.value = "";
   if (libraryFormEmoji) libraryFormEmoji.value = "";
-  if (libraryImagePreview) libraryImagePreview.innerHTML = "";
+  if (libraryIconPreview) libraryIconPreview.innerHTML = "";
+  if (libraryFormIcon) {
+    populateLibraryIconSelect();
+    libraryFormIcon.value = "";
+  }
   if (libraryIconEmoji) libraryIconEmoji.checked = true;
   updateLibraryIconRows();
 }
 
 function openLibraryForm(item){
-  resetLibraryForm();
-  if (item) {
-    if (libraryFormId) libraryFormId.value = item.id;
-    if (libraryFormName) libraryFormName.value = item.name;
-    if (libraryFormCategory) libraryFormCategory.value = item.category;
-    if (item.iconType === "image") {
-      if (libraryIconImage) libraryIconImage.checked = true;
-      currentLibraryImageDataUrl = item.imageDataUrl || "";
-      if (libraryImagePreview) {
-        libraryImagePreview.innerHTML = "";
-        if (currentLibraryImageDataUrl) {
-          const img = document.createElement("img");
-          img.src = currentLibraryImageDataUrl;
-          img.alt = item.name;
-          libraryImagePreview.append(img);
+  ensureExerciseIconsLoaded().finally(() => {
+    resetLibraryForm();
+    if (item) {
+      if (libraryFormId) libraryFormId.value = item.id;
+      if (libraryFormName) libraryFormName.value = item.name;
+      if (libraryFormCategory) libraryFormCategory.value = item.category;
+      if (item.iconType === "asset" && item.iconName) {
+        if (libraryIconAsset) libraryIconAsset.checked = true;
+        currentLibraryIconName = item.iconName;
+        if (libraryFormIcon) {
+          libraryFormIcon.value = item.iconName;
+          populateLibraryIconSelect();
         }
+        setLibraryIconPreview(item.iconName);
+      } else if (item.iconType === "image" && item.imageDataUrl) {
+        if (libraryIconAsset) libraryIconAsset.checked = true;
+        if (libraryIconPreview) {
+          libraryIconPreview.innerHTML = "";
+          const img = document.createElement("img");
+          img.src = item.imageDataUrl;
+          img.alt = item.name;
+          img.loading = "lazy";
+          libraryIconPreview.append(img);
+        }
+        if (libraryFormIcon) {
+          populateLibraryIconSelect();
+          libraryFormIcon.value = "";
+        }
+      } else {
+        if (libraryIconEmoji) libraryIconEmoji.checked = true;
+        if (libraryFormEmoji) libraryFormEmoji.value = item.emoji || "";
       }
-    } else {
-      if (libraryIconEmoji) libraryIconEmoji.checked = true;
-      if (libraryFormEmoji) libraryFormEmoji.value = item.emoji || "";
+      if (libraryFormNotes) libraryFormNotes.value = item.notes || "";
+      if (libraryFormTags) libraryFormTags.value = Array.isArray(item.tags) ? item.tags.join(", ") : "";
     }
-    if (libraryFormNotes) libraryFormNotes.value = item.notes || "";
-    if (libraryFormTags) libraryFormTags.value = Array.isArray(item.tags) ? item.tags.join(", ") : "";
-  }
-  updateLibraryIconRows();
-  openModal(libraryFormModal);
-  requestAnimationFrame(() => {
-    libraryFormName?.focus();
+    updateLibraryIconRows();
+    openModal(libraryFormModal);
+    requestAnimationFrame(() => {
+      libraryFormName?.focus();
+    });
   });
 }
 
@@ -1577,13 +1759,14 @@ function serializeLibraryForm(){
     return null;
   }
   const category = normalizeCategory(libraryFormCategory?.value);
-  const iconType = libraryIconImage?.checked ? "image" : "emoji";
+  const iconType = libraryIconAsset?.checked ? "asset" : "emoji";
   let emoji = "";
   let imageDataUrl = "";
-  if (iconType === "image") {
-    imageDataUrl = currentLibraryImageDataUrl;
-    if (!imageDataUrl) {
-      alert("Sube una imagen para este ejercicio o elige emoji.");
+  let iconName = "";
+  if (iconType === "asset") {
+    iconName = (libraryFormIcon?.value || currentLibraryIconName || "").trim();
+    if (!iconName) {
+      alert("Elige un icono de la galería para este ejercicio.");
       return null;
     }
   } else {
@@ -1601,6 +1784,7 @@ function serializeLibraryForm(){
     iconType,
     emoji,
     imageDataUrl,
+    iconName: iconType === "asset" ? iconName : "",
     notes,
     tags,
   };
@@ -1609,8 +1793,13 @@ function serializeLibraryForm(){
 
 function attachLibraryEventListeners(){
   if (libraryIconEmoji) libraryIconEmoji.addEventListener("change", updateLibraryIconRows);
-  if (libraryIconImage) libraryIconImage.addEventListener("change", updateLibraryIconRows);
-  if (libraryFormImage) libraryFormImage.addEventListener("change", handleLibraryImageChange);
+  if (libraryIconAsset) libraryIconAsset.addEventListener("change", updateLibraryIconRows);
+  if (libraryFormIcon) {
+    libraryFormIcon.addEventListener("change", (event) => {
+      currentLibraryIconName = event.target.value;
+      setLibraryIconPreview(currentLibraryIconName);
+    });
+  }
   if (openLibraryFormBtn) {
     openLibraryFormBtn.addEventListener("click", () => openLibraryForm());
   }
@@ -1808,6 +1997,7 @@ function scheduleExerciseFromLibrary(libraryExercise, config){
     iconType: libraryExercise.iconType,
     emoji: libraryExercise.emoji,
     imageDataUrl: libraryExercise.imageDataUrl,
+    iconName: libraryExercise.iconName,
     tags: Array.isArray(libraryExercise.tags) ? libraryExercise.tags.slice() : [],
     note: config.notes || libraryExercise.notes || "",
     sets: config.series != null ? Math.max(1, Number(config.series) || 1) : 1,
