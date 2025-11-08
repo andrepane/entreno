@@ -48,6 +48,10 @@ const toHuman = (iso) => {
 
 /* ========= Estado & almacenamiento ========= */
 const STORAGE_KEY = "workouts.v1";
+const STORAGE_SAVE_ERROR_MESSAGE =
+  "No se pudo guardar tu entrenamiento en este dispositivo. Comprueba si el modo privado está activado o libera espacio y vuelve a intentarlo.";
+let storageWarningEl = null;
+let storageSaveFailed = false;
 const CATEGORY_KEYS = ["calistenia", "musculacion", "piernas", "cardio", "skill", "movilidad", "otro"];
 const CATEGORY_LABELS = {
   calistenia: "Calistenia",
@@ -541,6 +545,18 @@ function getDayMeta(dayISO){
   };
 }
 
+function clearStorageWarning() {
+  if (!storageWarningEl) return;
+  storageWarningEl.textContent = "";
+  storageWarningEl.classList.add("hidden");
+}
+
+function showStorageWarning(message) {
+  if (!storageWarningEl) return;
+  storageWarningEl.textContent = message;
+  storageWarningEl.classList.remove("hidden");
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -553,7 +569,17 @@ function load() {
 function save() {
   state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
   state.plannedExercises = buildPlannedFromWorkouts();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    storageSaveFailed = false;
+    clearStorageWarning();
+  } catch (err) {
+    console.warn("No se pudo guardar el estado de entreno", err);
+    if (!storageSaveFailed) {
+      showStorageWarning(STORAGE_SAVE_ERROR_MESSAGE);
+    }
+    storageSaveFailed = true;
+  }
 }
 
 /* ========= DOM ========= */
@@ -617,6 +643,7 @@ const formWeight = document.getElementById("formWeight");
 const formQuickNote = document.getElementById("formQuickNote");
 const formLibraryPreview = document.getElementById("formLibraryPreview");
 const formFailureSets = document.getElementById("formFailureSets");
+storageWarningEl = document.getElementById("storageWarning");
 const goalFailure = document.getElementById("goalFailure");
 const formStepButtons = document.querySelectorAll(".form-step-btn");
 const formSteps = document.querySelectorAll(".form-step");
