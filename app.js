@@ -589,11 +589,96 @@ function load() {
     }
   } catch(e){ console.warn("Error loading storage", e); }
 }
+// FIX: Evitar guardar imágenes demasiado grandes en localStorage al serializar el estado.
+function serializeStateForStorage(currentState) {
+  const MAX_IMAGE_BYTES = 120 * 1024;
+  const FALLBACK_EMOJI = "🏋️";
+
+  const estimateDataUrlBytes = (value) => {
+    if (typeof value !== "string" || !value) return 0;
+    const commaIndex = value.indexOf(",");
+    const base64Part = commaIndex >= 0 ? value.slice(commaIndex + 1) : value;
+    const sanitizedBase64 = base64Part.replace(/[^A-Za-z0-9+/=]/g, "");
+    return Math.ceil((sanitizedBase64.length * 3) / 4);
+  };
+
+  const sanitizeImageFields = (item) => {
+    if (!isPlainObject(item)) return item;
+    const result = { ...item };
+    const dataUrl = typeof result.imageDataUrl === "string" ? result.imageDataUrl : "";
+    if (!dataUrl) return result;
+    if (estimateDataUrlBytes(dataUrl) <= MAX_IMAGE_BYTES) return result;
+    result.imageDataUrl = "";
+    if (result.iconType === "image") {
+      result.iconType = "emoji";
+      result.emoji = result.emoji || FALLBACK_EMOJI;
+    } else if (!result.emoji) {
+      result.emoji = FALLBACK_EMOJI;
+    }
+    return result;
+  };
+
+  const sanitized = { ...currentState };
+
+  sanitized.workouts = {};
+  if (isPlainObject(currentState.workouts)) {
+    for (const [day, exercises] of Object.entries(currentState.workouts)) {
+      if (Array.isArray(exercises)) {
+        sanitized.workouts[day] = exercises.map((exercise) => {
+          if (!isPlainObject(exercise)) return exercise;
+          const clone = { ...exercise };
+          if (Array.isArray(exercise.done)) {
+            clone.done = [...exercise.done];
+          }
+          return sanitizeImageFields(clone);
+        });
+      } else {
+        sanitized.workouts[day] = exercises;
+      }
+    }
+  }
+
+  sanitized.dayMeta = {};
+  if (isPlainObject(currentState.dayMeta)) {
+    for (const [day, meta] of Object.entries(currentState.dayMeta)) {
+      if (isPlainObject(meta)) {
+        const clone = { ...meta };
+        if (isPlainObject(meta.habits)) {
+          clone.habits = { ...meta.habits };
+        }
+        sanitized.dayMeta[day] = clone;
+      }
+    }
+  }
+
+  sanitized.futureExercises = Array.isArray(currentState.futureExercises)
+    ? currentState.futureExercises.map((item) => (isPlainObject(item) ? { ...item } : item))
+    : [];
+
+  sanitized.libraryExercises = Array.isArray(currentState.libraryExercises)
+    ? currentState.libraryExercises.map((item) => {
+        if (!isPlainObject(item)) return item;
+        const clone = { ...item };
+        if (Array.isArray(item.tags)) {
+          clone.tags = [...item.tags];
+        }
+        return sanitizeImageFields(clone);
+      })
+    : [];
+
+  sanitized.plannedExercises = Array.isArray(currentState.plannedExercises)
+    ? currentState.plannedExercises.map((item) => (isPlainObject(item) ? { ...item } : item))
+    : [];
+
+  return sanitized;
+}
 function save() {
   state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
-  state.plannedExercises = buildPlannedFromWorkouts();
+  // FIX: Conservamos los ejercicios planificados manualmente al guardar.
+  const storageReadyState = serializeStateForStorage(state);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    // FIX: Serializamos el estado saneado para evitar errores de cuota.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(storageReadyState));
     storageSaveFailed = false;
     clearStorageWarning();
   } catch (err) {
@@ -827,7 +912,10 @@ selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
 formCategory.value = normalizeCategory(formCategory.value);
 renderAll();
-Promise.resolve().then(ensureExerciseIconsLoaded);
+// FIX: Cargamos los iconos de forma segura sin interrumpir la inicialización.
+Promise.resolve()
+  .then(() => (typeof ensureExerciseIconsLoaded === "function" ? ensureExerciseIconsLoaded() : undefined))
+  .catch((err) => console.warn("No se pudieron cargar los iconos de ejercicios", err));
 attachLibraryEventListeners();
 if (
   originalWorkoutsJSON !== normalizedWorkoutsJSON ||
