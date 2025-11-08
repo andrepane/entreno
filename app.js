@@ -562,7 +562,16 @@ function load() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      state = { ...state, ...parsed };
+      if (isPlainObject(parsed)) {
+        state = { ...state, ...parsed };
+      } else {
+        console.warn("Se ignoró un estado almacenado inválido", parsed);
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch (removeErr) {
+          console.warn("No se pudo limpiar el estado almacenado inválido", removeErr);
+        }
+      }
     }
   } catch(e){ console.warn("Error loading storage", e); }
 }
