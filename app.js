@@ -109,8 +109,93 @@ const EXERCISE_STATUS_ALIASES = new Map([
   ["skip", EXERCISE_STATUS.NOT_DONE],
 ]);
 
+const ICON_IMAGE_MAX_DIMENSION = 512;
+const ICON_IMAGE_QUALITY = 0.82;
+const ICON_IMAGE_MIME_TYPES = ["image/webp", "image/jpeg"];
+const ICON_IMAGE_RECHECK_THRESHOLD = 200000;
+
 function hasValue(value) {
   return value !== undefined && value !== null;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      resolve("");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(reader.error || new Error("No se pudo leer el archivo."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function optimizeImageDataUrl(dataUrl, options = {}) {
+  if (!dataUrl || typeof dataUrl !== "string") {
+    return Promise.resolve("");
+  }
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const naturalWidth = img.naturalWidth || img.width;
+      const naturalHeight = img.naturalHeight || img.height;
+      if (!naturalWidth || !naturalHeight) {
+        resolve(dataUrl);
+        return;
+      }
+      const maxDimension = Number.isFinite(options.maxDimension)
+        ? Number(options.maxDimension)
+        : ICON_IMAGE_MAX_DIMENSION;
+      const quality = Number.isFinite(options.quality) ? options.quality : ICON_IMAGE_QUALITY;
+      const mimeTypes = Array.isArray(options.mimeTypes) && options.mimeTypes.length
+        ? options.mimeTypes
+        : ICON_IMAGE_MIME_TYPES;
+      const largestSide = Math.max(naturalWidth, naturalHeight);
+      const scale = largestSide > maxDimension ? maxDimension / largestSide : 1;
+      const targetWidth = Math.max(1, Math.round(naturalWidth * scale));
+      const targetHeight = Math.max(1, Math.round(naturalHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+      let bestDataUrl = dataUrl;
+      let bestLength = dataUrl.length;
+      mimeTypes.forEach((type) => {
+        try {
+          const candidate = canvas.toDataURL(type, quality);
+          if (candidate && candidate.length < bestLength) {
+            bestDataUrl = candidate;
+            bestLength = candidate.length;
+          }
+        } catch (error) {
+          console.warn("No se pudo exportar la imagen con el tipo", type, error);
+        }
+      });
+      resolve(bestDataUrl);
+    };
+    img.onerror = () => {
+      reject(new Error("No se pudo procesar la imagen seleccionada."));
+    };
+    img.src = dataUrl;
+  });
+}
+
+async function createOptimizedImageFromFile(file, options = {}) {
+  const dataUrl = await readFileAsDataUrl(file);
+  if (!dataUrl) return "";
+  try {
+    const optimized = await optimizeImageDataUrl(dataUrl, options);
+    return optimized || dataUrl;
+  } catch (error) {
+    console.warn("No se pudo optimizar la imagen seleccionada", error);
+    return dataUrl;
+  }
 }
 
 function getInputValue(input) {
@@ -727,6 +812,11 @@ const libraryAssetRow = document.getElementById("libraryAssetRow");
 const libraryFormEmoji = document.getElementById("libraryFormEmoji");
 const libraryFormIcon = document.getElementById("libraryFormIcon");
 const libraryIconPreview = document.getElementById("libraryIconPreview");
+const libraryIconImage = document.getElementById("libraryIconImage");
+const libraryImageRow = document.getElementById("libraryImageRow");
+const libraryImageInput = document.getElementById("libraryIconImageInput");
+const libraryImagePreview = document.getElementById("libraryImagePreview");
+const libraryImageClearBtn = document.getElementById("libraryIconImageClear");
 const libraryFormNotes = document.getElementById("libraryFormNotes");
 const libraryFormTags = document.getElementById("libraryFormTags");
 
@@ -803,6 +893,8 @@ state.dayMeta = normalizedDayMeta;
 state.futureExercises = normalizedFutureExercises;
 state.libraryExercises = normalizedLibraryExercises;
 state.plannedExercises = normalizedPlannedExercises.length ? normalizedPlannedExercises : buildPlannedFromWorkouts();
+
+scheduleImageOptimization();
 
 function getCalendarSnapshot(){
   const snapshot = {};
@@ -1626,6 +1718,7 @@ function renderLibrarySelector(){
 
 const EXERCISE_ICON_BASE_PATH = "./icons/exercises";
 let currentLibraryIconName = "";
+let currentLibraryImageDataUrl = "";
 let exerciseIconList = [];
 let exerciseIconsLoaded = false;
 let exerciseIconsLoadingPromise = null;
@@ -1650,6 +1743,139 @@ function setLibraryIconPreview(name) {
   }
 }
 
+function getSelectedLibraryIconType() {
+  if (!libraryForm) return "emoji";
+  const selected = libraryForm.querySelector('input[name="libraryIconType"]:checked');
+  const value = selected ? selected.value : "";
+  return ["emoji", "asset", "image"].includes(value) ? value : "emoji";
+}
+
+function updateLibraryImagePreview(options = {}) {
+  if (!libraryImagePreview) return;
+  const { message = null } = options;
+  libraryImagePreview.innerHTML = "";
+  if (message) {
+    const span = document.createElement("span");
+    span.className = "image-placeholder muted";
+    span.textContent = message;
+    libraryImagePreview.append(span);
+    return;
+  }
+  if (currentLibraryImageDataUrl) {
+    const img = document.createElement("img");
+    img.src = currentLibraryImageDataUrl;
+    img.alt = getInputValue(libraryFormName) || "Foto del ejercicio";
+    img.loading = "lazy";
+    libraryImagePreview.append(img);
+  } else {
+    const span = document.createElement("span");
+    span.className = "image-placeholder muted";
+    span.textContent = "Sin foto seleccionada";
+    libraryImagePreview.append(span);
+  }
+}
+
+function setLibraryImageLoading(isLoading) {
+  if (!libraryImagePreview) return;
+  libraryImagePreview.classList.toggle("loading", !!isLoading);
+  if (isLoading) {
+    updateLibraryImagePreview({ message: "Procesando…" });
+  } else {
+    updateLibraryImagePreview();
+  }
+}
+
+function clearLibraryImageSelection() {
+  currentLibraryImageDataUrl = "";
+  if (libraryImageInput) {
+    libraryImageInput.value = "";
+  }
+  if (getSelectedLibraryIconType() === "image") {
+    updateLibraryImagePreview();
+  }
+}
+
+function scheduleImageOptimization() {
+  const targets = [];
+  if (Array.isArray(state.libraryExercises)) {
+    state.libraryExercises.forEach((item, index) => {
+      if (
+        item &&
+        typeof item.imageDataUrl === "string" &&
+        item.imageDataUrl.length > ICON_IMAGE_RECHECK_THRESHOLD
+      ) {
+        targets.push({ container: state.libraryExercises, index });
+      }
+    });
+  }
+  if (isPlainObject(state.workouts)) {
+    Object.values(state.workouts).forEach((list) => {
+      if (!Array.isArray(list)) return;
+      list.forEach((exercise, index) => {
+        if (
+          exercise &&
+          typeof exercise.imageDataUrl === "string" &&
+          exercise.imageDataUrl.length > ICON_IMAGE_RECHECK_THRESHOLD
+        ) {
+          targets.push({ container: list, index });
+        }
+      });
+    });
+  }
+  if (!targets.length) {
+    return;
+  }
+  const options = {
+    maxDimension: ICON_IMAGE_MAX_DIMENSION,
+    quality: ICON_IMAGE_QUALITY,
+    mimeTypes: ICON_IMAGE_MIME_TYPES,
+  };
+  let needsSave = false;
+
+  const processNext = () => {
+    if (!targets.length) {
+      if (needsSave) {
+        save();
+      }
+      return;
+    }
+    const target = targets.shift();
+    if (!target || !target.container) {
+      queueNext();
+      return;
+    }
+    const item = target.container[target.index];
+    if (!item || typeof item.imageDataUrl !== "string" || !item.imageDataUrl) {
+      queueNext();
+      return;
+    }
+    const original = item.imageDataUrl;
+    optimizeImageDataUrl(original, options)
+      .then((optimized) => {
+        if (optimized && optimized.length && optimized.length < original.length) {
+          item.imageDataUrl = optimized;
+          needsSave = true;
+        }
+      })
+      .catch((error) => {
+        console.warn("No se pudo optimizar una imagen almacenada", error);
+      })
+      .finally(() => {
+        queueNext();
+      });
+  };
+
+  const queueNext = () => {
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(processNext);
+    } else {
+      setTimeout(processNext, 50);
+    }
+  };
+
+  queueNext();
+}
+
 function populateLibraryIconSelect() {
   if (!libraryFormIcon) return;
   const previous = libraryFormIcon.value;
@@ -1670,8 +1896,14 @@ function populateLibraryIconSelect() {
   if (libraryIconAsset) {
     const hasIcons = exerciseIconList.length > 0;
     libraryIconAsset.disabled = !hasIcons;
-    if (!hasIcons && libraryIconAsset.checked && libraryIconEmoji) {
-      libraryIconEmoji.checked = true;
+    if (!hasIcons && libraryIconAsset.checked) {
+      if (libraryIconImage && currentLibraryImageDataUrl) {
+        libraryIconImage.checked = true;
+      } else if (libraryIconEmoji) {
+        libraryIconEmoji.checked = true;
+      } else {
+        libraryIconAsset.checked = false;
+      }
     }
   }
   if (exerciseIconList.includes(previous)) {
@@ -1724,12 +1956,15 @@ function ensureExerciseIconsLoaded() {
 }
 
 function updateLibraryIconRows(){
-  const useAsset = isChecked(libraryIconAsset);
-  if (libraryEmojiRow) libraryEmojiRow.classList.toggle("hidden", !!useAsset);
-  if (libraryAssetRow) libraryAssetRow.classList.toggle("hidden", !useAsset);
-  if (libraryFormIcon) libraryFormIcon.required = !!useAsset && exerciseIconList.length > 0;
-  if (useAsset) {
+  const selectedType = getSelectedLibraryIconType();
+  if (libraryEmojiRow) libraryEmojiRow.classList.toggle("hidden", selectedType !== "emoji");
+  if (libraryAssetRow) libraryAssetRow.classList.toggle("hidden", selectedType !== "asset");
+  if (libraryImageRow) libraryImageRow.classList.toggle("hidden", selectedType !== "image");
+  if (libraryFormIcon) libraryFormIcon.required = selectedType === "asset" && exerciseIconList.length > 0;
+  if (selectedType === "asset") {
     setLibraryIconPreview(getInputValue(libraryFormIcon) || currentLibraryIconName);
+  } else if (selectedType === "image") {
+    updateLibraryImagePreview();
   }
 }
 
@@ -1737,14 +1972,18 @@ function resetLibraryForm(){
   if (!libraryForm) return;
   libraryForm.reset();
   currentLibraryIconName = "";
+  currentLibraryImageDataUrl = "";
   if (libraryFormId) libraryFormId.value = "";
   if (libraryFormEmoji) libraryFormEmoji.value = "";
   if (libraryIconPreview) libraryIconPreview.innerHTML = "";
+  if (libraryImagePreview) libraryImagePreview.innerHTML = "";
+  if (libraryImageInput) libraryImageInput.value = "";
   if (libraryFormIcon) {
     populateLibraryIconSelect();
     libraryFormIcon.value = "";
   }
   if (libraryIconEmoji) libraryIconEmoji.checked = true;
+  if (libraryIconImage) libraryIconImage.checked = false;
   updateLibraryIconRows();
 }
 
@@ -1764,19 +2003,13 @@ function openLibraryForm(item){
         }
         setLibraryIconPreview(item.iconName);
       } else if (item.iconType === "image" && item.imageDataUrl) {
-        if (libraryIconAsset) libraryIconAsset.checked = true;
-        if (libraryIconPreview) {
-          libraryIconPreview.innerHTML = "";
-          const img = document.createElement("img");
-          img.src = item.imageDataUrl;
-          img.alt = item.name;
-          img.loading = "lazy";
-          libraryIconPreview.append(img);
-        }
+        currentLibraryImageDataUrl = item.imageDataUrl;
+        if (libraryIconImage) libraryIconImage.checked = true;
         if (libraryFormIcon) {
           populateLibraryIconSelect();
           libraryFormIcon.value = "";
         }
+        updateLibraryImagePreview();
       } else {
         if (libraryIconEmoji) libraryIconEmoji.checked = true;
         if (libraryFormEmoji) libraryFormEmoji.value = item.emoji || "";
@@ -1798,14 +2031,17 @@ function closeLibraryForm(){
   closeModal(libraryFormModal);
 }
 
-function serializeLibraryForm(){
+async function serializeLibraryForm(){
   const name = getTrimmedValue(libraryFormName);
   if (!name) {
     alert("Añade un nombre al ejercicio de la librería.");
     return null;
   }
   const category = normalizeCategory(getInputValue(libraryFormCategory));
-  const iconType = isChecked(libraryIconAsset) ? "asset" : "emoji";
+  let iconType = getSelectedLibraryIconType();
+  if (!iconType) {
+    iconType = "emoji";
+  }
   let emoji = "";
   let imageDataUrl = "";
   let iconName = "";
@@ -1815,7 +2051,32 @@ function serializeLibraryForm(){
       alert("Elige un icono de la galería para este ejercicio.");
       return null;
     }
+  } else if (iconType === "image") {
+    if (!currentLibraryImageDataUrl) {
+      alert("Añade una foto para este ejercicio.");
+      return null;
+    }
+    imageDataUrl = currentLibraryImageDataUrl;
+    const shouldReprocess =
+      imageDataUrl.length > ICON_IMAGE_RECHECK_THRESHOLD ||
+      !/^data:image\/(webp|jpeg);/i.test(imageDataUrl);
+    if (shouldReprocess) {
+      try {
+        const optimized = await optimizeImageDataUrl(imageDataUrl, {
+          maxDimension: ICON_IMAGE_MAX_DIMENSION,
+          quality: ICON_IMAGE_QUALITY,
+          mimeTypes: ICON_IMAGE_MIME_TYPES,
+        });
+        if (optimized && optimized.length) {
+          imageDataUrl = optimized;
+          currentLibraryImageDataUrl = optimized;
+        }
+      } catch (error) {
+        console.warn("No se pudo optimizar la imagen antes de guardar", error);
+      }
+    }
   } else {
+    iconType = "emoji";
     emoji = getTrimmedValue(libraryFormEmoji);
     if (!emoji) {
       emoji = extractInitials(name);
@@ -1840,10 +2101,54 @@ function serializeLibraryForm(){
 function attachLibraryEventListeners(){
   if (libraryIconEmoji) libraryIconEmoji.addEventListener("change", updateLibraryIconRows);
   if (libraryIconAsset) libraryIconAsset.addEventListener("change", updateLibraryIconRows);
+  if (libraryIconImage) libraryIconImage.addEventListener("change", updateLibraryIconRows);
   if (libraryFormIcon) {
     libraryFormIcon.addEventListener("change", (event) => {
       currentLibraryIconName = event.target.value;
       setLibraryIconPreview(currentLibraryIconName);
+    });
+  }
+  if (libraryImageInput) {
+    libraryImageInput.addEventListener("change", async (event) => {
+      const files = event.target && event.target.files ? Array.from(event.target.files) : [];
+      if (!files.length) return;
+      const file = files[0];
+      if (!file.type || !file.type.startsWith("image/")) {
+        alert("Selecciona un archivo de imagen válido.");
+        clearLibraryImageSelection();
+        return;
+      }
+      setLibraryImageLoading(true);
+      try {
+        const optimized = await createOptimizedImageFromFile(file, {
+          maxDimension: ICON_IMAGE_MAX_DIMENSION,
+          quality: ICON_IMAGE_QUALITY,
+          mimeTypes: ICON_IMAGE_MIME_TYPES,
+        });
+        currentLibraryImageDataUrl = optimized;
+        if (libraryIconImage) {
+          libraryIconImage.checked = true;
+        }
+        updateLibraryIconRows();
+      } catch (error) {
+        console.error("No se pudo procesar la imagen seleccionada", error);
+        alert("No se pudo procesar la imagen. Prueba con otra foto o reduce su tamaño.");
+        clearLibraryImageSelection();
+      } finally {
+        setLibraryImageLoading(false);
+        if (libraryImageInput) {
+          libraryImageInput.value = "";
+        }
+      }
+    });
+  }
+  if (libraryImageClearBtn) {
+    libraryImageClearBtn.addEventListener("click", () => {
+      clearLibraryImageSelection();
+      if (libraryIconEmoji) {
+        libraryIconEmoji.checked = true;
+      }
+      updateLibraryIconRows();
     });
   }
   if (openLibraryFormBtn) {
@@ -1855,9 +2160,9 @@ function attachLibraryEventListeners(){
   if (librarySelectorSearch) librarySelectorSearch.addEventListener("input", renderLibrarySelector);
   if (librarySelectorCategory) librarySelectorCategory.addEventListener("change", renderLibrarySelector);
   if (libraryForm) {
-    libraryForm.addEventListener("submit", (event) => {
+    libraryForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const data = serializeLibraryForm();
+      const data = await serializeLibraryForm();
       if (!data) return;
       if (libraryFormId && libraryFormId.value) {
         updateLibrary(data);

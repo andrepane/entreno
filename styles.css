@@ -389,6 +389,12 @@ body.is-dragging{user-select:none}
 
 .image-preview{display:flex; align-items:center; gap:12px;}
 .image-preview img{width:56px; height:56px; object-fit:cover; border-radius:12px; border:1px solid #2a3240;}
+.image-preview.loading{opacity:0.6;}
+.image-preview .image-placeholder{color:var(--muted); font-size:0.875rem;}
+.image-upload{display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+.image-upload input[type="file"]{max-width:220px;}
+#libraryImagePreview.image-preview{min-height:56px;}
+.field-hint{margin-top:4px; font-size:0.875rem; color:var(--muted);}
 
 .modal{position:fixed; inset:0; background:rgba(7,9,13,0.82); display:flex; align-items:center; justify-content:center; padding:24px; z-index:40;}
 .modal.hidden{display:none !important;}

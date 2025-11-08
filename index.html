@@ -452,6 +452,18 @@
             </label>
             <div class="image-preview" id="libraryIconPreview" aria-live="polite"></div>
           </div>
+          <label class="row">
+            <input type="radio" name="libraryIconType" value="image" id="libraryIconImage" />
+            <span>Foto</span>
+          </label>
+          <div class="row indent hidden" id="libraryImageRow">
+            <div class="image-upload">
+              <input type="file" id="libraryIconImageInput" accept="image/*" />
+              <button type="button" id="libraryIconImageClear" class="ghost tiny">Quitar foto</button>
+            </div>
+            <div class="image-preview" id="libraryImagePreview" aria-live="polite"></div>
+            <p class="field-hint muted">Se comprimirá automáticamente (máximo 512&nbsp;px) para ahorrar espacio.</p>
+          </div>
         </fieldset>
         <label class="field">
           <span>Notas (opcional)</span>
