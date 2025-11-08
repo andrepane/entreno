@@ -51,6 +51,14 @@
     return document.getElementById(id);
   }
 
+  function hasValue(value) {
+    return value !== undefined && value !== null;
+  }
+
+  function getInputValue(element) {
+    return element && typeof element.value === "string" ? element.value : "";
+  }
+
   function formatExerciseName(name) {
     if (!name) return "";
     return name
@@ -147,22 +155,30 @@
 
     renderRangeOptions();
 
-    elements.rangeSelect?.addEventListener("change", () => {
-      state.range = elements.rangeSelect.value;
-      renderDetail();
-    });
+    if (elements.rangeSelect) {
+      elements.rangeSelect.addEventListener("change", () => {
+        state.range = elements.rangeSelect.value;
+        renderDetail();
+      });
+    }
 
-    elements.orderBtn?.addEventListener("click", () => {
-      state.order = state.order === "desc" ? "asc" : "desc";
-      renderDetail();
-    });
+    if (elements.orderBtn) {
+      elements.orderBtn.addEventListener("click", () => {
+        state.order = state.order === "desc" ? "asc" : "desc";
+        renderDetail();
+      });
+    }
 
-    elements.phaseFilter?.addEventListener("change", () => {
-      state.phase = elements.phaseFilter.value;
-      renderDetail();
-    });
+    if (elements.phaseFilter) {
+      elements.phaseFilter.addEventListener("change", () => {
+        state.phase = elements.phaseFilter.value;
+        renderDetail();
+      });
+    }
 
-    elements.rebuildBtn?.addEventListener("click", handleRebuild);
+    if (elements.rebuildBtn) {
+      elements.rebuildBtn.addEventListener("click", handleRebuild);
+    }
 
     if (elements.canvas) {
       updateCanvasDimensions();
@@ -226,10 +242,14 @@
 
     elements.exerciseList.innerHTML = "";
     if (!items.length) {
-      elements.exerciseEmpty?.classList.remove("hidden");
+      if (elements.exerciseEmpty) {
+        elements.exerciseEmpty.classList.remove("hidden");
+      }
       return;
     }
-    elements.exerciseEmpty?.classList.add("hidden");
+    if (elements.exerciseEmpty) {
+      elements.exerciseEmpty.classList.add("hidden");
+    }
 
     items.forEach(({ name, info }) => {
       const li = document.createElement("li");
@@ -292,7 +312,8 @@
 
   function selectExercise(name, type) {
     state.selectedExercise = name;
-    const availableTypes = Array.from(historyStore.listExercises().get(name)?.tipos || []);
+    const entry = historyStore.listExercises().get(name);
+    const availableTypes = Array.from((entry && entry.tipos) || []);
     if (!availableTypes.length) {
       state.selectedType = null;
     } else if (type && availableTypes.includes(type)) {
@@ -318,7 +339,9 @@
     if (!elements.detail) return;
     if (!state.selectedExercise || !state.selectedType) {
       elements.detail.classList.add("hidden");
-      elements.detailEmpty?.classList.remove("hidden");
+      if (elements.detailEmpty) {
+        elements.detailEmpty.classList.remove("hidden");
+      }
       elements.detailTitle.textContent = "";
       elements.typeSelector.innerHTML = "";
       elements.summary.innerHTML = "";
@@ -339,14 +362,16 @@
     const phaseFiltered = filtered.filter((entry) => {
       if (state.phase === "all") return true;
       const meta = getMetaForDate(entry.fechaISO);
-      return meta?.phase === state.phase;
+      return meta && meta.phase === state.phase;
     });
 
     if (elements.phaseFilter) {
       elements.phaseFilter.value = state.phase;
     }
 
-    elements.detailEmpty?.classList.add("hidden");
+    if (elements.detailEmpty) {
+      elements.detailEmpty.classList.add("hidden");
+    }
     elements.detail.classList.remove("hidden");
     if (elements.detailTitle) {
       elements.detailTitle.innerHTML = "";
@@ -372,7 +397,8 @@
     if (!tipos.includes(state.selectedType)) {
       tipos.unshift(state.selectedType);
     }
-    const available = Array.from(historyStore.listExercises().get(state.selectedExercise)?.tipos || []);
+    const selectedInfo = historyStore.listExercises().get(state.selectedExercise);
+    const available = Array.from((selectedInfo && selectedInfo.tipos) || []);
     available.forEach((type) => {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -532,7 +558,7 @@
   }
 
   function getMetaForDate(iso) {
-    const provider = global.entrenoApp?.getDayMeta;
+    const provider = global.entrenoApp && global.entrenoApp.getDayMeta;
     if (typeof provider !== "function") return null;
     try {
       return provider(iso) || null;
@@ -548,7 +574,7 @@
       btn.className = className;
     }
     const showLabel = options.showLabel === true;
-    if (global.CaliGymIcons?.decorate) {
+    if (global.CaliGymIcons && typeof global.CaliGymIcons.decorate === "function") {
       global.CaliGymIcons.decorate(btn, iconName, { label, showLabel });
     } else {
       btn.textContent = label;
@@ -662,7 +688,7 @@
 
   function handleResize() {
     if (!elements.canvas) return;
-    if (elements.detail?.classList.contains("hidden")) return;
+    if (elements.detail && elements.detail.classList && elements.detail.classList.contains("hidden")) return;
     if (resizeFrame) cancelAnimationFrame(resizeFrame);
     resizeFrame = requestAnimationFrame(() => {
       resizeFrame = null;
@@ -678,7 +704,8 @@
     if (state.selectedExercise) {
       const entries = historyStore.getEntriesByExerciseAndType(state.selectedExercise, state.selectedType);
       if (!entries.length) {
-        const tipos = Array.from(historyStore.listExercises().get(state.selectedExercise)?.tipos || []);
+        const currentInfo = historyStore.listExercises().get(state.selectedExercise);
+        const tipos = Array.from((currentInfo && currentInfo.tipos) || []);
         if (!tipos.length) {
           autoSelectFirst();
         } else if (!tipos.includes(state.selectedType)) {
@@ -775,7 +802,7 @@
     span.textContent = labelText;
     const input = document.createElement("input");
     input.type = type;
-    input.value = value ?? "";
+    input.value = hasValue(value) ? value : "";
     Object.entries(attrs).forEach(([key, val]) => input.setAttribute(key, val));
     wrapper.append(span, input);
     return { wrapper, input };
@@ -804,7 +831,7 @@
 
   function handleRebuild() {
     if (!historyStore) return;
-    const calendarProvider = global.entrenoApp?.getCalendarSnapshot;
+    const calendarProvider = global.entrenoApp && global.entrenoApp.getCalendarSnapshot;
     if (typeof calendarProvider !== "function") {
       alert("No se pudo reconstruir el historial. Calendario no disponible.");
       return;
