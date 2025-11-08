@@ -796,7 +796,9 @@ tabs.forEach(btn=>{
     btn.setAttribute("aria-selected", "true");
     const tab = btn.dataset.tab;
     for (const key in tabPanels) {
-      tabPanels[key].classList.toggle("hidden", key !== tab);
+      const panel = tabPanels[key];
+      if (!panel) continue;
+      panel.classList.toggle("hidden", key !== tab);
     }
   });
 });
@@ -3324,7 +3326,9 @@ function switchToTab(name){
     tab.setAttribute("aria-selected", tab.dataset.tab === name ? "true" : "false");
   });
   for (const key in tabPanels) {
-    tabPanels[key].classList.toggle("hidden", key !== name);
+    const panel = tabPanels[key];
+    if (!panel) continue;
+    panel.classList.toggle("hidden", key !== name);
   }
 }
 
