@@ -109,6 +109,22 @@ const EXERCISE_STATUS_ALIASES = new Map([
   ["skip", EXERCISE_STATUS.NOT_DONE],
 ]);
 
+function hasValue(value) {
+  return value !== undefined && value !== null;
+}
+
+function getInputValue(input) {
+  return input && typeof input.value === "string" ? input.value : "";
+}
+
+function getTrimmedValue(input) {
+  return getInputValue(input).trim();
+}
+
+function isChecked(input) {
+  return !!(input && input.checked);
+}
+
 function normalizeExerciseStatus(rawStatus, fallbackCompleted, fallbackHecho) {
   if (typeof rawStatus === "string") {
     const normalized = rawStatus.trim().toLowerCase();
@@ -528,9 +544,7 @@ function setDayMeta(dayISO, patch = {}){
 
   if (changed){
     save();
-    if (seguimientoModule?.refresh) {
-      seguimientoModule.refresh();
-    }
+    callSeguimiento("refresh");
   }
 
   return meta;
@@ -614,6 +628,36 @@ const todayPhaseSelect = document.getElementById("todayPhase");
 let suppressDayMetaEvents = false;
 
 let activeDrag = null;
+
+function getDayWorkouts(dayISO) {
+  if (!state.workouts) return [];
+  const list = state.workouts[dayISO];
+  return Array.isArray(list) ? list : [];
+}
+
+const seguimientoModule = typeof window !== "undefined" ? window.seguimientoUI : null;
+
+function callSeguimiento(method, ...args) {
+  if (!seguimientoModule) return;
+  const fn = seguimientoModule[method];
+  if (typeof fn === "function") {
+    fn.apply(seguimientoModule, args);
+  }
+}
+
+function hasIconDecorator() {
+  return (
+    typeof globalThis !== "undefined" &&
+    globalThis.CaliGymIcons &&
+    typeof globalThis.CaliGymIcons.decorate === "function"
+  );
+}
+
+function decorateIcons(target, icon, options) {
+  if (hasIconDecorator()) {
+    globalThis.CaliGymIcons.decorate(target, icon, options);
+  }
+}
 
 const tabs = document.querySelectorAll(".tab");
 const tabPanels = {
@@ -737,7 +781,6 @@ const DOW = ["L","M","X","J","V","S","D"];
 
 /* Seguimiento */
 const historyStore = typeof window !== "undefined" ? window.entrenoHistory : null;
-const seguimientoModule = typeof window !== "undefined" ? window.seguimientoUI : null;
 
 /* ========= Inicialización ========= */
 load();
@@ -799,8 +842,14 @@ if (
 
 tabs.forEach(btn=>{
   btn.addEventListener("click", ()=>{
-    document.querySelector(".tab.active")?.classList.remove("active");
-    document.querySelector('.tab[aria-selected="true"]')?.setAttribute("aria-selected", "false");
+    const activeTabBtn = document.querySelector(".tab.active");
+    if (activeTabBtn) {
+      activeTabBtn.classList.remove("active");
+    }
+    const selectedTabBtn = document.querySelector('.tab[aria-selected="true"]');
+    if (selectedTabBtn) {
+      selectedTabBtn.setAttribute("aria-selected", "false");
+    }
     btn.classList.add("active");
     btn.setAttribute("aria-selected", "true");
     const tab = btn.dataset.tab;
@@ -844,11 +893,11 @@ selectedDateInput.addEventListener("change", (e)=>{
 
 /* ==== Lógica Toggle de tipo de objetivo ==== */
 function updateGoalRows() {
-  if (rowReps) rowReps.classList.toggle("hidden", !goalReps?.checked);
-  if (rowSeconds) rowSeconds.classList.toggle("hidden", !goalSecs?.checked);
-  if (rowFailure) rowFailure.classList.toggle("hidden", !goalFailure?.checked);
-  if (rowEmom) rowEmom.classList.toggle("hidden", !goalEmom?.checked);
-  if (rowCardio) rowCardio.classList.toggle("hidden", !goalCardio?.checked);
+  if (rowReps) rowReps.classList.toggle("hidden", !isChecked(goalReps));
+  if (rowSeconds) rowSeconds.classList.toggle("hidden", !isChecked(goalSecs));
+  if (rowFailure) rowFailure.classList.toggle("hidden", !isChecked(goalFailure));
+  if (rowEmom) rowEmom.classList.toggle("hidden", !isChecked(goalEmom));
+  if (rowCardio) rowCardio.classList.toggle("hidden", !isChecked(goalCardio));
 }
 [goalReps, goalSecs, goalFailure, goalEmom, goalCardio]
   .filter(Boolean)
@@ -964,7 +1013,7 @@ updateProgressionHint();
 if (openLibrarySelectorBtn){
   openLibrarySelectorBtn.addEventListener("click", () => {
     openLibrarySelector({
-      defaultCategory: formCategory?.value || "all",
+      defaultCategory: getInputValue(formCategory) || "all",
       onSelect: (item) => {
         setAddFormLibrarySelection(item);
       },
@@ -978,7 +1027,7 @@ if (goalFailure && formFailureSets && formSets){
       formFailureSets.value = formSets.value || 3;
     }
   });
-  formSets?.addEventListener("change", () => {
+  formSets.addEventListener("change", () => {
     if (goalFailure.checked) {
       formFailureSets.value = formSets.value || formFailureSets.value;
     }
@@ -993,7 +1042,7 @@ if (todayMobilityToggle){
     renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
   });
 }
-if (todayHabitInputs?.length){
+if (todayHabitInputs && todayHabitInputs.length){
   todayHabitInputs.forEach((input)=>{
     input.addEventListener("change", ()=>{
       if (suppressDayMetaEvents) return;
@@ -1104,10 +1153,11 @@ addForm.addEventListener("submit", (e)=>{
     ex.emomMinutes = null;
     ex.emomReps = null;
     ex.cardioMinutes = null;
-  } else if (goalFailure?.checked) {
+  } else if (isChecked(goalFailure)) {
     ex.goalType = "fallo";
     ex.goal = "reps";
-    const failureSets = formFailureSets?.value ? Number(formFailureSets.value) : null;
+    const failureSetsValue = getInputValue(formFailureSets);
+    const failureSets = failureSetsValue ? Number(failureSetsValue) : null;
     if (failureSets && failureSets > 0) {
       ex.sets = failureSets;
     }
@@ -1163,9 +1213,7 @@ addForm.addEventListener("submit", (e)=>{
   mcRefDate = new Date(selected.getFullYear(), selected.getMonth(), 1);
   save();
   renderMiniCalendar();
-  if (seguimientoModule?.refresh) {
-    seguimientoModule.refresh();
-  }
+  callSeguimiento("refresh");
   setFormStep(0);
   updateProgressionHint();
 });
@@ -1173,9 +1221,11 @@ addForm.addEventListener("submit", (e)=>{
 if (futureForm) {
   futureForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const name = (futureInput?.value || "").trim();
+    const name = getTrimmedValue(futureInput);
     if (!name) {
-      futureInput?.focus();
+      if (futureInput && typeof futureInput.focus === "function") {
+        futureInput.focus();
+      }
       return;
     }
     const entry = {
@@ -1216,9 +1266,7 @@ function renderAll(){
   renderFutureExercises();
   renderLibrary();
   renderLibrarySelector();
-  if (seguimientoModule?.refresh) {
-    seguimientoModule.refresh();
-  }
+  callSeguimiento("refresh");
 }
 
 function renderFutureExercises(){
@@ -1262,8 +1310,8 @@ function renderFutureExercises(){
     removeBtn.dataset.action = "remove-future";
     removeBtn.dataset.id = item.id;
     const removeLabel = `Eliminar "${item.name}" de ejercicios futuros`;
-    if (globalThis.CaliGymIcons?.decorate) {
-      globalThis.CaliGymIcons.decorate(removeBtn, "trash", { label: removeLabel });
+    if (hasIconDecorator()) {
+      decorateIcons(removeBtn, "trash", { label: removeLabel });
     } else {
       removeBtn.textContent = "Eliminar";
       removeBtn.setAttribute("aria-label", removeLabel);
@@ -1355,7 +1403,8 @@ function resolveExerciseIcon(source){
 function createMiniatureElement(source, options = {}){
   const icon = resolveExerciseIcon(source);
   const size = options.size || 48;
-  const alt = options.alt || source?.name || "Ejercicio";
+  const sourceName = source && source.name ? source.name : "";
+  const alt = options.alt || sourceName || "Ejercicio";
   const wrapper = document.createElement("div");
   wrapper.className = options.className ? `miniature ${options.className}` : "miniature";
   wrapper.style.setProperty("--miniature-size", `${size}px`);
@@ -1379,7 +1428,7 @@ function createMiniatureElement(source, options = {}){
     span.setAttribute("aria-hidden", "true");
     wrapper.append(span);
   } else {
-    const initials = extractInitials(alt || source?.name || "");
+    const initials = extractInitials(alt || sourceName || "");
     const span = document.createElement("span");
     span.textContent = initials || "?";
     span.setAttribute("aria-hidden", "true");
@@ -1411,9 +1460,9 @@ function filterLibraryItems(items, filters){
 function renderLibrary(){
   if (!libraryListEl || !libraryEmptyEl) return;
   const filters = {
-    search: librarySearchInput?.value || "",
-    category: libraryCategoryFilter?.value || "all",
-    tags: libraryTagsFilter?.value || [],
+    search: getInputValue(librarySearchInput),
+    category: getInputValue(libraryCategoryFilter) || "all",
+    tags: libraryTagsFilter ? normalizeTags(libraryTagsFilter.value) : [],
   };
   const items = filterLibraryItems(getLibrary(), filters);
   libraryListEl.innerHTML = "";
@@ -1468,8 +1517,8 @@ function renderLibrary(){
     const editBtn = button("", "ghost small");
     editBtn.type = "button";
     const editLabel = `Editar "${item.name}"`;
-    if (globalThis.CaliGymIcons?.decorate) {
-      globalThis.CaliGymIcons.decorate(editBtn, "edit", { label: editLabel });
+    if (hasIconDecorator()) {
+      decorateIcons(editBtn, "edit", { label: editLabel });
     } else {
       editBtn.textContent = "Editar";
       editBtn.setAttribute("aria-label", editLabel);
@@ -1479,8 +1528,8 @@ function renderLibrary(){
     const deleteBtn = button("", "danger small");
     deleteBtn.type = "button";
     const deleteLabel = `Eliminar "${item.name}" de la librería`;
-    if (globalThis.CaliGymIcons?.decorate) {
-      globalThis.CaliGymIcons.decorate(deleteBtn, "trash", { label: deleteLabel });
+    if (hasIconDecorator()) {
+      decorateIcons(deleteBtn, "trash", { label: deleteLabel });
     } else {
       deleteBtn.textContent = "Eliminar";
       deleteBtn.setAttribute("aria-label", deleteLabel);
@@ -1541,8 +1590,8 @@ function closeModal(modal){
 function renderLibrarySelector(){
   if (!librarySelectorList || !librarySelectorEmpty) return;
   const filters = {
-    search: librarySelectorSearch?.value || "",
-    category: librarySelectorCategory?.value || "all",
+    search: getInputValue(librarySelectorSearch),
+    category: getInputValue(librarySelectorCategory) || "all",
     tags: [],
   };
   const items = filterLibraryItems(getLibrary(), filters);
@@ -1595,7 +1644,7 @@ function setLibraryIconPreview(name) {
   if (iconName && url) {
     const img = document.createElement("img");
     img.src = url;
-    img.alt = libraryFormName?.value || "Icono del ejercicio";
+    img.alt = getInputValue(libraryFormName) || "Icono del ejercicio";
     img.loading = "lazy";
     libraryIconPreview.append(img);
   }
@@ -1675,12 +1724,12 @@ function ensureExerciseIconsLoaded() {
 }
 
 function updateLibraryIconRows(){
-  const useAsset = libraryIconAsset?.checked;
+  const useAsset = isChecked(libraryIconAsset);
   if (libraryEmojiRow) libraryEmojiRow.classList.toggle("hidden", !!useAsset);
   if (libraryAssetRow) libraryAssetRow.classList.toggle("hidden", !useAsset);
   if (libraryFormIcon) libraryFormIcon.required = !!useAsset && exerciseIconList.length > 0;
   if (useAsset) {
-    setLibraryIconPreview(libraryFormIcon?.value || currentLibraryIconName);
+    setLibraryIconPreview(getInputValue(libraryFormIcon) || currentLibraryIconName);
   }
 }
 
@@ -1738,7 +1787,9 @@ function openLibraryForm(item){
     updateLibraryIconRows();
     openModal(libraryFormModal);
     requestAnimationFrame(() => {
-      libraryFormName?.focus();
+      if (libraryFormName && typeof libraryFormName.focus === "function") {
+        libraryFormName.focus();
+      }
     });
   });
 }
@@ -1748,32 +1799,32 @@ function closeLibraryForm(){
 }
 
 function serializeLibraryForm(){
-  const name = libraryFormName?.value?.trim();
+  const name = getTrimmedValue(libraryFormName);
   if (!name) {
     alert("Añade un nombre al ejercicio de la librería.");
     return null;
   }
-  const category = normalizeCategory(libraryFormCategory?.value);
-  const iconType = libraryIconAsset?.checked ? "asset" : "emoji";
+  const category = normalizeCategory(getInputValue(libraryFormCategory));
+  const iconType = isChecked(libraryIconAsset) ? "asset" : "emoji";
   let emoji = "";
   let imageDataUrl = "";
   let iconName = "";
   if (iconType === "asset") {
-    iconName = (libraryFormIcon?.value || currentLibraryIconName || "").trim();
+    iconName = (getInputValue(libraryFormIcon) || currentLibraryIconName || "").trim();
     if (!iconName) {
       alert("Elige un icono de la galería para este ejercicio.");
       return null;
     }
   } else {
-    emoji = (libraryFormEmoji?.value || "").trim();
+    emoji = getTrimmedValue(libraryFormEmoji);
     if (!emoji) {
       emoji = extractInitials(name);
     }
   }
-  const notes = libraryFormNotes?.value || "";
-  const tags = normalizeTags(libraryFormTags?.value || []);
+  const notes = getInputValue(libraryFormNotes);
+  const tags = normalizeTags(getInputValue(libraryFormTags));
   const base = {
-    id: libraryFormId?.value ? libraryFormId.value : randomUUID(),
+    id: libraryFormId && libraryFormId.value ? libraryFormId.value : randomUUID(),
     name,
     category,
     iconType,
@@ -1808,7 +1859,7 @@ function attachLibraryEventListeners(){
       event.preventDefault();
       const data = serializeLibraryForm();
       if (!data) return;
-      if (libraryFormId?.value) {
+      if (libraryFormId && libraryFormId.value) {
         updateLibrary(data);
       } else {
         addToLibrary(data);
@@ -1842,14 +1893,17 @@ function openLibrarySelector(options = {}){
   renderLibrarySelector();
   openModal(librarySelectorModal);
   requestAnimationFrame(() => {
-    librarySelectorSearch?.focus();
+    if (librarySelectorSearch && typeof librarySelectorSearch.focus === "function") {
+      librarySelectorSearch.focus();
+    }
   });
 }
 
 let currentGoalConfigLibrary = null;
 
 function updateGoalConfigSections(){
-  const selected = goalConfigTypeInputs.find((input) => input.checked)?.value || "reps";
+  const selectedInput = goalConfigTypeInputs.find((input) => input.checked);
+  const selected = selectedInput ? selectedInput.value : "reps";
   goalConfigSections.forEach((section) => {
     const type = section.getAttribute("data-goal-config");
     section.classList.toggle("hidden", type !== selected);
@@ -1888,7 +1942,9 @@ function openGoalConfigModal(libraryExercise){
   updateGoalConfigSections();
   openModal(goalConfigModal);
   requestAnimationFrame(() => {
-    goalConfigDate?.focus();
+    if (goalConfigDate && typeof goalConfigDate.focus === "function") {
+      goalConfigDate.focus();
+    }
   });
 }
 
@@ -1906,14 +1962,14 @@ function serializeGoalConfig(){
   if (!currentGoalConfigLibrary) return null;
   const typeInput = goalConfigTypeInputs.find((input) => input.checked);
   const goalType = normalizeGoalType(typeInput ? typeInput.value : "reps");
-  const dateISO = fmt(fromISO(goalConfigDate?.value || state.selectedDate));
+  const dateISO = fmt(fromISO(getInputValue(goalConfigDate) || state.selectedDate));
   const payload = {
     goalType,
     dateISO,
     weight: null,
-    notes: goalConfigNotes?.value || "",
+    notes: getInputValue(goalConfigNotes),
   };
-  const weightInput = goalConfigWeight?.value?.trim() ?? "";
+  const weightInput = getTrimmedValue(goalConfigWeight);
   if (weightInput) {
     const weightNumber = Number(weightInput);
     if (!Number.isFinite(weightNumber)) {
@@ -1923,27 +1979,27 @@ function serializeGoalConfig(){
     payload.weight = weightNumber;
   }
   if (goalType === "reps") {
-    const series = Number(goalConfigRepsSeries?.value || 0);
-    const reps = Number(goalConfigRepsValue?.value || 0);
+    const series = Number(getInputValue(goalConfigRepsSeries) || 0);
+    const reps = Number(getInputValue(goalConfigRepsValue) || 0);
     if (!series || !reps) {
       alert("Indica series y repeticiones.");
       return null;
     }
     payload.series = series;
     payload.reps = reps;
-    payload.alFallo = !!goalConfigRepsFailure?.checked;
+    payload.alFallo = isChecked(goalConfigRepsFailure);
   } else if (goalType === "isometrico") {
-    const series = Number(goalConfigIsoSeries?.value || 0);
-    const segundos = Number(goalConfigIsoSeconds?.value || 0);
+    const series = Number(getInputValue(goalConfigIsoSeries) || 0);
+    const segundos = Number(getInputValue(goalConfigIsoSeconds) || 0);
     if (!series || !segundos) {
       alert("Indica series y segundos.");
       return null;
     }
     payload.series = series;
     payload.segundos = segundos;
-    payload.alFallo = !!goalConfigIsoFailure?.checked;
+    payload.alFallo = isChecked(goalConfigIsoFailure);
   } else if (goalType === "fallo") {
-    const series = Number(goalConfigFailSeries?.value || 0);
+    const series = Number(getInputValue(goalConfigFailSeries) || 0);
     if (!series) {
       alert("Indica cuántas series harás al fallo.");
       return null;
@@ -1951,8 +2007,8 @@ function serializeGoalConfig(){
     payload.series = series;
     payload.alFallo = true;
   } else if (goalType === "emom") {
-    const minutos = Number(goalConfigEmomMinutes?.value || 0);
-    const repsPorMin = Number(goalConfigEmomReps?.value || 0);
+    const minutos = Number(getInputValue(goalConfigEmomMinutes) || 0);
+    const repsPorMin = Number(getInputValue(goalConfigEmomReps) || 0);
     if (!minutos || !repsPorMin) {
       alert("Indica minutos y reps por minuto del EMOM.");
       return null;
@@ -1961,7 +2017,7 @@ function serializeGoalConfig(){
     payload.repsPorMin = repsPorMin;
     payload.series = null;
   } else if (goalType === "cardio") {
-    const minutos = Number(goalConfigCardioMinutes?.value || 0);
+    const minutos = Number(getInputValue(goalConfigCardioMinutes) || 0);
     if (!minutos) {
       alert("Indica los minutos de cardio.");
       return null;
@@ -2022,20 +2078,18 @@ function scheduleExerciseFromLibrary(libraryExercise, config){
 }
 
 function getDayExercises(dayISO){
-  const source = Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO] : [];
+  const source = getDayWorkouts(dayISO);
   return source.filter(isPlainObject);
 }
 
 function updateExerciseStatus(exercise, status, dayISO, options = {}) {
   const normalized = setExerciseStatus(exercise, status);
   save();
-  const shouldToast = options.showToast ?? normalized === EXERCISE_STATUS.DONE;
+  const shouldToast = hasValue(options.showToast) ? options.showToast : normalized === EXERCISE_STATUS.DONE;
   syncHistoryForDay(dayISO, { showToast: shouldToast });
   renderDay(dayISO);
   renderMiniCalendar();
-  if (seguimientoModule?.refresh) {
-    seguimientoModule.refresh();
-  }
+  callSeguimiento("refresh");
 }
 
 function renderDay(dayISO){
@@ -2108,8 +2162,8 @@ function renderDay(dayISO){
     skipBtn.title = skipBtn.getAttribute("aria-label");
     const editBtn = button("", "small ghost");
     const editLabel = `Editar "${ex.name}"`;
-    if (globalThis.CaliGymIcons?.decorate) {
-      globalThis.CaliGymIcons.decorate(editBtn, "edit", { label: editLabel });
+    if (hasIconDecorator()) {
+      decorateIcons(editBtn, "edit", { label: editLabel });
     } else {
       editBtn.textContent = "Editar";
       editBtn.setAttribute("aria-label", editLabel);
@@ -2117,8 +2171,8 @@ function renderDay(dayISO){
     }
     const delBtn = button("", "small danger");
     const deleteLabel = `Eliminar "${ex.name}"`;
-    if (globalThis.CaliGymIcons?.decorate) {
-      globalThis.CaliGymIcons.decorate(delBtn, "trash", { label: deleteLabel });
+    if (hasIconDecorator()) {
+      decorateIcons(delBtn, "trash", { label: deleteLabel });
     } else {
       delBtn.textContent = "Eliminar";
       delBtn.setAttribute("aria-label", deleteLabel);
@@ -2159,9 +2213,7 @@ function renderDay(dayISO){
       updateNoteState();
       save();
       syncHistoryForDay(dayISO, { showToast: false });
-      if (seguimientoModule?.refresh) {
-        seguimientoModule.refresh();
-      }
+      callSeguimiento("refresh");
     };
     noteTextarea.addEventListener("input", () => {
       ex.note = noteTextarea.value;
@@ -2171,9 +2223,7 @@ function renderDay(dayISO){
         save();
         noteTimer = null;
         syncHistoryForDay(dayISO, { showToast: false });
-        if (seguimientoModule?.refresh) {
-          seguimientoModule.refresh();
-        }
+        callSeguimiento("refresh");
       }, 300);
     });
     noteTextarea.addEventListener("blur", () => {
@@ -2209,7 +2259,7 @@ function renderDay(dayISO){
     });
     if (ex.failure) {
       const doneArray = Array.isArray(ex.done) ? ex.done : [];
-      const doneValues = Array.from({length: ex.sets}, (_,i)=> doneArray[i] ?? null);
+      const doneValues = Array.from({length: ex.sets}, (_,i)=> hasValue(doneArray[i]) ? doneArray[i] : null);
       setsBox = document.createElement("div");
       setsBox.className = "sets-grid";
       for (let i=0;i<ex.sets;i++){
@@ -2220,7 +2270,7 @@ function renderDay(dayISO){
         const input = document.createElement("input");
         input.type = "number";
         input.placeholder = ex.goal==="seconds" ? "seg" : ex.goal==="cardio" ? "min" : "reps";
-        input.value = doneValues[i] ?? "";
+        input.value = hasValue(doneValues[i]) ? doneValues[i] : "";
         input.addEventListener("change", ()=>{
           const v = input.value? Number(input.value) : null;
           const doneList = Array.isArray(ex.done) ? ex.done : [];
@@ -2228,9 +2278,7 @@ function renderDay(dayISO){
           ex.done = doneList;
           save();
           syncHistoryForDay(dayISO, { showToast: true });
-          if (seguimientoModule?.refresh) {
-            seguimientoModule.refresh();
-          }
+          callSeguimiento("refresh");
         });
         wrap.append(span, input);
         setsBox.append(wrap);
@@ -2431,7 +2479,7 @@ function renderTodayInsights(dayISO, exercises){
     todayRPEBadge.classList.toggle("down", meta.sessionRPE != null && meta.sessionRPE <= 4);
     todayRPEBadge.classList.toggle("same", meta.sessionRPE == null);
   }
-  if (todayHabitInputs?.length){
+  if (todayHabitInputs && todayHabitInputs.length){
     todayHabitInputs.forEach((input)=>{
       const habitKey = input.dataset.habit;
       input.checked = !!meta.habits[habitKey];
@@ -2620,7 +2668,7 @@ function beginExerciseDrag(event, source, li, dayISO){
   exerciseList.insertBefore(placeholder, nextSibling);
 
   activeDrag = {
-    pointerId: event.pointerId ?? null,
+    pointerId: hasValue(event.pointerId) ? event.pointerId : null,
     li,
     source,
     dayISO,
@@ -2848,7 +2896,7 @@ function finalizeExerciseOrder(dayISO){
   const ids = Array.from(exerciseList.querySelectorAll("li.exercise"))
     .map((node) => node.dataset.id)
     .filter(Boolean);
-  const current = Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO] : [];
+  const current = getDayWorkouts(dayISO);
   if (!current.length) return;
   const map = new Map(current.map((ex) => [ex.id, ex]));
   const newOrder = ids.map((id) => map.get(id)).filter(Boolean);
@@ -2881,7 +2929,7 @@ function createDragPlaceholder(height){
 
 function showHistoryToast(message){
   if (!message) return;
-  if (seguimientoModule?.showToast){
+  if (seguimientoModule && typeof seguimientoModule.showToast === "function"){
     seguimientoModule.showToast(message);
   } else {
     console.info(message);
@@ -2889,7 +2937,7 @@ function showHistoryToast(message){
 }
 
 function minutesToSeconds(value){
-  if (historyStore?.minutesToSeconds){
+  if (historyStore && typeof historyStore.minutesToSeconds === "function"){
     return historyStore.minutesToSeconds(value);
   }
   const numeric = Number(value);
@@ -2898,7 +2946,7 @@ function minutesToSeconds(value){
 }
 
 function buildHistoryDaySnapshot(dayISO){
-  const ejercicios = (Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO] : [])
+  const ejercicios = getDayWorkouts(dayISO)
     .filter(isPlainObject)
     .map((exercise) => {
       const status = getExerciseStatus(exercise);
@@ -2928,7 +2976,7 @@ function syncHistoryForDay(dayISO, options = {}){
   const snapshot = buildHistoryDaySnapshot(dayISO);
   const result = historyStore.addOrUpdateFromDay(snapshot);
   if (options.showToast === false) return;
-  const messages = Array.isArray(result?.messages) ? result.messages : [];
+  const messages = Array.isArray(result && result.messages) ? result.messages : [];
   const priority = ["reps", "tiempo", "peso"];
   let selected = null;
   for (const type of priority) {
@@ -3053,7 +3101,7 @@ function buildEditForm(ex){
   const rCardio = radioRow("Cardio", "goalEdit-"+ex.id, goalType === "cardio");
 
   const rowReps = document.createElement("div"); rowReps.className = "row indent";
-  const repsField = fieldInline("Reps", "number", ex.reps ?? "", {min:1});
+  const repsField = fieldInline("Reps", "number", hasValue(ex.reps) ? ex.reps : "", {min:1});
   const failRow = document.createElement("label"); failRow.className="row inline";
   const failChk = document.createElement("input"); failChk.type="checkbox"; failChk.checked = !!ex.failure && goalType === "reps";
   const failLbl = document.createElement("span"); failLbl.textContent="Al fallo";
@@ -3061,7 +3109,7 @@ function buildEditForm(ex){
   rowReps.append(repsField.wrap, failRow);
 
   const rowSecs = document.createElement("div"); rowSecs.className="row indent hidden";
-  const secsField = fieldInline("Segundos", "number", ex.seconds ?? "", {min:1});
+  const secsField = fieldInline("Segundos", "number", hasValue(ex.seconds) ? ex.seconds : "", {min:1});
   const failSecsRow = document.createElement("label"); failSecsRow.className="row inline";
   const failSecsChk = document.createElement("input"); failSecsChk.type="checkbox"; failSecsChk.checked = !!ex.failure && goalType === "isometrico";
   const failSecsLbl = document.createElement("span"); failSecsLbl.textContent="Al fallo";
@@ -3074,12 +3122,12 @@ function buildEditForm(ex){
   rowFailure.append(failureHint);
 
   const rowEmom = document.createElement("div"); rowEmom.className="row indent hidden";
-  const mField = fieldInline("Minutos", "number", ex.emomMinutes ?? "", {min:1});
-  const rField = fieldInline("Reps/min", "number", ex.emomReps ?? "", {min:1});
+  const mField = fieldInline("Minutos", "number", hasValue(ex.emomMinutes) ? ex.emomMinutes : "", {min:1});
+  const rField = fieldInline("Reps/min", "number", hasValue(ex.emomReps) ? ex.emomReps : "", {min:1});
   rowEmom.append(mField.wrap, rField.wrap);
 
   const rowCardio = document.createElement("div"); rowCardio.className="row indent hidden";
-  const cardioField = fieldInline("Minutos", "number", ex.cardioMinutes ?? "", {min:1});
+  const cardioField = fieldInline("Minutos", "number", hasValue(ex.cardioMinutes) ? ex.cardioMinutes : "", {min:1});
   rowCardio.append(cardioField.wrap);
 
   function toggleRows(){
@@ -3095,7 +3143,7 @@ function buildEditForm(ex){
   typeWrap.append(rReps.row, rowReps, rSecs.row, rowSecs, rFail.row, rowFailure, rEmom.row, rowEmom, rCardio.row, rowCardio);
 
   // Lastre
-  const wField = field("Lastre (kg)", "number", ex.weightKg ?? "", {step:0.5});
+  const wField = field("Lastre (kg)", "number", hasValue(ex.weightKg) ? ex.weightKg : "", {step:0.5});
 
   const actions = document.createElement("div");
   actions.className = "actions";
@@ -3103,8 +3151,8 @@ function buildEditForm(ex){
   const cancelBtn = button("Cerrar", "ghost small");
   const deleteBtn = button("", "danger small");
   const deleteLabel = "Eliminar ejercicio";
-  if (globalThis.CaliGymIcons?.decorate) {
-    globalThis.CaliGymIcons.decorate(deleteBtn, "trash", { label: deleteLabel, showLabel: true });
+  if (hasIconDecorator()) {
+    decorateIcons(deleteBtn, "trash", { label: deleteLabel, showLabel: true });
   } else {
     deleteBtn.textContent = "Eliminar";
     deleteBtn.title = deleteLabel;
@@ -3169,16 +3217,19 @@ function buildEditForm(ex){
     }
 
     const editWrapper = box.parentElement;
-    editWrapper?.classList.add("hidden");
+    if (editWrapper && editWrapper.classList) {
+      editWrapper.classList.add("hidden");
+    }
     save();
     syncHistoryForDay(state.selectedDate, { showToast: false });
     renderDay(state.selectedDate);
-    if (seguimientoModule?.refresh) {
-      seguimientoModule.refresh();
-    }
+    callSeguimiento("refresh");
   });
   cancelBtn.addEventListener("click", ()=>{
-    box.parentElement?.classList.add("hidden");
+    const parent = box.parentElement;
+    if (parent && parent.classList) {
+      parent.classList.add("hidden");
+    }
   });
   deleteBtn.addEventListener("click", ()=>{
     if (!confirm("¿Eliminar este ejercicio?")) return;
@@ -3192,7 +3243,7 @@ function field(label, type, value, attrs={}){
   const wrap = document.createElement("label"); wrap.className="field";
   const span = document.createElement("span"); span.textContent = label;
   const input = document.createElement("input");
-  input.type = type; input.value = value ?? "";
+  input.type = type; input.value = hasValue(value) ? value : "";
   Object.entries(attrs).forEach(([k,v])=> input.setAttribute(k,v));
   wrap.append(span, input);
   return {wrap, input};
@@ -3201,7 +3252,7 @@ function fieldInline(label, type, value, attrs={}){
   const wrap = document.createElement("label"); wrap.className="field inline";
   const span = document.createElement("span"); span.textContent = label;
   const input = document.createElement("input");
-  input.type = type; input.value = value ?? "";
+  input.type = type; input.value = hasValue(value) ? value : "";
   Object.entries(attrs).forEach(([k,v])=> input.setAttribute(k,v));
   wrap.append(span, input);
   return {wrap, input};
@@ -3216,7 +3267,7 @@ function radioRow(text, name, checked=false){
 }
 
 function removeExercise(dayISO, id){
-  const list = Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO] : [];
+  const list = getDayWorkouts(dayISO);
   const idx = list.findIndex(x=>x.id===id);
   if (idx>=0){
     list.splice(idx,1);
@@ -3225,9 +3276,7 @@ function removeExercise(dayISO, id){
     save();
     renderDay(dayISO);
     renderMiniCalendar();
-    if (seguimientoModule?.refresh) {
-      seguimientoModule.refresh();
-    }
+    callSeguimiento("refresh");
   }
 }
 
@@ -3243,7 +3292,7 @@ copyDayBtn.addEventListener("click", ()=>{
   const src = state.selectedDate;
   const dst = copyTargetDate.value;
   if (!dst){ alert("Selecciona una fecha destino."); return; }
-  const items = (Array.isArray(state.workouts?.[src]) ? state.workouts[src] : [])
+  const items = getDayWorkouts(src)
     .filter(isPlainObject)
     .map(x=> ({
     ...x,
@@ -3253,16 +3302,14 @@ copyDayBtn.addEventListener("click", ()=>{
     completed: false,
     hecho: false
   }));
-  const targetList = Array.isArray(state.workouts?.[dst]) ? state.workouts[dst] : [];
+  const targetList = getDayWorkouts(dst);
   state.workouts[dst] = targetList.concat(items);
   save();
   syncHistoryForDay(dst, { showToast: false });
   alert("Día copiado.");
   copyDayBox.classList.add("hidden");
   renderMiniCalendar();
-  if (seguimientoModule?.refresh) {
-    seguimientoModule.refresh();
-  }
+  callSeguimiento("refresh");
 });
 
 /* ========= Cambiar de día (prev/next) ========= */
@@ -3279,8 +3326,14 @@ function shiftSelectedDay(delta){
 
 /* ========= Tabs helper ========= */
 function switchToTab(name){
-  document.querySelector(".tab.active")?.classList.remove("active");
-  document.querySelector(`.tab[data-tab="${name}"]`)?.classList.add("active");
+  const activeTabBtn = document.querySelector(".tab.active");
+  if (activeTabBtn) {
+    activeTabBtn.classList.remove("active");
+  }
+  const targetTabBtn = document.querySelector(`.tab[data-tab="${name}"]`);
+  if (targetTabBtn) {
+    targetTabBtn.classList.add("active");
+  }
   document.querySelectorAll(".tab").forEach((tab)=>{
     tab.setAttribute("aria-selected", tab.dataset.tab === name ? "true" : "false");
   });
@@ -3324,7 +3377,7 @@ function renderMiniCalendar(){
 
     if (dayISO === fmt(new Date())) btn.classList.add("today");
     if (dayISO === state.selectedDate) btn.classList.add("selected");
-    const hasExercises = Array.isArray(state.workouts?.[dayISO]) ? state.workouts[dayISO].length > 0 : false;
+    const hasExercises = getDayWorkouts(dayISO).length > 0;
     if (hasExercises) btn.classList.add("has");
 
     btn.addEventListener("click", ()=>{

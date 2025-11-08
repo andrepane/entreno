@@ -353,7 +353,7 @@
       if (!raw) return;
       try {
         const parsed = JSON.parse(raw);
-        const candidateEntries = Array.isArray(parsed?.entries)
+        const candidateEntries = Array.isArray(parsed && parsed.entries)
           ? parsed.entries
           : Array.isArray(parsed)
           ? parsed
@@ -392,7 +392,7 @@
         return getAllEntries();
       }
       const parsed = JSON.parse(raw);
-      const list = Array.isArray(parsed?.entries) ? parsed.entries : [];
+      const list = Array.isArray(parsed && parsed.entries) ? parsed.entries : [];
       const restored = [];
       const seen = new Set();
       list.forEach((item) => {
@@ -544,7 +544,7 @@
         .sort((a, b) => a.fechaISO.localeCompare(b.fechaISO))
         .pop();
 
-      const message = buildDiffMessage(newEntry.tipo, previousComparable?.valor, newEntry.valor);
+      const message = buildDiffMessage(newEntry.tipo, previousComparable && previousComparable.valor, newEntry.valor);
 
       if (existingByKey.has(key)) {
         const stored = existingByKey.get(key);
@@ -698,7 +698,7 @@
     } catch (err) {
       throw new Error("El archivo no contiene JSON válido");
     }
-    const list = Array.isArray(parsed?.entries) ? parsed.entries : [];
+    const list = Array.isArray(parsed && parsed.entries) ? parsed.entries : [];
     if (!list.length) {
       throw new Error("No se encontraron entradas válidas para importar");
     }
