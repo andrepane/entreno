@@ -704,6 +704,8 @@ const formPrev = document.getElementById("formPrev");
 const formNext = document.getElementById("formNext");
 const formSubmitBtn = document.getElementById("formSubmit");
 const formProgression = document.getElementById("formProgression");
+const formProgressBar = document.getElementById("formProgressBar");
+const formProgressBarFill = document.getElementById("formProgressBarFill");
 let currentFormStep = 0;
 let addFormSelectedLibrary = null;
 
@@ -927,10 +929,41 @@ function setFormStep(index){
   formSteps.forEach((step, idx)=>{
     step.classList.toggle("active", idx === currentFormStep);
   });
+  const totalSteps = Math.max(formSteps.length, formStepButtons.length);
   formStepButtons.forEach((btn)=>{
     const target = Number(btn.dataset.stepTarget || "0");
-    btn.classList.toggle("active", target === currentFormStep);
+    const isCurrent = target === currentFormStep;
+    const isComplete = target < currentFormStep;
+    btn.classList.toggle("is-current", isCurrent);
+    btn.classList.toggle("is-complete", isComplete);
+    btn.classList.toggle("is-upcoming", target > currentFormStep);
+    btn.setAttribute("aria-current", isCurrent ? "step" : "false");
+    btn.setAttribute("aria-disabled", isCurrent ? "true" : "false");
+    const statusEl = btn.querySelector('[data-step-status]');
+    if (statusEl){
+      if (isCurrent){
+        statusEl.textContent = "Paso actual";
+        statusEl.dataset.stepStatus = "current";
+      } else if (isComplete){
+        statusEl.textContent = "Completado";
+        statusEl.dataset.stepStatus = "complete";
+      } else {
+        statusEl.textContent = "Pendiente";
+        statusEl.dataset.stepStatus = "upcoming";
+      }
+    }
   });
+  if (formProgressBar && totalSteps > 0){
+    const current = currentFormStep + 1;
+    formProgressBar.setAttribute("aria-valuenow", String(current));
+    formProgressBar.setAttribute("aria-valuemax", String(totalSteps));
+    const percent = Math.min(100, Math.max(0, (current / totalSteps) * 100));
+    if (formProgressBarFill){
+      formProgressBarFill.style.width = `${percent}%`;
+    }
+  } else if (formProgressBarFill){
+    formProgressBarFill.style.width = totalSteps === 0 ? "100%" : "0%";
+  }
   if (formPrev){
     formPrev.disabled = currentFormStep === 0;
     formPrev.classList.toggle("hidden", currentFormStep === 0);
@@ -2201,7 +2234,7 @@ function renderDay(dayISO){
     const thumb = createMiniatureElement(ex, { size: 56, className: "exercise-thumb", alt: ex.name });
     const h3 = document.createElement("h3");
     h3.textContent = ex.name;
-    h3.style.margin = "0";
+    h3.classList.add("heading-tight");
     const controls = document.createElement("div");
     controls.className = "controls";
     const noteBtn = button("📝", "small ghost note-toggle");

@@ -28,6 +28,9 @@ body{
 }
 
 .muted{color:var(--muted);}
+.heading-tight{margin:0; line-height:1.2;}
+.card-title{margin:0; font-weight:600;}
+.chip-group{display:flex; flex-wrap:wrap; gap:8px;}
 
 .app-header,
 main,
@@ -163,9 +166,67 @@ main{flex:1 1 auto; padding:clamp(14px, 5vw, 28px)}
   background:#0f131a; color:var(--text); border:1px solid #2a3240; border-radius:10px; padding:10px;
 }
 
-.form-stepper{display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;}
-.form-step-btn{flex:1 1 auto; padding:10px 14px; border-radius:999px; border:1px solid #2a3240; background:#0f131a; color:var(--muted); font-weight:600; text-transform:uppercase; font-size:.78rem; letter-spacing:.4px;}
-.form-step-btn.active{color:var(--text); border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent-ghost);}
+.form-progress{display:flex; flex-direction:column; gap:16px; margin-bottom:18px;}
+.form-progress-bar{position:relative; width:100%; height:6px; background:#1a1f29; border-radius:999px; overflow:hidden;}
+.form-progress-bar::after{content:""; position:absolute; inset:0; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06); border-radius:999px; pointer-events:none;}
+.form-progress-bar-fill{display:block; height:100%; background:linear-gradient(90deg, var(--accent) 0%, rgba(72,208,109,0.5) 100%); border-radius:999px; transition:width .25s ease; width:0%;}
+.form-progress-list{list-style:none; margin:0; padding:0; display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr));}
+.form-progress-item{position:relative;}
+.form-step-btn{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  border-radius:16px;
+  border:1px solid #2a3240;
+  background:#0f131a;
+  color:var(--muted);
+  font-weight:600;
+  padding:12px 14px;
+  text-align:left;
+  letter-spacing:.3px;
+  text-transform:none;
+}
+.form-step-btn .step-index{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:32px;
+  height:32px;
+  border-radius:50%;
+  background:#121722;
+  color:var(--muted);
+  font-weight:700;
+}
+.form-step-btn .step-label{flex:1; font-size:.9rem;}
+.form-step-btn .step-status{font-size:.7rem; text-transform:uppercase; letter-spacing:.2em; color:var(--muted);}
+.form-step-btn.is-current{border-color:var(--accent); color:var(--text); box-shadow:inset 0 0 0 1px var(--accent-ghost);}
+.form-step-btn.is-current .step-index{background:var(--accent); color:#041508;}
+.form-step-btn.is-current .step-status{color:var(--accent);}
+.form-step-btn.is-complete{border-color:rgba(72,208,109,0.45); color:var(--text); background:rgba(72,208,109,0.08);}
+.form-step-btn.is-complete .step-index{background:rgba(72,208,109,0.18); color:var(--accent);}
+.form-step-btn.is-complete .step-status{color:rgba(72,208,109,0.7);}
+.form-step-btn.is-upcoming{opacity:.75;}
+.form-step-btn[aria-disabled="true"]{cursor:default;}
+.form-step-btn:focus-visible{border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent-ghost), 0 0 0 4px rgba(72,208,109,0.15);}
+.form-progress-list .form-progress-item:not(:last-child)::after{
+  content:"";
+  position:absolute;
+  right:-6px;
+  top:50%;
+  transform:translateY(-50%);
+  width:12px;
+  height:1px;
+  background:rgba(255,255,255,0.08);
+}
+
+@media (max-width:640px){
+  .form-progress-list{grid-template-columns:1fr;}
+  .form-step-btn{align-items:flex-start;}
+  .form-step-btn .step-status{letter-spacing:.1em;}
+  .form-progress-list .form-progress-item:not(:last-child)::after{display:none;}
+}
 .form-steps{display:flex; flex-direction:column; gap:20px;}
 .form-step{display:none;}
 .form-step.active{display:block;}
@@ -201,6 +262,11 @@ button{
   background:var(--accent); color:#08150c; border:none; border-radius:12px; padding:10px 14px; font-weight:700;
   box-shadow:0 4px 12px rgba(72,208,109,.25);
 }
+button:focus-visible{
+  outline:2px solid var(--accent);
+  outline-offset:3px;
+  box-shadow:0 0 0 4px rgba(72,208,109,0.18);
+}
 button.ghost{
   background:transparent; color:var(--text);
   border:1px solid #2a3240; box-shadow:none;
@@ -209,13 +275,12 @@ button.primary{background:var(--accent)}
 button.danger{background:var(--danger); color:#1d0000}
 button.success{background:#2f855a; color:#f0fff4; border:1px solid #2f855a; box-shadow:0 4px 12px rgba(47,133,90,.25)}
 button.success:hover{background:#276749}
-button.success:focus-visible{outline:2px solid #68d391; outline-offset:2px}
 button.small{padding:6px 10px; font-size:.85rem; border-radius:10px}
 button.tiny{padding:4px 8px; font-size:.75rem; border-radius:999px}
 button.link{background:transparent; color:var(--accent); border:none; padding:0}
 button.ghost.danger{border-color:rgba(255,107,107,0.65); color:var(--danger);}
 button.ghost.danger:hover{background:rgba(255,107,107,0.12);}
-button.ghost.danger:focus-visible{outline:2px solid rgba(255,107,107,0.65); outline-offset:2px;}
+button.ghost.danger:focus-visible{outline-color:rgba(255,107,107,0.75); box-shadow:0 0 0 4px rgba(255,107,107,0.15);}
 
 button.icon-button{
   display:inline-flex;
@@ -329,7 +394,7 @@ button.ghost.micro{background:transparent; border:1px solid #2a3240; color:var(-
 .exercise .sets-grid input{width:100%}
 .drag-handle{border:1px solid #2a3240; background:#0b0f16; color:#d7e2ff; border-radius:10px; padding:6px; display:flex; align-items:center; justify-content:center; cursor:grab; touch-action:none; min-width:36px; min-height:36px; font-size:1.2rem; line-height:1; box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
 .drag-handle span{pointer-events:none}
-.drag-handle:focus-visible{outline:2px solid #6c8ff2; outline-offset:2px}
+.drag-handle:focus-visible{outline:2px solid #6c8ff2; outline-offset:2px; box-shadow:0 0 0 4px rgba(108,143,242,0.18);}
 .exercise.dragging{opacity:.95; box-shadow:0 16px 32px rgba(0,0,0,.45); cursor:grabbing}
 .exercise.dragging .drag-handle{cursor:grabbing}
 .exercise-placeholder{border:2px dashed #2a3240; border-radius:14px; background:rgba(15,19,29,.6)}
