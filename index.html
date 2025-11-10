@@ -84,7 +84,7 @@
 
         <div class="today-cta">
           <div class="rpe-header">
-            <h3>Registra tu sensación (RPE)</h3>
+            <h3 class="card-title heading-tight">Registra tu sensación (RPE)</h3>
             <span id="todayRPEBadge" class="summary-badge">Sin registrar</span>
           </div>
           <div class="rpe-control">
@@ -97,8 +97,8 @@
         <div id="todayBadges" class="today-badges summary-grid" aria-live="polite"></div>
 
         <div class="today-habits">
-          <h3>Hábitos complementarios</h3>
-          <div class="habit-list">
+          <h3 class="card-title heading-tight">Hábitos complementarios</h3>
+          <div class="habit-list chip-group">
             <label class="habit-chip">
               <input type="checkbox" data-habit="sleep" />
               <span>8h sueño</span>
@@ -124,10 +124,33 @@
     <section id="tab-nuevo" class="tab-panel hidden" role="tabpanel">
       <h2>Añadir ejercicio</h2>
       <form id="addForm" class="card">
-        <nav class="form-stepper" aria-label="Pasos del formulario">
-          <button type="button" class="form-step-btn active" data-step-target="0">1 · Detalles básicos</button>
-          <button type="button" class="form-step-btn" data-step-target="1">2 · Objetivo</button>
-          <button type="button" class="form-step-btn" data-step-target="2">3 · Cargas y notas</button>
+        <nav class="form-progress" aria-label="Progreso del formulario">
+          <div class="form-progress-bar" id="formProgressBar" role="progressbar" aria-valuemin="1" aria-valuemax="3" aria-valuenow="1">
+            <span class="form-progress-bar-fill" id="formProgressBarFill"></span>
+          </div>
+          <ol class="form-progress-list">
+            <li class="form-progress-item">
+              <button type="button" class="form-step-btn" data-step-target="0">
+                <span class="step-index" aria-hidden="true">1</span>
+                <span class="step-label">Detalles básicos</span>
+                <span class="step-status" data-step-status="current">Paso actual</span>
+              </button>
+            </li>
+            <li class="form-progress-item">
+              <button type="button" class="form-step-btn" data-step-target="1">
+                <span class="step-index" aria-hidden="true">2</span>
+                <span class="step-label">Objetivo</span>
+                <span class="step-status" data-step-status="upcoming">Pendiente</span>
+              </button>
+            </li>
+            <li class="form-progress-item">
+              <button type="button" class="form-step-btn" data-step-target="2">
+                <span class="step-index" aria-hidden="true">3</span>
+                <span class="step-label">Cargas y notas</span>
+                <span class="step-status" data-step-status="upcoming">Pendiente</span>
+              </button>
+            </li>
+          </ol>
         </nav>
 
         <div class="form-steps">
