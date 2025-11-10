@@ -730,6 +730,12 @@ const libraryIconPreview = document.getElementById("libraryIconPreview");
 const libraryFormNotes = document.getElementById("libraryFormNotes");
 const libraryFormTags = document.getElementById("libraryFormTags");
 
+const EXERCISE_ICON_BASE_PATH = "./icons/exercises";
+let currentLibraryIconName = "";
+let exerciseIconList = [];
+let exerciseIconsLoaded = false;
+let exerciseIconsLoadingPromise = null;
+
 const librarySelectorModal = document.getElementById("librarySelectorModal");
 const librarySelectorList = document.getElementById("librarySelectorList");
 const librarySelectorEmpty = document.getElementById("librarySelectorEmpty");
@@ -1623,12 +1629,6 @@ function renderLibrarySelector(){
     librarySelectorList.append(option);
   });
 }
-
-const EXERCISE_ICON_BASE_PATH = "./icons/exercises";
-let currentLibraryIconName = "";
-let exerciseIconList = [];
-let exerciseIconsLoaded = false;
-let exerciseIconsLoadingPromise = null;
 
 function getExerciseIconUrl(name) {
   if (!name) return "";
