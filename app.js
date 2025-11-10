@@ -48,10 +48,13 @@ const toHuman = (iso) => {
 
 /* ========= Estado & almacenamiento ========= */
 const STORAGE_KEY = "workouts.v1";
+const STORAGE_APPROX_MAX_BYTES = 5 * 1024 * 1024; // NEW: Máximo aproximado permitido en localStorage
+const STORAGE_WARN_THRESHOLD_BYTES = 4.5 * 1024 * 1024; // NEW: Umbral para mostrar alerta visual de almacenamiento
 const STORAGE_SAVE_ERROR_MESSAGE =
   "No se pudo guardar tu entrenamiento en este dispositivo. Comprueba si el modo privado está activado o libera espacio y vuelve a intentarlo.";
 let storageWarningEl = null;
 let storageSaveFailed = false;
+let lastStorageUsageBytes = 0; // NEW: Seguimiento del uso estimado de localStorage en bytes
 const CATEGORY_KEYS = ["calistenia", "musculacion", "piernas", "cardio", "skill", "movilidad", "otro"];
 const CATEGORY_LABELS = {
   calistenia: "Calistenia",
@@ -618,11 +621,51 @@ function load() {
     }
   } catch(e){ console.warn("Error loading storage", e); }
 }
+// NEW: Calcula el espacio estimado utilizado en localStorage y devuelve un string humanizado
+function estimateLocalStorageUsage() {
+  if (typeof localStorage === "undefined" || localStorage === null) {
+    lastStorageUsageBytes = 0; // NEW: Reinicia el uso registrado cuando localStorage no está disponible
+    return "0 KB"; // NEW: Valor por defecto cuando no se puede acceder a localStorage
+  }
+  let totalBytes = 0; // NEW: Acumulador de bytes estimados
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index) || ""; // NEW: Obtiene la clave actual o string vacío
+    const value = localStorage.getItem(key) || ""; // NEW: Obtiene el valor asociado o string vacío
+    totalBytes += (key.length + value.length) * 2; // NEW: Suma longitud total en bytes (UTF-16 ~2 bytes por carácter)
+  }
+  lastStorageUsageBytes = totalBytes; // NEW: Actualiza el valor global para que showStorageUsage conozca los bytes estimados
+  if (totalBytes >= 1024 * 1024) {
+    const mb = totalBytes / (1024 * 1024); // NEW: Conversión a megabytes
+    return `${mb.toFixed(2)} MB`; // NEW: Representación humanizada en MB
+  }
+  const kb = totalBytes / 1024; // NEW: Conversión a kilobytes
+  return `${kb.toFixed(1)} KB`; // NEW: Representación humanizada en KB
+}
+// NEW: Muestra o actualiza un badge visible con el uso aproximado del almacenamiento local
+function showStorageUsage() {
+  const usageLabel = estimateLocalStorageUsage(); // NEW: Obtiene el texto humanizado del espacio utilizado
+  let storageInfoEl = document.getElementById("storage-info"); // NEW: Localiza el nodo existente (si lo hay)
+  if (!storageInfoEl) {
+    storageInfoEl = document.createElement("div"); // NEW: Crea el badge cuando no existe
+    storageInfoEl.id = "storage-info"; // NEW: Asigna el id solicitado
+    const hostPanel = document.getElementById("todayPanel"); // NEW: Obtiene un panel representativo para anclar el badge
+    const insertionTarget = hostPanel || document.body; // NEW: Define dónde insertar el badge
+    insertionTarget.appendChild(storageInfoEl); // NEW: Inserta el badge en la UI
+  }
+  const maxLabel =
+    STORAGE_APPROX_MAX_BYTES >= 1024 * 1024 // NEW: Determina si el máximo aproximado debe mostrarse en MB o KB
+      ? `${Math.round(STORAGE_APPROX_MAX_BYTES / (1024 * 1024))} MB`
+      : `${Math.round(STORAGE_APPROX_MAX_BYTES / 1024)} KB`; // NEW: Convierte el máximo aproximado a unidades legibles
+  storageInfoEl.textContent = `Espacio ocupado: ${usageLabel} (máx. aprox. ${maxLabel})`; // NEW: Actualiza el contenido del badge
+  const warn = lastStorageUsageBytes >= STORAGE_WARN_THRESHOLD_BYTES; // NEW: Determina si debe activarse el estado de alerta
+  storageInfoEl.classList.toggle("warn", warn); // NEW: Alterna la clase de alerta cuando se supera el umbral
+}
 function save() {
   state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
   state.plannedExercises = buildPlannedFromWorkouts();
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    showStorageUsage(); // NEW: Actualiza el indicador visual tras guardar en localStorage
     storageSaveFailed = false;
     clearStorageWarning();
   } catch (err) {
@@ -896,6 +939,7 @@ selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
 formCategory.value = normalizeCategory(formCategory.value);
 renderAll();
+showStorageUsage(); // NEW: Muestra el uso estimado de almacenamiento al iniciar la app
 Promise.resolve().then(ensureExerciseIconsLoaded);
 attachLibraryEventListeners();
 if (

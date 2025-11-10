@@ -198,6 +198,28 @@ main{flex:1 1 auto; padding:clamp(14px, 5vw, 28px)}
 .history-chart-slider-container{margin:12px 0 20px;}
 .history-chart-slider{width:100%; accent-color:var(--accent); background:transparent;}
 
+/* // NEW: Indicador del uso de localStorage */
+#storage-info{
+  position:fixed; /* // NEW: Mantiene visible el badge en pantalla */
+  bottom:clamp(12px, 4vw, 20px); /* // NEW: Separación inferior adaptable para PWA iOS */
+  right:clamp(12px, 4vw, 20px); /* // NEW: Margen lateral para no interferir con otros controles */
+  background:rgba(15,19,26,0.88); /* // NEW: Fondo discreto pero legible */
+  border:1px solid rgba(72,208,109,0.35); /* // NEW: Borde en tono acorde al estado normal */
+  color:var(--text); /* // NEW: Color de texto consistente con la app */
+  padding:6px 12px; /* // NEW: Espaciado interno compacto */
+  border-radius:999px; /* // NEW: Apariencia de badge redondeado */
+  font-size:.75rem; /* // NEW: Tamaño reducido para no ocupar demasiado */
+  z-index:20; /* // NEW: Garantiza que permanezca por encima del contenido principal */
+  box-shadow:0 6px 18px rgba(0,0,0,0.35); /* // NEW: Sombra ligera para destacarlo en el fondo */
+  max-width:80vw; /* // NEW: Evita que el texto se salga de la pantalla en móviles */
+  text-align:center; /* // NEW: Centra el texto dentro del badge */
+}
+#storage-info.warn{
+  border-color:var(--danger); /* // NEW: Destaca el borde en estado de alerta */
+  color:var(--danger); /* // NEW: Cambia el color del texto para indicar advertencia */
+  background:rgba(255,107,107,0.16); /* // NEW: Fondo tenue en rojo para alertar */
+}
+
 
 .data-table .actions-header{text-align:right;}
 .data-table td:last-child, .data-table th:last-child{text-align:right;}
