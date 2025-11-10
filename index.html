@@ -19,7 +19,67 @@
 </head>
 <body>
   <header class="app-header">
-    <h1>CaliGym</h1>
+    <div class="header-bar">
+      <h1>CaliGym</h1>
+      <div class="storage-usage-wrapper">
+        <button
+          type="button"
+          id="storageUsageBtn"
+          class="storage-usage-btn"
+          aria-label="Uso de almacenamiento"
+          aria-controls="storageUsagePanel"
+          aria-expanded="false"
+        ></button>
+        <div
+          id="storageUsagePanel"
+          class="storage-usage-panel hidden"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="storageUsageTitle"
+          aria-describedby="storageUsageStatus"
+          tabindex="-1"
+        >
+          <div class="storage-usage-header">
+            <h2 id="storageUsageTitle">Uso de almacenamiento</h2>
+            <button type="button" class="ghost tiny" id="storageUsageClose">Cerrar</button>
+          </div>
+          <p id="storageUsageStatus" class="storage-usage-status">Consulta el espacio utilizado por la app.</p>
+          <dl class="storage-usage-metrics">
+            <div>
+              <dt>Total utilizado</dt>
+              <dd id="storageUsageTotal">—</dd>
+            </div>
+            <div>
+              <dt>Cuota disponible</dt>
+              <dd id="storageUsageQuota">—</dd>
+            </div>
+            <div>
+              <dt>Porcentaje usado</dt>
+              <dd id="storageUsagePercent">—</dd>
+            </div>
+          </dl>
+          <section class="storage-usage-section">
+            <h3>LocalStorage</h3>
+            <ul id="storageUsageLocalList" class="storage-usage-list">
+              <li class="storage-usage-empty">Sin datos guardados.</li>
+            </ul>
+          </section>
+          <section class="storage-usage-section">
+            <h3>Cachés</h3>
+            <ul id="storageUsageCacheList" class="storage-usage-list">
+              <li class="storage-usage-empty">Sin recursos en caché.</li>
+            </ul>
+          </section>
+          <section class="storage-usage-section">
+            <h3>Otros datos del navegador</h3>
+            <ul id="storageUsageOtherList" class="storage-usage-list">
+              <li class="storage-usage-empty">No hay datos adicionales registrados.</li>
+            </ul>
+          </section>
+          <p id="storageUsageUpdated" class="storage-usage-updated"></p>
+        </div>
+      </div>
+    </div>
     <div class="day-controls">
       <button id="prevDayBtn" aria-label="Día anterior">◀</button>
       <input type="date" id="selectedDate" />

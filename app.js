@@ -48,6 +48,7 @@ const toHuman = (iso) => {
 
 /* ========= Estado & almacenamiento ========= */
 const STORAGE_KEY = "workouts.v1";
+const HISTORY_STORAGE_KEY = "entreno.history.v1";
 const STORAGE_SAVE_ERROR_MESSAGE =
   "No se pudo guardar tu entrenamiento en este dispositivo. Comprueba si el modo privado está activado o libera espacio y vuelve a intentarlo.";
 let storageWarningEl = null;
@@ -108,6 +109,371 @@ const EXERCISE_STATUS_ALIASES = new Map([
   ["skipped", EXERCISE_STATUS.NOT_DONE],
   ["skip", EXERCISE_STATUS.NOT_DONE],
 ]);
+
+const STORAGE_USAGE_DETAIL_LABELS = {
+  caches: "Cachés (navegador)",
+  indexedDB: "IndexedDB",
+  serviceWorkerRegistrations: "Service workers",
+  localStorage: "LocalStorage (navegador)",
+  fileSystem: "Sistema de archivos",
+};
+
+const storageNumberFormatter =
+  typeof Intl !== "undefined" && Intl.NumberFormat
+    ? new Intl.NumberFormat("es-ES")
+    : { format: (value) => String(value) };
+
+const STORAGE_KEY_LABELS = {
+  [STORAGE_KEY]: "Estado de entrenos",
+  [HISTORY_STORAGE_KEY]: "Historial de seguimiento",
+};
+
+let sharedTextEncoder = null;
+let storageUsageRefreshPromise = null;
+let storageUsageLastFocusedElement = null;
+
+function formatBytes(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return "—";
+  if (numeric === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const exponent = Math.min(Math.floor(Math.log10(numeric) / 3), units.length - 1);
+  const scaled = numeric / Math.pow(1000, exponent);
+  const precision = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+  return `${scaled.toFixed(precision)} ${units[exponent]}`;
+}
+
+function formatPercentage(usage, quota) {
+  if (!Number.isFinite(usage) || !Number.isFinite(quota) || quota <= 0) return "—";
+  const percent = (usage / quota) * 100;
+  const precision = percent >= 10 ? 1 : 2;
+  return `${percent.toFixed(precision)}%`;
+}
+
+function measureStringBytes(value) {
+  if (value === null || value === undefined) return 0;
+  const stringValue = typeof value === "string" ? value : String(value);
+  if (!stringValue) return 0;
+  if (typeof TextEncoder !== "undefined") {
+    if (!sharedTextEncoder) {
+      sharedTextEncoder = new TextEncoder();
+    }
+    return sharedTextEncoder.encode(stringValue).length;
+  }
+  return stringValue.length * 2;
+}
+
+function setStorageUsageStatus(message, isError = false) {
+  if (!storageUsageStatusEl) return;
+  storageUsageStatusEl.textContent = message;
+  storageUsageStatusEl.classList.toggle("error", !!isError);
+}
+
+function renderUsageList(container, items, emptyMessage) {
+  if (!container) return;
+  container.innerHTML = "";
+  if (!Array.isArray(items) || !items.length) {
+    const empty = document.createElement("li");
+    empty.className = "storage-usage-empty";
+    empty.textContent = emptyMessage;
+    container.appendChild(empty);
+    return;
+  }
+  items.forEach((item) => {
+    if (!item || typeof item !== "object") return;
+    const li = document.createElement("li");
+    li.className = "storage-usage-item";
+    const label = document.createElement("span");
+    label.className = "storage-usage-label";
+    label.textContent = item.label || "Elemento";
+    li.appendChild(label);
+    if (item.meta) {
+      const meta = document.createElement("small");
+      meta.className = "storage-usage-meta";
+      meta.textContent = item.meta;
+      li.appendChild(meta);
+    }
+    const value = document.createElement("strong");
+    value.className = "storage-usage-value";
+    value.textContent = formatBytes(item.size);
+    li.appendChild(value);
+    container.appendChild(li);
+  });
+}
+
+function getLocalStorageBreakdown() {
+  if (typeof localStorage === "undefined") {
+    return { items: [], total: 0, error: "LocalStorage no está disponible." };
+  }
+  const items = [];
+  let total = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      let value;
+      try {
+        value = localStorage.getItem(key);
+      } catch (err) {
+        value = null;
+      }
+      const size = measureStringBytes(key) + measureStringBytes(value);
+      total += size;
+      const charCount = typeof value === "string" ? value.length : 0;
+      const note = STORAGE_KEY_LABELS[key];
+      const metaParts = [];
+      if (note) {
+        metaParts.push(note);
+      }
+      metaParts.push(`${storageNumberFormatter.format(charCount)} caracteres`);
+      items.push({
+        label: key,
+        size,
+        meta: metaParts.join(" · "),
+      });
+    }
+  } catch (err) {
+    console.warn("No se pudo calcular el uso de LocalStorage", err);
+    return { items: [], total: 0, error: "No se pudo leer el contenido de LocalStorage." };
+  }
+  items.sort((a, b) => b.size - a.size);
+  return { items, total };
+}
+
+async function getCacheStorageBreakdown() {
+  if (typeof caches === "undefined" || typeof caches.keys !== "function") {
+    return { items: [], total: 0, error: "Cache Storage no está disponible." };
+  }
+  try {
+    const cacheNames = await caches.keys();
+    const items = [];
+    let total = 0;
+    for (const name of cacheNames) {
+      if (typeof name !== "string") continue;
+      const cache = await caches.open(name);
+      const requests = await cache.keys();
+      let cacheTotal = 0;
+      for (const request of requests) {
+        const response = await cache.match(request);
+        if (!response) continue;
+        let size = 0;
+        const headerSize = response.headers && response.headers.get ? response.headers.get("content-length") : null;
+        if (headerSize && Number.isFinite(Number(headerSize))) {
+          size = Number(headerSize);
+        }
+        if (!size) {
+          try {
+            const buffer = await response.clone().arrayBuffer();
+            size = buffer.byteLength;
+          } catch (err) {
+            size = 0;
+          }
+        }
+        cacheTotal += Number.isFinite(size) ? size : 0;
+      }
+      total += cacheTotal;
+      items.push({
+        label: name,
+        size: cacheTotal,
+        meta: `${storageNumberFormatter.format(requests.length)} recurso${requests.length === 1 ? "" : "s"}`,
+      });
+    }
+    items.sort((a, b) => b.size - a.size);
+    return { items, total };
+  } catch (err) {
+    console.warn("No se pudo calcular el uso de las cachés", err);
+    return { items: [], total: 0, error: "No se pudo calcular el tamaño de las cachés." };
+  }
+}
+
+function formatUsageDetailKey(key) {
+  if (!key) return "Desconocido";
+  if (STORAGE_USAGE_DETAIL_LABELS[key]) return STORAGE_USAGE_DETAIL_LABELS[key];
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (char) => char.toUpperCase())
+    .trim();
+}
+
+function buildUsageDetailList(details, excludeKeys = new Set()) {
+  if (!details || typeof details !== "object") {
+    return [];
+  }
+  const entries = [];
+  Object.keys(details).forEach((key) => {
+    if (excludeKeys.has(key)) return;
+    const value = Number(details[key]);
+    if (!Number.isFinite(value) || value <= 0) return;
+    entries.push({
+      label: formatUsageDetailKey(key),
+      size: value,
+    });
+  });
+  entries.sort((a, b) => b.size - a.size);
+  return entries;
+}
+
+async function getStorageEstimate() {
+  if (!navigator.storage || typeof navigator.storage.estimate !== "function") {
+    return { estimate: null, error: "El navegador no proporciona datos de cuota." };
+  }
+  try {
+    const estimate = await navigator.storage.estimate();
+    return { estimate: estimate || null, error: null };
+  } catch (err) {
+    console.warn("navigator.storage.estimate() falló", err);
+    return { estimate: null, error: "No se pudo obtener la cuota del navegador." };
+  }
+}
+
+function isStorageUsagePanelOpen() {
+  return storageUsagePanel && !storageUsagePanel.classList.contains("hidden");
+}
+
+function applyStorageUsageResult(result) {
+  if (!result) return;
+  const { totalUsage, quota, local, caches, others, warnings, hasWarningError } = result;
+  if (storageUsageTotalEl) {
+    storageUsageTotalEl.textContent = formatBytes(totalUsage);
+  }
+  if (storageUsageQuotaEl) {
+    storageUsageQuotaEl.textContent = Number.isFinite(quota) ? formatBytes(quota) : "—";
+  }
+  if (storageUsagePercentEl) {
+    const canShowPercent =
+      Number.isFinite(totalUsage) && Number.isFinite(quota) && quota > 0;
+    storageUsagePercentEl.textContent = canShowPercent
+      ? formatPercentage(totalUsage, quota)
+      : "—";
+  }
+  renderUsageList(
+    storageUsageLocalList,
+    local && Array.isArray(local.items) ? local.items : [],
+    local && local.error ? local.error : "Sin datos guardados."
+  );
+  renderUsageList(
+    storageUsageCacheList,
+    caches && Array.isArray(caches.items) ? caches.items : [],
+    caches && caches.error ? caches.error : "Sin recursos en caché."
+  );
+  renderUsageList(
+    storageUsageOtherList,
+    others && Array.isArray(others.items) ? others.items : [],
+    "No hay datos adicionales registrados."
+  );
+  if (storageUsageUpdatedEl) {
+    const now = new Date();
+    storageUsageUpdatedEl.textContent = `Actualizado: ${now.toLocaleTimeString("es-ES", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    })}`;
+  }
+  if (Array.isArray(warnings) && warnings.length) {
+    setStorageUsageStatus(warnings.join(" "), !!hasWarningError);
+  } else {
+    setStorageUsageStatus("Uso calculado a partir del almacenamiento del navegador.");
+  }
+}
+
+function closeStorageUsagePanel() {
+  if (!storageUsagePanel || !storageUsageBtn) return;
+  storageUsagePanel.classList.add("hidden");
+  storageUsageBtn.setAttribute("aria-expanded", "false");
+  if (storageUsageLastFocusedElement && typeof storageUsageLastFocusedElement.focus === "function") {
+    storageUsageLastFocusedElement.focus();
+  }
+  storageUsageLastFocusedElement = null;
+}
+
+function openStorageUsagePanel() {
+  if (!storageUsagePanel || !storageUsageBtn) return;
+  storageUsageLastFocusedElement = document.activeElement;
+  storageUsagePanel.classList.remove("hidden");
+  storageUsageBtn.setAttribute("aria-expanded", "true");
+  setStorageUsageStatus("Calculando…");
+  if (storageUsageUpdatedEl) {
+    storageUsageUpdatedEl.textContent = "";
+  }
+  refreshStorageUsage().catch(() => {});
+  if (storageUsageCloseBtn && typeof storageUsageCloseBtn.focus === "function") {
+    storageUsageCloseBtn.focus();
+  }
+}
+
+function toggleStorageUsagePanel() {
+  if (isStorageUsagePanelOpen()) {
+    closeStorageUsagePanel();
+  } else {
+    openStorageUsagePanel();
+  }
+}
+
+function maybeRefreshStorageUsage() {
+  if (isStorageUsagePanelOpen()) {
+    refreshStorageUsage().catch(() => {});
+  }
+}
+
+async function refreshStorageUsage() {
+  if (storageUsageRefreshPromise) {
+    return storageUsageRefreshPromise;
+  }
+  storageUsageRefreshPromise = (async () => {
+    const [estimateResult, cachesResult] = await Promise.all([
+      getStorageEstimate(),
+      getCacheStorageBreakdown(),
+    ]);
+    const localResult = getLocalStorageBreakdown();
+    const usageDetails =
+      estimateResult.estimate && isPlainObject(estimateResult.estimate.usageDetails)
+        ? estimateResult.estimate.usageDetails
+        : null;
+    const totalUsage =
+      estimateResult.estimate && Number.isFinite(estimateResult.estimate.usage)
+        ? estimateResult.estimate.usage
+        : (localResult.total || 0) + (cachesResult.total || 0);
+    const quota =
+      estimateResult.estimate && Number.isFinite(estimateResult.estimate.quota)
+        ? estimateResult.estimate.quota
+        : null;
+    const others = {
+      items: buildUsageDetailList(usageDetails, new Set(["caches", "localStorage"])),
+    };
+    const warnings = [];
+    let hasWarningError = false;
+    if (estimateResult.error) {
+      warnings.push(estimateResult.error);
+    }
+    if (localResult.error) {
+      warnings.push(localResult.error);
+      hasWarningError = true;
+    }
+    if (cachesResult.error) {
+      warnings.push(cachesResult.error);
+      hasWarningError = true;
+    }
+    const result = {
+      totalUsage,
+      quota,
+      local: localResult,
+      caches: cachesResult,
+      others,
+      warnings,
+      hasWarningError,
+    };
+    applyStorageUsageResult(result);
+    return result;
+  })()
+    .catch((err) => {
+      setStorageUsageStatus("No se pudo actualizar el uso de almacenamiento.", true);
+      return Promise.reject(err);
+    })
+    .finally(() => {
+      storageUsageRefreshPromise = null;
+    });
+  return storageUsageRefreshPromise;
+}
 
 function hasValue(value) {
   return value !== undefined && value !== null;
@@ -625,6 +991,7 @@ function save() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     storageSaveFailed = false;
     clearStorageWarning();
+    maybeRefreshStorageUsage();
   } catch (err) {
     console.warn("No se pudo guardar el estado de entreno", err);
     if (!storageSaveFailed) {
@@ -699,6 +1066,34 @@ const tabPanels = {
 const prevDayBtn = document.getElementById("prevDayBtn");
 const nextDayBtn = document.getElementById("nextDayBtn");
 
+if (storageUsageBtn) {
+  decorateIcons(storageUsageBtn, "storage", { label: "Uso de almacenamiento" });
+  storageUsageBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    toggleStorageUsagePanel();
+  });
+}
+if (storageUsageCloseBtn) {
+  storageUsageCloseBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    closeStorageUsagePanel();
+  });
+}
+
+document.addEventListener("pointerdown", (event) => {
+  if (!isStorageUsagePanelOpen()) return;
+  if (!storageUsagePanel) return;
+  const target = event.target;
+  if (typeof Node !== "undefined" && !(target instanceof Node)) return;
+  if (
+    (storageUsagePanel && storageUsagePanel.contains(target)) ||
+    (storageUsageBtn && storageUsageBtn.contains(target))
+  ) {
+    return;
+  }
+  closeStorageUsagePanel();
+});
+
 /* Añadir */
 const addForm = document.getElementById("addForm");
 const formDate = document.getElementById("formDate");
@@ -726,6 +1121,17 @@ const formQuickNote = document.getElementById("formQuickNote");
 const formLibraryPreview = document.getElementById("formLibraryPreview");
 const formFailureSets = document.getElementById("formFailureSets");
 storageWarningEl = document.getElementById("storageWarning");
+const storageUsageBtn = document.getElementById("storageUsageBtn");
+const storageUsagePanel = document.getElementById("storageUsagePanel");
+const storageUsageCloseBtn = document.getElementById("storageUsageClose");
+const storageUsageStatusEl = document.getElementById("storageUsageStatus");
+const storageUsageTotalEl = document.getElementById("storageUsageTotal");
+const storageUsageQuotaEl = document.getElementById("storageUsageQuota");
+const storageUsagePercentEl = document.getElementById("storageUsagePercent");
+const storageUsageLocalList = document.getElementById("storageUsageLocalList");
+const storageUsageCacheList = document.getElementById("storageUsageCacheList");
+const storageUsageOtherList = document.getElementById("storageUsageOtherList");
+const storageUsageUpdatedEl = document.getElementById("storageUsageUpdated");
 const goalFailure = document.getElementById("goalFailure");
 const formStepButtons = document.querySelectorAll(".form-step-btn");
 const formSteps = document.querySelectorAll(".form-step");
@@ -884,6 +1290,11 @@ function getCalendarSnapshot(){
 
 if (historyStore) {
   historyStore.rebuildFromCalendar(getCalendarSnapshot());
+  if (typeof historyStore.subscribe === "function") {
+    historyStore.subscribe(() => {
+      maybeRefreshStorageUsage();
+    });
+  }
 }
 
 const today = new Date();
@@ -940,6 +1351,11 @@ document.querySelectorAll("[data-close-modal]").forEach((btn) => {
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    if (isStorageUsagePanelOpen()) {
+      event.preventDefault();
+      closeStorageUsagePanel();
+      return;
+    }
     const openModalEl = document.querySelector(".modal:not(.hidden)");
     if (openModalEl) {
       event.preventDefault();
