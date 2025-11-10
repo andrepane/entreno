@@ -623,6 +623,7 @@ function save() {
   state.plannedExercises = buildPlannedFromWorkouts();
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    showStorageUsage(); // NEW:
     storageSaveFailed = false;
     clearStorageWarning();
   } catch (err) {
@@ -851,6 +852,34 @@ const DOW = ["L","M","X","J","V","S","D"];
 /* Seguimiento */
 const historyStore = typeof window !== "undefined" ? window.entrenoHistory : null;
 
+function estimateLocalStorageUsage() { // NEW:
+  if (typeof localStorage === "undefined") { // NEW:
+    return "0 KB"; // NEW:
+  } // NEW:
+  let totalChars = 0; // NEW:
+  for (let i = 0; i < localStorage.length; i += 1) { // NEW:
+    const key = localStorage.key(i) || ""; // NEW:
+    const value = localStorage.getItem(key) || ""; // NEW:
+    totalChars += key.length + value.length; // NEW:
+  } // NEW:
+  const totalBytes = totalChars * 2; // NEW:
+  const KB = 1024; // NEW:
+  const MB = KB * 1024; // NEW:
+  if (totalBytes >= MB) { // NEW:
+    return `${(totalBytes / MB).toFixed(2)} MB`; // NEW:
+  } // NEW:
+  return `${(totalBytes / KB).toFixed(2)} KB`; // NEW:
+} // NEW:
+
+function showStorageUsage() { // NEW:
+  const usage = estimateLocalStorageUsage(); // NEW:
+  console.log(`📦 Uso de localStorage: ${usage}`); // NEW:
+  const storageInfoEl = document.getElementById("storage-info"); // NEW:
+  if (storageInfoEl) { // NEW:
+    storageInfoEl.textContent = `Espacio ocupado: ${usage} (máx. aprox. 5 MB)`; // NEW:
+  } // NEW:
+} // NEW:
+
 /* ========= Inicialización ========= */
 load();
 const originalWorkoutsJSON = JSON.stringify(state.workouts || {});
@@ -896,6 +925,7 @@ selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
 formCategory.value = normalizeCategory(formCategory.value);
 renderAll();
+showStorageUsage(); // NEW:
 Promise.resolve().then(ensureExerciseIconsLoaded);
 attachLibraryEventListeners();
 if (
