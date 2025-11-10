@@ -38,6 +38,7 @@
     range: "quarter",
     order: "desc",
     phase: "all",
+    compareIndex: null,
   };
 
   const elements = {};
@@ -141,11 +142,15 @@
     elements.tableBody = $("historyTableBody");
     elements.table = $("historyTable");
     elements.canvas = $("historyChart");
+    elements.chartWrapper = elements.canvas ? elements.canvas.parentElement : null;
     elements.rebuildBtn = $("historyRebuildBtn");
     elements.toast = $("historyToast");
     elements.warnings = $("historyWarnings");
     elements.phaseFilter = $("historyPhaseFilter");
     elements.trends = $("historyTrends");
+
+    setupChartOverlay();
+    buildComparisonPanel();
 
     if (elements.phaseFilter) {
       elements.phaseFilter.value = state.phase;
@@ -348,6 +353,7 @@
       elements.tableBody.innerHTML = "";
       lastChartEntries = [];
       clearCanvas();
+      resetComparisonControls();
       return;
     }
 
@@ -383,11 +389,17 @@
     }
     updateCanvasDimensions();
     renderTypeSelector(entries);
-    renderSummary(phaseFiltered);
-    renderTrends(phaseFiltered);
+    const chronological = phaseFiltered.slice().sort((a, b) => a.fechaISO.localeCompare(b.fechaISO));
+    lastChartEntries = chronological;
+    renderSummary(chronological);
+    renderTrends(chronological);
     renderTable(phaseFiltered);
-    lastChartEntries = phaseFiltered;
-    renderChart(phaseFiltered);
+    renderChart(chronological);
+    if (chronological.length >= 2) {
+      updateComparisonControls(chronological);
+    } else {
+      resetComparisonControls();
+    }
     updateOrderButton();
   }
 
@@ -424,9 +436,11 @@
       if (elements.trends) {
         elements.trends.innerHTML = "";
       }
+      resetComparisonControls();
       return;
     }
     if (!historyStore) {
+      resetComparisonControls();
       return;
     }
     const comparison = historyStore.compareProgress(entries);
@@ -439,6 +453,7 @@
       empty.className = "muted";
       empty.textContent = "Necesitas al menos un registro para comparar.";
       elements.summary.append(empty);
+      resetComparisonControls();
       return;
     }
     const badge = document.createElement("span");
@@ -454,14 +469,21 @@
       badge.classList.add("same");
     }
 
-    const list = document.createElement("dl");
-    list.className = "summary-grid";
+    const summaryRow = document.createElement("div");
+    summaryRow.className = "summary-duo";
+    const firstPhase = getPhaseForEntry(first);
+    const lastPhase = getPhaseForEntry(last);
+    const beforeCard = createSummaryCard(first, "before", { title: "Antes", phase: firstPhase });
+    const transition = createSummaryTransition();
+    const afterCard = createSummaryCard(last, "after", { title: "Ahora", phase: lastPhase, entries });
+    summaryRow.append(beforeCard, transition, afterCard);
 
-    list.append(summaryItem("Primer registro", `${formatValue(first)} · ${formatDate(first.fechaISO)}`));
-    list.append(summaryItem("Último registro", `${formatValue(last)} · ${formatDate(last.fechaISO)}`));
-    list.append(summaryItem("Cambio", `${formatDelta(delta)}${pct != null ? ` (${pct.toFixed(1)}%)` : ""}`));
+    const deltaCard = createDeltaCard(first, last, delta, pct);
 
-    elements.summary.append(badge, list);
+    elements.summary.append(badge, summaryRow, deltaCard);
+    if (elements.comparisonPanel) {
+      elements.summary.append(elements.comparisonPanel);
+    }
   }
 
   function createTrendCard(title, value, variant = "") {
@@ -516,7 +538,7 @@
       ? `${weeklyTotal % 1 === 0 ? weeklyTotal : weeklyTotal.toFixed(1)} ${suffix}`.trim()
       : "—";
 
-    elements.trends.append(
+    const cards = [
       createTrendCard(
         "Mejor marca",
         best ? `${formatValue(best)} · ${formatDate(best.fechaISO)}` : "—",
@@ -524,17 +546,502 @@
       ),
       createTrendCard("Volumen 7 días", volumeLabel || "—"),
       createTrendCard("Último registro", last ? `${formatValue(last)} · ${formatDate(last.fechaISO)}` : "—", "last")
-    );
+    ];
+    elements.trends.append(...cards);
+
+    const highlights = buildHighlights(sorted, suffix, best);
+    if (highlights) {
+      elements.trends.append(highlights);
+    }
   }
 
-  function summaryItem(label, value) {
-    const wrapper = document.createElement("div");
-    const dt = document.createElement("dt");
-    dt.textContent = label;
-    const dd = document.createElement("dd");
-    dd.textContent = value;
-    wrapper.append(dt, dd);
-    return wrapper;
+  function createSummaryTransition() {
+    const arrow = document.createElement("span");
+    arrow.className = "summary-transition";
+    arrow.setAttribute("aria-hidden", "true");
+    arrow.textContent = "➡️";
+    return arrow;
+  }
+
+  function getPhaseForEntry(entry) {
+    if (!entry) return null;
+    if (entry.fase) return entry.fase;
+    if (entry.phase) return entry.phase;
+    const meta = getMetaForDate(entry.fechaISO);
+    if (meta && (meta.phase || meta.fase)) {
+      return meta.phase || meta.fase;
+    }
+    return null;
+  }
+
+  function getPhaseLabelText(phaseKey) {
+    if (!phaseKey) return null;
+    const normalized = normalizeKey(phaseKey)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    return PHASE_LABELS[normalized] || phaseKey;
+  }
+
+  function createPhaseChip(phaseKey) {
+    if (!phaseKey) return null;
+    const label = getPhaseLabelText(phaseKey);
+    const normalized = normalizeKey(phaseKey)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    const chip = document.createElement("span");
+    chip.className = `phase-chip phase-${normalized || "otro"}`;
+    chip.textContent = label;
+    return chip;
+  }
+
+  function createSummaryCard(entry, variant, options = {}) {
+    const card = document.createElement("article");
+    card.className = `summary-card ${variant}`;
+
+    const icon = document.createElement("span");
+    icon.className = `summary-card-icon ${variant}`;
+    icon.textContent = variant === "before" ? "🕘" : "⚡";
+
+    const body = document.createElement("div");
+    body.className = "summary-card-body";
+
+    const header = document.createElement("div");
+    header.className = "summary-card-header";
+    const label = document.createElement("span");
+    label.className = "summary-card-label";
+    label.textContent = options.title || (variant === "before" ? "Antes" : "Ahora");
+    const type = document.createElement("span");
+    type.className = "summary-card-type";
+    type.textContent = TYPE_LABEL[entry.tipo] || entry.tipo;
+    header.append(label, type);
+
+    const value = document.createElement("strong");
+    value.className = "summary-card-value";
+    value.textContent = formatValue(entry);
+
+    const meta = document.createElement("div");
+    meta.className = "summary-card-meta";
+    const date = document.createElement("time");
+    date.dateTime = entry.fechaISO;
+    date.textContent = formatDate(entry.fechaISO);
+    meta.append(date);
+    const phaseChip = createPhaseChip(options.phase);
+    if (phaseChip) {
+      meta.append(phaseChip);
+    }
+
+    body.append(header, value, meta);
+
+    if (variant === "after") {
+      const sparkline = createSparkline(options.entries || []);
+      if (sparkline) {
+        body.append(sparkline);
+      }
+    }
+
+    card.append(icon, body);
+    return card;
+  }
+
+  function createSparkline(entries) {
+    if (!entries || entries.length < 2) return null;
+    const sorted = entries.slice().sort((a, b) => a.fechaISO.localeCompare(b.fechaISO));
+    const width = 160;
+    const height = 60;
+    const padding = 6;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.className = "summary-sparkline";
+    const ctx = canvas.getContext("2d");
+    const values = sorted.map((entry) => Number(entry.valor));
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const range = max - min || 1;
+    const denominator = Math.max(sorted.length - 1, 1);
+    const plotWidth = width - padding * 2;
+    const plotHeight = height - padding * 2;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    sorted.forEach((entry, index) => {
+      const value = Number(entry.valor);
+      const x = padding + (index / denominator) * plotWidth;
+      const normalized = (value - min) / range;
+      const y = padding + (1 - normalized) * plotHeight;
+      if (index === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.strokeStyle = "#48d06d";
+    ctx.stroke();
+    ctx.lineTo(padding + plotWidth, padding + plotHeight);
+    ctx.lineTo(padding, padding + plotHeight);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(72,208,109,0.12)";
+    ctx.fill();
+    return canvas;
+  }
+
+  function createDeltaCard(first, last, delta, pct) {
+    const card = document.createElement("article");
+    card.className = "summary-card delta";
+
+    const icon = document.createElement("span");
+    icon.className = `summary-card-icon delta ${delta > 0 ? "up" : delta < 0 ? "down" : "same"}`;
+    icon.textContent = delta > 0 ? "📈" : delta < 0 ? "📉" : "⏺️";
+
+    const body = document.createElement("div");
+    body.className = "summary-card-body";
+
+    const header = document.createElement("div");
+    header.className = "summary-card-header";
+    const label = document.createElement("span");
+    label.className = "summary-card-label";
+    label.textContent = "Cambio total";
+    const type = document.createElement("span");
+    type.className = "summary-card-type";
+    type.textContent = TYPE_LABEL[last.tipo] || last.tipo;
+    header.append(label, type);
+
+    const valueRow = document.createElement("div");
+    valueRow.className = "delta-value-row";
+    const indicator = document.createElement("span");
+    indicator.className = `delta-indicator ${delta > 0 ? "up" : delta < 0 ? "down" : "same"}`;
+    indicator.textContent = delta > 0 ? "▲" : delta < 0 ? "▼" : "■";
+    const value = document.createElement("strong");
+    value.className = "summary-card-value";
+    value.textContent = formatDelta(delta);
+    valueRow.append(indicator, value);
+
+    const bar = createDeltaBar(first, last, delta);
+
+    const meta = document.createElement("div");
+    meta.className = "summary-card-meta";
+    const pctSpan = document.createElement("span");
+    pctSpan.className = "delta-meta";
+    pctSpan.textContent = pct != null ? `${pct.toFixed(1)}%` : "Sin cambio";
+    const rangeSpan = document.createElement("span");
+    rangeSpan.className = "summary-card-note";
+    rangeSpan.textContent = `${formatDate(first.fechaISO)} → ${formatDate(last.fechaISO)}`;
+    meta.append(pctSpan, rangeSpan);
+
+    body.append(header, valueRow, bar, meta);
+    card.append(icon, body);
+    return card;
+  }
+
+  function createDeltaBar(first, last, delta) {
+    const bar = document.createElement("div");
+    bar.className = "delta-bar";
+    const fill = document.createElement("div");
+    fill.className = "delta-bar-fill";
+    const baseline = Math.max(Math.abs(Number(first.valor)), Math.abs(Number(last.valor)));
+    const ratioSource = baseline > 0 ? baseline : Math.abs(delta);
+    const ratio = ratioSource ? Math.min(Math.abs(delta) / ratioSource, 1) : 0;
+    fill.style.setProperty("--delta-size", `${(ratio * 100).toFixed(2)}`);
+    if (delta > 0) {
+      fill.dataset.dir = "positive";
+    } else if (delta < 0) {
+      fill.dataset.dir = "negative";
+    } else {
+      fill.dataset.dir = "neutral";
+    }
+    bar.append(fill);
+    return bar;
+  }
+
+  function buildHighlights(sorted, suffix, bestEntry) {
+    if (!sorted || !sorted.length) return null;
+
+    const gainWeek = { diff: -Infinity };
+    const gainAny = { diff: -Infinity };
+    const dropWeek = { diff: Infinity };
+    const dropAny = { diff: Infinity };
+
+    for (let i = 1; i < sorted.length; i += 1) {
+      const previous = sorted[i - 1];
+      const current = sorted[i];
+      const diff = Number(current.valor) - Number(previous.valor);
+      const prevDate = new Date(previous.fechaISO);
+      const currDate = new Date(current.fechaISO);
+      const daysBetween = Math.abs((currDate - prevDate) / (1000 * 60 * 60 * 24));
+      const candidate = { diff, from: previous, to: current, days: daysBetween };
+      if (diff > 0) {
+        if (!gainAny.from || diff > gainAny.diff) {
+          Object.assign(gainAny, candidate);
+        }
+        if (daysBetween <= 7 && (!gainWeek.from || diff > gainWeek.diff)) {
+          Object.assign(gainWeek, candidate);
+        }
+      }
+      if (diff < 0) {
+        if (!dropAny.from || diff < dropAny.diff) {
+          Object.assign(dropAny, candidate);
+        }
+        if (daysBetween <= 7 && (!dropWeek.from || diff < dropWeek.diff)) {
+          Object.assign(dropWeek, candidate);
+        }
+      }
+    }
+
+    const rise = gainWeek.from ? gainWeek : gainAny.from ? gainAny : null;
+    const fall = dropWeek.from ? dropWeek : dropAny.from ? dropAny : null;
+
+    const container = document.createElement("div");
+    container.className = "history-highlights";
+
+    const formattedSuffix = suffix ? ` ${suffix}` : "";
+
+    const riseValue = rise ? `${formatDelta(rise.diff)}${formattedSuffix}`.trim() : "—";
+    const riseMeta = rise
+      ? `${formatDate(rise.from.fechaISO)} → ${formatDate(rise.to.fechaISO)}${rise.days ? ` · ${Math.round(rise.days)} días` : ""}`
+      : "Sin datos recientes";
+    container.append(
+      createHighlightCard("🔥", "Mayor subida en una semana", riseValue, riseMeta, "gain")
+    );
+
+    const fallValue = fall ? `${formatDelta(fall.diff)}${formattedSuffix}`.trim() : "—";
+    const fallMeta = fall
+      ? `${formatDate(fall.from.fechaISO)} → ${formatDate(fall.to.fechaISO)}${fall.days ? ` · ${Math.round(fall.days)} días` : ""}`
+      : "Sin datos recientes";
+    container.append(
+      createHighlightCard("⚠️", "Mayor caída", fallValue, fallMeta, "drop")
+    );
+
+    const prValue = bestEntry ? formatValue(bestEntry) : "—";
+    const prMeta = bestEntry ? formatDate(bestEntry.fechaISO) : "Aún sin PR";
+    container.append(createHighlightCard("🛡️", "Mayor PR", prValue, prMeta, "pr"));
+
+    return container;
+  }
+
+  function createHighlightCard(icon, title, value, meta, variant = "") {
+    const card = document.createElement("article");
+    card.className = "highlight-card";
+    if (variant) {
+      card.classList.add(`highlight-${variant}`);
+    }
+    const iconSpan = document.createElement("span");
+    iconSpan.className = "highlight-icon";
+    iconSpan.textContent = icon;
+    const info = document.createElement("div");
+    info.className = "highlight-info";
+    const heading = document.createElement("h5");
+    heading.textContent = title;
+    const strong = document.createElement("strong");
+    strong.textContent = value;
+    const metaSpan = document.createElement("span");
+    metaSpan.className = "highlight-meta";
+    metaSpan.textContent = meta;
+    info.append(heading, strong, metaSpan);
+    card.append(iconSpan, info);
+    return card;
+  }
+
+  function setupChartOverlay() {
+    if (!elements.chartWrapper) return;
+    elements.chartWrapper.classList.add("history-chart-ready");
+    if (!elements.chartOverlay) {
+      const overlay = document.createElement("div");
+      overlay.className = "history-chart-overlay hidden";
+      const highlight = document.createElement("div");
+      highlight.className = "history-chart-highlight";
+      const marker = document.createElement("div");
+      marker.className = "history-chart-marker";
+      overlay.append(highlight, marker);
+      elements.chartWrapper.append(overlay);
+      elements.chartOverlay = overlay;
+      elements.chartHighlight = highlight;
+      elements.chartMarker = marker;
+    }
+    if (!elements.chartSlider) {
+      const sliderContainer = document.createElement("div");
+      sliderContainer.className = "history-chart-slider-container hidden";
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.min = "0";
+      slider.step = "1";
+      slider.value = "0";
+      slider.className = "history-chart-slider";
+      slider.setAttribute("aria-label", "Comparar registro en la línea de tiempo");
+      slider.addEventListener("input", handleChartSliderInput);
+      sliderContainer.append(slider);
+      elements.chartWrapper.insertAdjacentElement("afterend", sliderContainer);
+      elements.chartSliderContainer = sliderContainer;
+      elements.chartSlider = slider;
+    }
+  }
+
+  function handleChartSliderInput() {
+    if (!elements.chartSlider) return;
+    const index = Number(elements.chartSlider.value);
+    if (Number.isNaN(index)) return;
+    const maxIndex = lastChartEntries.length ? lastChartEntries.length - 1 : 0;
+    state.compareIndex = Math.max(0, Math.min(index, maxIndex));
+    updateMarkerPosition(lastChartEntries);
+    updateComparisonPanel(lastChartEntries);
+  }
+
+  function updateComparisonControls(entries) {
+    if (!elements.chartSlider || !elements.chartOverlay) return;
+    if (!entries || entries.length < 2) {
+      resetComparisonControls();
+      return;
+    }
+    const maxIndex = entries.length - 1;
+    if (state.compareIndex === null || state.compareIndex > maxIndex) {
+      state.compareIndex = 0;
+    }
+    elements.chartSlider.max = String(maxIndex);
+    elements.chartSlider.value = String(state.compareIndex);
+    elements.chartSliderContainer.classList.remove("hidden");
+    elements.chartOverlay.classList.remove("hidden");
+    updateMarkerPosition(entries);
+    updateComparisonPanel(entries);
+  }
+
+  function resetComparisonControls() {
+    state.compareIndex = null;
+    if (elements.chartOverlay) {
+      elements.chartOverlay.classList.add("hidden");
+      elements.chartOverlay.style.setProperty("--marker-position", "100%");
+    }
+    if (elements.chartSliderContainer) {
+      elements.chartSliderContainer.classList.add("hidden");
+    }
+    if (elements.comparisonPanel) {
+      elements.comparisonPanel.classList.add("hidden");
+    }
+  }
+
+  function buildComparisonPanel() {
+    if (elements.comparisonPanel) return;
+    const panel = document.createElement("section");
+    panel.className = "comparison-panel hidden";
+    const heading = document.createElement("h4");
+    heading.textContent = "Comparativa temporal";
+    const grid = document.createElement("div");
+    grid.className = "comparison-grid";
+
+    const selectedBlock = document.createElement("article");
+    selectedBlock.className = "comparison-block selected";
+    const selectedLabel = document.createElement("span");
+    selectedLabel.className = "comparison-label";
+    selectedLabel.textContent = "Seleccionado";
+    const selectedValue = document.createElement("strong");
+    selectedValue.className = "comparison-value";
+    const selectedMeta = document.createElement("span");
+    selectedMeta.className = "comparison-meta";
+    selectedBlock.append(selectedLabel, selectedValue, selectedMeta);
+
+    const diffBlock = document.createElement("div");
+    diffBlock.className = "comparison-diff";
+    const diffLabel = document.createElement("span");
+    diffLabel.textContent = "Δ";
+    const diffValue = document.createElement("strong");
+    diffValue.className = "comparison-diff-value";
+    const diffPct = document.createElement("span");
+    diffPct.className = "comparison-diff-pct";
+    diffBlock.append(diffLabel, diffValue, diffPct);
+
+    const currentBlock = document.createElement("article");
+    currentBlock.className = "comparison-block current";
+    const currentLabel = document.createElement("span");
+    currentLabel.className = "comparison-label";
+    currentLabel.textContent = "Actual";
+    const currentValue = document.createElement("strong");
+    currentValue.className = "comparison-value";
+    const currentMeta = document.createElement("span");
+    currentMeta.className = "comparison-meta";
+    currentBlock.append(currentLabel, currentValue, currentMeta);
+
+    grid.append(selectedBlock, diffBlock, currentBlock);
+    panel.append(heading, grid);
+
+    elements.comparisonPanel = panel;
+    elements.comparisonSelectedValue = selectedValue;
+    elements.comparisonSelectedMeta = selectedMeta;
+    elements.comparisonCurrentValue = currentValue;
+    elements.comparisonCurrentMeta = currentMeta;
+    elements.comparisonDiffValue = diffValue;
+    elements.comparisonDiffPct = diffPct;
+    elements.comparisonDiffBlock = diffBlock;
+  }
+
+  function updateComparisonPanel(entries) {
+    if (!elements.comparisonPanel || !entries || entries.length < 2) {
+      if (elements.comparisonPanel) {
+        elements.comparisonPanel.classList.add("hidden");
+      }
+      return;
+    }
+    const maxIndex = entries.length - 1;
+    const clampedIndex = Math.max(0, Math.min(state.compareIndex ?? 0, maxIndex));
+    const selected = entries[clampedIndex];
+    const current = entries[maxIndex];
+    if (!selected || !current) {
+      elements.comparisonPanel.classList.add("hidden");
+      return;
+    }
+    state.compareIndex = clampedIndex;
+
+    const selectedPhase = getPhaseForEntry(selected);
+    const selectedPhaseLabel = getPhaseLabelText(selectedPhase);
+    elements.comparisonSelectedValue.textContent = formatValue(selected);
+    elements.comparisonSelectedMeta.textContent = selectedPhaseLabel
+      ? `${formatDate(selected.fechaISO)} · ${selectedPhaseLabel}`
+      : formatDate(selected.fechaISO);
+
+    const currentPhase = getPhaseForEntry(current);
+    const currentPhaseLabel = getPhaseLabelText(currentPhase);
+    elements.comparisonCurrentValue.textContent = formatValue(current);
+    elements.comparisonCurrentMeta.textContent = currentPhaseLabel
+      ? `${formatDate(current.fechaISO)} · ${currentPhaseLabel}`
+      : formatDate(current.fechaISO);
+
+    const diff = Number(current.valor) - Number(selected.valor);
+    const base = Number(selected.valor);
+    const pct = base !== 0 ? (diff / base) * 100 : null;
+    elements.comparisonDiffValue.textContent = formatDelta(diff);
+    if (pct !== null && Number.isFinite(pct)) {
+      const sign = pct > 0 ? "+" : "";
+      elements.comparisonDiffPct.textContent = `${sign}${pct.toFixed(1)}%`;
+    } else {
+      elements.comparisonDiffPct.textContent = "—";
+    }
+
+    if (elements.comparisonDiffBlock) {
+      elements.comparisonDiffBlock.classList.remove("up", "down", "same");
+      if (diff > 0) {
+        elements.comparisonDiffBlock.classList.add("up");
+      } else if (diff < 0) {
+        elements.comparisonDiffBlock.classList.add("down");
+      } else {
+        elements.comparisonDiffBlock.classList.add("same");
+      }
+    }
+
+    elements.comparisonPanel.classList.remove("hidden");
+  }
+
+  function updateMarkerPosition(entries) {
+    if (!elements.chartOverlay || !entries || !entries.length || state.compareIndex === null) {
+      if (elements.chartOverlay) {
+        elements.chartOverlay.style.setProperty("--marker-position", "100%");
+      }
+      return;
+    }
+    const maxIndex = entries.length - 1;
+    const clamped = Math.max(0, Math.min(state.compareIndex, maxIndex));
+    state.compareIndex = clamped;
+    const denominator = Math.max(maxIndex, 1);
+    const ratio = denominator ? clamped / denominator : 0;
+    const percent = Math.max(0, Math.min(100, ratio * 100));
+    elements.chartOverlay.style.setProperty("--marker-position", `${percent}%`);
   }
 
   function formatDelta(value) {
@@ -657,6 +1164,8 @@
     ctx.lineTo(paddingX, paddingY + plotHeight);
     ctx.closePath();
     ctx.fill();
+
+    updateMarkerPosition(entries);
   }
 
   function clearCanvas() {
