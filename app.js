@@ -1342,6 +1342,62 @@ function saveLibrary(list){
   renderLibrarySelector();
 }
 
+function arraysShallowEqual(a, b) {
+  if (!Array.isArray(a) && !Array.isArray(b)) return true;
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function updateExercisesFromLibrary(libraryExercise) {
+  if (!libraryExercise || !libraryExercise.id) return [];
+  const affectedDays = new Set();
+  const icon = resolveExerciseIcon(libraryExercise);
+  const tags = Array.isArray(libraryExercise.tags) ? libraryExercise.tags.slice() : [];
+  Object.entries(state.workouts || {}).forEach(([dayISO, exercises]) => {
+    if (!Array.isArray(exercises)) return;
+    exercises.forEach((exercise) => {
+      if (!isPlainObject(exercise) || exercise.libraryId !== libraryExercise.id) return;
+      let changed = false;
+      if (exercise.name !== libraryExercise.name) {
+        exercise.name = libraryExercise.name;
+        changed = true;
+      }
+      if (exercise.category !== libraryExercise.category) {
+        exercise.category = libraryExercise.category;
+        changed = true;
+      }
+      if (exercise.iconType !== icon.iconType) {
+        exercise.iconType = icon.iconType;
+        changed = true;
+      }
+      if (exercise.emoji !== icon.emoji) {
+        exercise.emoji = icon.emoji;
+        changed = true;
+      }
+      if (exercise.imageDataUrl !== icon.imageDataUrl) {
+        exercise.imageDataUrl = icon.imageDataUrl;
+        changed = true;
+      }
+      if (exercise.iconName !== icon.iconName) {
+        exercise.iconName = icon.iconName;
+        changed = true;
+      }
+      if (!arraysShallowEqual(exercise.tags, tags)) {
+        exercise.tags = tags.slice();
+        changed = true;
+      }
+      if (changed) {
+        affectedDays.add(fmt(fromISO(dayISO)));
+      }
+    });
+  });
+  return Array.from(affectedDays);
+}
+
 function addToLibrary(item){
   const list = getLibrary();
   list.push(item);
@@ -1353,9 +1409,24 @@ function updateLibrary(item){
   const list = getLibrary();
   const idx = list.findIndex((entry) => entry.id === item.id);
   if (idx === -1) return null;
-  list[idx] = { ...list[idx], ...item };
+  const merged = { ...list[idx], ...item };
+  const normalizedList = normalizeLibraryExercises([merged]);
+  const normalizedItem = normalizedList.length ? normalizedList[0] : null;
+  if (!normalizedItem) return list[idx];
+  list[idx] = normalizedItem;
+  const affectedDays = updateExercisesFromLibrary(normalizedItem);
   saveLibrary(list);
-  return list[idx];
+  if (affectedDays.length) {
+    const selectedDayISO = fmt(fromISO(state.selectedDate));
+    if (affectedDays.includes(selectedDayISO)) {
+      renderDay(selectedDayISO);
+    }
+    renderMiniCalendar();
+    affectedDays.forEach((dayISO) => {
+      syncHistoryForDay(dayISO, { showToast: false });
+    });
+  }
+  return findLibraryExercise(normalizedItem.id);
 }
 
 function removeFromLibrary(id){
