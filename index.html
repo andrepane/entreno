@@ -40,6 +40,7 @@
         <h2 id="dayTitle">Ejercicios de <span data-bind="humanDate"></span></h2>
         <div class="copy-day">
           <button id="copyDayToggleBtn" class="ghost">Copiar este día…</button>
+          <button id="dayMultiToggleBtn" class="ghost">Seleccionar ejercicios…</button>
           <div id="copyDayBox" class="copy-box hidden">
             <label for="copyTargetDate">Copiar a:</label>
             <input type="date" id="copyTargetDate" />
@@ -47,6 +48,25 @@
             <button id="cancelCopyBtn" class="ghost">Cancelar</button>
           </div>
         </div>
+
+        <section id="dayMultiBox" class="selection-card hidden" aria-live="polite">
+          <header class="selection-card-header">
+            <h3 class="heading-tight">Añadir ejercicios a varios días</h3>
+            <p id="dayMultiSummary" class="muted">Selecciona ejercicios del listado para comenzar.</p>
+          </header>
+          <div class="selection-targets">
+            <label class="field inline">
+              <span>Nuevo día</span>
+              <input type="date" id="dayMultiDate" />
+            </label>
+            <button type="button" id="dayMultiAddDate" class="ghost small">Añadir día</button>
+          </div>
+          <div id="dayMultiChips" class="chip-group"></div>
+          <div class="selection-actions">
+            <button type="button" id="dayMultiApply" class="primary" disabled>Copiar ejercicios</button>
+            <button type="button" id="dayMultiCancel" class="ghost">Cancelar</button>
+          </div>
+        </section>
       </div>
 
       <ul id="exerciseList" class="exercise-list" aria-live="polite"></ul>
@@ -322,7 +342,10 @@
           <h2>Librería de ejercicios</h2>
           <p class="muted">Crea tu colección y reutilízala en tus planes diarios o semanales.</p>
         </div>
-        <button id="openLibraryForm" class="primary" type="button">Nuevo ejercicio</button>
+        <div class="library-header-actions">
+          <button id="libraryMultiToggle" class="ghost" type="button">Seleccionar varios</button>
+          <button id="openLibraryForm" class="primary" type="button">Nuevo ejercicio</button>
+        </div>
       </div>
 
       <div class="library-filters card">
@@ -350,6 +373,109 @@
       </div>
 
       <div id="libraryEmpty" class="empty-hint">Aún no hay ejercicios en la librería.</div>
+      <section id="libraryMultiBox" class="selection-card hidden" aria-live="polite">
+        <header class="selection-card-header">
+          <h3 class="heading-tight">Añadir varios ejercicios</h3>
+          <p id="libraryMultiSummary" class="muted">Selecciona ejercicios para configurar el plan.</p>
+        </header>
+        <div class="selection-targets">
+          <label class="field inline">
+            <span>Nuevo día</span>
+            <input type="date" id="libraryMultiDate" />
+          </label>
+          <button type="button" id="libraryMultiAddDate" class="ghost small">Añadir día</button>
+        </div>
+        <div id="libraryMultiChips" class="chip-group"></div>
+        <form id="libraryMultiForm" class="selection-form" autocomplete="off">
+          <fieldset class="fieldset">
+            <legend>Objetivo</legend>
+            <label class="row">
+              <input type="radio" name="libraryMultiGoal" value="reps" checked />
+              <span>Repeticiones</span>
+            </label>
+            <div class="row indent" data-goal="reps">
+              <label class="field inline">
+                <span>Series</span>
+                <input type="number" id="libraryMultiSeries" min="1" value="3" required />
+              </label>
+              <label class="field inline">
+                <span>Reps</span>
+                <input type="number" id="libraryMultiReps" min="1" value="8" required />
+              </label>
+              <label class="row inline">
+                <input type="checkbox" id="libraryMultiFailure" />
+                <span>Al fallo</span>
+              </label>
+            </div>
+            <label class="row">
+              <input type="radio" name="libraryMultiGoal" value="isometrico" />
+              <span>Isométrico</span>
+            </label>
+            <div class="row indent hidden" data-goal="isometrico">
+              <label class="field inline">
+                <span>Series</span>
+                <input type="number" id="libraryMultiIsoSeries" min="1" value="3" />
+              </label>
+              <label class="field inline">
+                <span>Segundos</span>
+                <input type="number" id="libraryMultiIsoSeconds" min="1" value="30" />
+              </label>
+              <label class="row inline">
+                <input type="checkbox" id="libraryMultiIsoFailure" />
+                <span>Al fallo</span>
+              </label>
+            </div>
+            <label class="row">
+              <input type="radio" name="libraryMultiGoal" value="fallo" />
+              <span>Al fallo</span>
+            </label>
+            <div class="row indent hidden" data-goal="fallo">
+              <label class="field inline">
+                <span>Series</span>
+                <input type="number" id="libraryMultiFailSeries" min="1" value="3" />
+              </label>
+            </div>
+            <label class="row">
+              <input type="radio" name="libraryMultiGoal" value="emom" />
+              <span>EMOM</span>
+            </label>
+            <div class="row indent hidden" data-goal="emom">
+              <label class="field inline">
+                <span>Minutos</span>
+                <input type="number" id="libraryMultiEmomMinutes" min="1" value="10" />
+              </label>
+              <label class="field inline">
+                <span>Reps / min</span>
+                <input type="number" id="libraryMultiEmomReps" min="1" value="10" />
+              </label>
+            </div>
+            <label class="row">
+              <input type="radio" name="libraryMultiGoal" value="cardio" />
+              <span>Cardio</span>
+            </label>
+            <div class="row indent hidden" data-goal="cardio">
+              <label class="field inline">
+                <span>Minutos</span>
+                <input type="number" id="libraryMultiCardioMinutes" min="1" value="20" />
+              </label>
+            </div>
+          </fieldset>
+          <div class="selection-extra">
+            <label class="field inline">
+              <span>Lastre (kg, opcional)</span>
+              <input type="number" id="libraryMultiWeight" step="0.5" />
+            </label>
+            <label class="field">
+              <span>Notas</span>
+              <textarea id="libraryMultiNotes" rows="2" placeholder="Notas comunes para todos"></textarea>
+            </label>
+          </div>
+        </form>
+        <div class="selection-actions">
+          <button type="button" id="libraryMultiApply" class="primary" disabled>Añadir ejercicios</button>
+          <button type="button" id="libraryMultiCancel" class="ghost">Cancelar</button>
+        </div>
+      </section>
       <div id="libraryList" class="library-grid" aria-live="polite"></div>
     </section>
 

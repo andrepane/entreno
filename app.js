@@ -190,6 +190,18 @@ let state = {
   plannedExercises: [],
 };
 
+const dayMultiSelect = {
+  active: false,
+  selected: new Set(),
+  targets: [],
+};
+
+const libraryMultiSelect = {
+  active: false,
+  selected: new Set(),
+  targets: [],
+};
+
 const isPlainObject = (value) => value && typeof value === "object" && !Array.isArray(value);
 
 function normalizeCategory(value){
@@ -363,6 +375,23 @@ function extractInitials(name){
     .slice(0, 2)
     .map((part) => part.charAt(0).toUpperCase());
   return parts.join("") || name.charAt(0).toUpperCase();
+}
+
+function addTargetToList(list, iso){
+  if (!Array.isArray(list)) return false;
+  if (!iso) return false;
+  if (list.includes(iso)) return false;
+  list.push(iso);
+  list.sort();
+  return true;
+}
+
+function removeTargetFromList(list, iso){
+  if (!Array.isArray(list)) return false;
+  const index = list.indexOf(iso);
+  if (index === -1) return false;
+  list.splice(index, 1);
+  return true;
 }
 
 function normalizeLibraryExercises(rawList){
@@ -717,6 +746,30 @@ const libraryEmptyEl = document.getElementById("libraryEmpty");
 const librarySearchInput = document.getElementById("librarySearch");
 const libraryCategoryFilter = document.getElementById("libraryCategoryFilter");
 const libraryTagsFilter = document.getElementById("libraryTagsFilter");
+const libraryMultiToggleBtn = document.getElementById("libraryMultiToggle");
+const libraryMultiBox = document.getElementById("libraryMultiBox");
+const libraryMultiSummary = document.getElementById("libraryMultiSummary");
+const libraryMultiDateInput = document.getElementById("libraryMultiDate");
+const libraryMultiAddDateBtn = document.getElementById("libraryMultiAddDate");
+const libraryMultiChips = document.getElementById("libraryMultiChips");
+const libraryMultiApplyBtn = document.getElementById("libraryMultiApply");
+const libraryMultiCancelBtn = document.getElementById("libraryMultiCancel");
+const libraryMultiForm = document.getElementById("libraryMultiForm");
+const libraryMultiGoalInputs = libraryMultiForm
+  ? Array.from(libraryMultiForm.querySelectorAll('input[name="libraryMultiGoal"]'))
+  : [];
+const libraryMultiSeriesInput = document.getElementById("libraryMultiSeries");
+const libraryMultiRepsInput = document.getElementById("libraryMultiReps");
+const libraryMultiFailureInput = document.getElementById("libraryMultiFailure");
+const libraryMultiIsoSeriesInput = document.getElementById("libraryMultiIsoSeries");
+const libraryMultiIsoSecondsInput = document.getElementById("libraryMultiIsoSeconds");
+const libraryMultiIsoFailureInput = document.getElementById("libraryMultiIsoFailure");
+const libraryMultiFailSeriesInput = document.getElementById("libraryMultiFailSeries");
+const libraryMultiEmomMinutesInput = document.getElementById("libraryMultiEmomMinutes");
+const libraryMultiEmomRepsInput = document.getElementById("libraryMultiEmomReps");
+const libraryMultiCardioMinutesInput = document.getElementById("libraryMultiCardioMinutes");
+const libraryMultiWeightInput = document.getElementById("libraryMultiWeight");
+const libraryMultiNotesInput = document.getElementById("libraryMultiNotes");
 const libraryFormModal = document.getElementById("libraryFormModal");
 const libraryForm = document.getElementById("libraryForm");
 const libraryFormId = document.getElementById("libraryFormId");
@@ -778,6 +831,14 @@ const copyDayBox = document.getElementById("copyDayBox");
 const copyTargetDate = document.getElementById("copyTargetDate");
 const copyDayBtn = document.getElementById("copyDayBtn");
 const cancelCopyBtn = document.getElementById("cancelCopyBtn");
+const dayMultiToggleBtn = document.getElementById("dayMultiToggleBtn");
+const dayMultiBox = document.getElementById("dayMultiBox");
+const dayMultiSummary = document.getElementById("dayMultiSummary");
+const dayMultiDateInput = document.getElementById("dayMultiDate");
+const dayMultiAddDateBtn = document.getElementById("dayMultiAddDate");
+const dayMultiChips = document.getElementById("dayMultiChips");
+const dayMultiApplyBtn = document.getElementById("dayMultiApply");
+const dayMultiCancelBtn = document.getElementById("dayMultiCancel");
 
 /* Mini calendario */
 const mcPrev = document.getElementById("mcPrev");
@@ -1575,9 +1636,18 @@ function renderLibrary(){
     tags: libraryTagsFilter ? normalizeTags(libraryTagsFilter.value) : [],
   };
   const items = filterLibraryItems(getLibrary(), filters);
+  if (libraryMultiSelect.active) {
+    const availableIds = new Set(getLibrary().map((item) => item.id));
+    Array.from(libraryMultiSelect.selected).forEach((id) => {
+      if (!availableIds.has(id)) {
+        libraryMultiSelect.selected.delete(id);
+      }
+    });
+  }
   libraryListEl.innerHTML = "";
   libraryEmptyEl.classList.toggle("hidden", items.length > 0);
   if (!items.length) {
+    updateLibraryMultiUI();
     return;
   }
   items.sort((a, b) => a.name.localeCompare(b.name));
@@ -1652,9 +1722,30 @@ function renderLibrary(){
     });
     actions.append(useBtn, editBtn, deleteBtn);
 
+    if (libraryMultiSelect.active) {
+      card.classList.add("is-selecting");
+      const selectWrap = document.createElement("label");
+      selectWrap.className = "library-card-select";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = libraryMultiSelect.selected.has(item.id);
+      checkbox.setAttribute("aria-label", `Seleccionar ${item.name}`);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          libraryMultiSelect.selected.add(item.id);
+        } else {
+          libraryMultiSelect.selected.delete(item.id);
+        }
+        updateLibraryMultiUI();
+      });
+      selectWrap.append(checkbox);
+      header.prepend(selectWrap);
+    }
+
     card.append(header, body, actions);
     libraryListEl.append(card);
   });
+  updateLibraryMultiUI();
 }
 
 let currentSelectorCallback = null;
@@ -2132,10 +2223,11 @@ function serializeGoalConfig(){
   return payload;
 }
 
-function scheduleExerciseFromLibrary(libraryExercise, config){
-  if (!libraryExercise || !config) return;
+function buildExerciseFromLibrary(libraryExercise, config){
+  if (!libraryExercise || !config) return null;
   const dayISO = fmt(fromISO(config.dateISO || state.selectedDate));
-  const goalType = config.goalType;
+  const goalType = normalizeGoalType(config.goalType);
+  const sets = config.series != null ? Math.max(1, Number(config.series) || 1) : 1;
   const exercise = {
     id: randomUUID(),
     plannedId: randomUUID(),
@@ -2147,10 +2239,10 @@ function scheduleExerciseFromLibrary(libraryExercise, config){
     imageDataUrl: libraryExercise.imageDataUrl,
     iconName: libraryExercise.iconName,
     tags: Array.isArray(libraryExercise.tags) ? libraryExercise.tags.slice() : [],
-    note: config.notes || libraryExercise.notes || "",
-    sets: config.series != null ? Math.max(1, Number(config.series) || 1) : 1,
+    note: config.notes != null && config.notes !== "" ? config.notes : libraryExercise.notes || "",
+    sets,
     goalType,
-    goal: goalType === "isometrico" ? "seconds" : goalType === "emom" ? "emom" : goalType === "cardio" ? "cardio" : "reps",
+    goal: goalType === "isometrico" ? "seconds" : goalType === "emom" ? "emom" : goalType === "cardio" ? "cardio" : goalType === "fallo" ? "fallo" : "reps",
     reps: goalType === "reps" ? Number(config.reps) : null,
     seconds: goalType === "isometrico" ? Number(config.segundos) : null,
     emomMinutes: goalType === "emom" ? Number(config.minutos) : null,
@@ -2167,6 +2259,13 @@ function scheduleExerciseFromLibrary(libraryExercise, config){
   if (exercise.failure) {
     exercise.done = Array.from({ length: exercise.sets }, () => null);
   }
+  return { dayISO, exercise };
+}
+
+function scheduleExerciseFromLibrary(libraryExercise, config){
+  const result = buildExerciseFromLibrary(libraryExercise, config);
+  if (!result) return;
+  const { dayISO, exercise } = result;
   if (!Array.isArray(state.workouts[dayISO])) {
     state.workouts[dayISO] = [];
   }
@@ -2203,6 +2302,15 @@ function renderDay(dayISO){
   emptyDayHint.style.display = list.length ? "none" : "block";
   renderTodayInsights(dayISO, list);
 
+  if (dayMultiSelect.active) {
+    const validIds = new Set(list.map((ex) => ex.id));
+    Array.from(dayMultiSelect.selected).forEach((id) => {
+      if (!validIds.has(id)) {
+        dayMultiSelect.selected.delete(id);
+      }
+    });
+  }
+
   list.forEach(ex=>{
     if (!ex.id) ex.id = randomUUID();
     ex.category = normalizeCategory(ex.category);
@@ -2237,6 +2345,26 @@ function renderDay(dayISO){
     h3.classList.add("heading-tight");
     const controls = document.createElement("div");
     controls.className = "controls";
+
+    if (dayMultiSelect.active) {
+      const selectWrap = document.createElement("label");
+      selectWrap.className = "selection-control";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = dayMultiSelect.selected.has(ex.id);
+      checkbox.setAttribute("aria-label", `Seleccionar ${ex.name}`);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          dayMultiSelect.selected.add(ex.id);
+        } else {
+          dayMultiSelect.selected.delete(ex.id);
+        }
+        updateDayMultiUI();
+      });
+      selectWrap.append(checkbox);
+      titleMain.append(selectWrap);
+    }
+
     const noteBtn = button("📝", "small ghost note-toggle");
     const updateNoteState = () => {
       const hasNote = !!(ex.note && ex.note.trim());
@@ -2423,6 +2551,356 @@ function renderDay(dayISO){
     setupExerciseDrag(li, dayISO);
 
   });
+
+  updateDayMultiUI();
+}
+
+function renderSelectionChips(container, targets, onRemove){
+  if (!container) return;
+  container.innerHTML = "";
+  if (!Array.isArray(targets) || !targets.length) {
+    return;
+  }
+  targets.forEach((iso) => {
+    const chip = document.createElement("span");
+    chip.className = "selection-chip";
+    const label = document.createElement("span");
+    label.textContent = toHuman(iso);
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.setAttribute("aria-label", `Quitar ${toHuman(iso)}`);
+    removeBtn.innerHTML = "×";
+    removeBtn.addEventListener("click", () => onRemove(iso));
+    chip.append(label, removeBtn);
+    container.append(chip);
+  });
+}
+
+function updateDayMultiUI(){
+  if (dayMultiSummary) {
+    if (!dayMultiSelect.active) {
+      dayMultiSummary.textContent = "Selecciona ejercicios del listado para comenzar.";
+    } else {
+      const selectedCount = dayMultiSelect.selected.size;
+      const targetCount = dayMultiSelect.targets.length;
+      const exercisesText = selectedCount === 1 ? "1 ejercicio seleccionado" : `${selectedCount} ejercicios seleccionados`;
+      const daysText = targetCount === 1 ? "1 día destino" : `${targetCount} días destino`;
+      dayMultiSummary.textContent = `${exercisesText} · ${daysText}`;
+    }
+  }
+  if (dayMultiApplyBtn) {
+    const canApply = dayMultiSelect.active && dayMultiSelect.selected.size > 0 && dayMultiSelect.targets.length > 0;
+    dayMultiApplyBtn.disabled = !canApply;
+    dayMultiApplyBtn.textContent = dayMultiSelect.targets.length > 1
+      ? `Copiar a ${dayMultiSelect.targets.length} días`
+      : "Copiar ejercicios";
+  }
+  if (dayMultiChips) {
+    dayMultiChips.classList.toggle("hidden", !dayMultiSelect.active || dayMultiSelect.targets.length === 0);
+    if (dayMultiSelect.active) {
+      renderSelectionChips(dayMultiChips, dayMultiSelect.targets, (iso) => {
+        removeTargetFromList(dayMultiSelect.targets, iso);
+        updateDayMultiUI();
+      });
+    } else {
+      dayMultiChips.innerHTML = "";
+    }
+  }
+  if (dayMultiBox) {
+    dayMultiBox.classList.toggle("hidden", !dayMultiSelect.active);
+  }
+  if (dayMultiToggleBtn) {
+    dayMultiToggleBtn.textContent = dayMultiSelect.active ? "Salir de selección" : "Seleccionar ejercicios…";
+  }
+  if (dayMultiDateInput && dayMultiSelect.active && !dayMultiDateInput.value) {
+    dayMultiDateInput.value = state.selectedDate;
+  }
+}
+
+function setDayMultiActive(active){
+  const next = !!active;
+  if (dayMultiSelect.active === next) {
+    if (next && dayMultiDateInput && !dayMultiDateInput.value) {
+      dayMultiDateInput.value = state.selectedDate;
+    }
+    updateDayMultiUI();
+    return;
+  }
+  dayMultiSelect.active = next;
+  dayMultiSelect.selected.clear();
+  if (!next) {
+    dayMultiSelect.targets = [];
+  } else {
+    dayMultiSelect.targets = [];
+    addTargetToList(dayMultiSelect.targets, state.selectedDate);
+    if (dayMultiDateInput) dayMultiDateInput.value = state.selectedDate;
+  }
+  if (next && copyDayBox) {
+    copyDayBox.classList.add("hidden");
+  }
+  renderDay(state.selectedDate);
+  updateDayMultiUI();
+}
+
+function handleDayMultiAddDate(){
+  if (!dayMultiSelect.active || !dayMultiDateInput) return;
+  const raw = getInputValue(dayMultiDateInput) || state.selectedDate;
+  const iso = fmt(fromISO(raw));
+  if (addTargetToList(dayMultiSelect.targets, iso)) {
+    updateDayMultiUI();
+  }
+  dayMultiDateInput.value = "";
+  dayMultiDateInput.focus();
+}
+
+function applyDayMultiSelection(){
+  if (!dayMultiSelect.active) return;
+  const selectedIds = Array.from(dayMultiSelect.selected);
+  if (!selectedIds.length) {
+    alert("Selecciona al menos un ejercicio del día.");
+    return;
+  }
+  if (!dayMultiSelect.targets.length) {
+    alert("Añade al menos un día destino.");
+    return;
+  }
+  const sourceExercises = getDayWorkouts(state.selectedDate).filter((ex) => selectedIds.includes(ex.id));
+  if (!sourceExercises.length) {
+    alert("No se encontraron los ejercicios seleccionados.");
+    return;
+  }
+  const updates = new Map();
+  dayMultiSelect.targets.forEach((target) => {
+    const iso = fmt(fromISO(target));
+    sourceExercises.forEach((exercise) => {
+      const clone = cloneExerciseForCopy(exercise);
+      if (!clone) return;
+      if (!updates.has(iso)) updates.set(iso, []);
+      updates.get(iso).push(clone);
+    });
+  });
+  if (!updates.size) {
+    alert("No se pudieron preparar los ejercicios seleccionados.");
+    return;
+  }
+  updates.forEach((list, iso) => {
+    const existing = getDayWorkouts(iso);
+    state.workouts[iso] = existing.concat(list);
+  });
+  save();
+  updates.forEach((_, iso) => {
+    syncHistoryForDay(iso, { showToast: false });
+  });
+  renderDay(state.selectedDate);
+  renderMiniCalendar();
+  callSeguimiento("refresh");
+  const totalDays = updates.size;
+  alert(totalDays === 1 ? "Ejercicios copiados en el día seleccionado." : `Ejercicios copiados en ${totalDays} días.`);
+  setDayMultiActive(false);
+}
+
+function updateLibraryMultiGoalSections(){
+  if (!libraryMultiForm) return;
+  const selectedInput = libraryMultiGoalInputs.find((input) => input.checked);
+  const selected = selectedInput ? selectedInput.value : "reps";
+  const sections = libraryMultiForm.querySelectorAll("[data-goal]");
+  sections.forEach((section) => {
+    const goal = section.getAttribute("data-goal");
+    section.classList.toggle("hidden", goal !== selected);
+  });
+}
+
+function updateLibraryMultiUI(){
+  if (libraryMultiSummary) {
+    if (!libraryMultiSelect.active) {
+      libraryMultiSummary.textContent = "Selecciona ejercicios para configurar el plan.";
+    } else {
+      const selectedCount = libraryMultiSelect.selected.size;
+      const targetCount = libraryMultiSelect.targets.length;
+      const exercisesText = selectedCount === 1 ? "1 ejercicio seleccionado" : `${selectedCount} ejercicios seleccionados`;
+      const daysText = targetCount === 1 ? "1 día destino" : `${targetCount} días destino`;
+      libraryMultiSummary.textContent = `${exercisesText} · ${daysText}`;
+    }
+  }
+  if (libraryMultiApplyBtn) {
+    const canApply = libraryMultiSelect.active && libraryMultiSelect.selected.size > 0 && libraryMultiSelect.targets.length > 0;
+    libraryMultiApplyBtn.disabled = !canApply;
+    libraryMultiApplyBtn.textContent = libraryMultiSelect.targets.length > 1
+      ? `Añadir a ${libraryMultiSelect.targets.length} días`
+      : "Añadir ejercicios";
+  }
+  if (libraryMultiChips) {
+    libraryMultiChips.classList.toggle("hidden", !libraryMultiSelect.active || libraryMultiSelect.targets.length === 0);
+    if (libraryMultiSelect.active) {
+      renderSelectionChips(libraryMultiChips, libraryMultiSelect.targets, (iso) => {
+        removeTargetFromList(libraryMultiSelect.targets, iso);
+        updateLibraryMultiUI();
+      });
+    } else {
+      libraryMultiChips.innerHTML = "";
+    }
+  }
+  if (libraryMultiBox) {
+    libraryMultiBox.classList.toggle("hidden", !libraryMultiSelect.active);
+  }
+  if (libraryMultiToggleBtn) {
+    libraryMultiToggleBtn.textContent = libraryMultiSelect.active ? "Salir de selección" : "Seleccionar varios";
+  }
+  if (libraryMultiDateInput && libraryMultiSelect.active && !libraryMultiDateInput.value) {
+    libraryMultiDateInput.value = state.selectedDate;
+  }
+}
+
+function setLibraryMultiActive(active){
+  const next = !!active;
+  if (libraryMultiSelect.active === next) {
+    if (next) {
+      if (libraryMultiDateInput && !libraryMultiDateInput.value) {
+        libraryMultiDateInput.value = state.selectedDate;
+      }
+      updateLibraryMultiUI();
+    }
+    return;
+  }
+  libraryMultiSelect.active = next;
+  libraryMultiSelect.selected.clear();
+  if (!next) {
+    libraryMultiSelect.targets = [];
+  } else {
+    libraryMultiSelect.targets = [];
+    addTargetToList(libraryMultiSelect.targets, state.selectedDate);
+    if (libraryMultiDateInput) libraryMultiDateInput.value = state.selectedDate;
+  }
+  updateLibraryMultiGoalSections();
+  renderLibrary();
+  updateLibraryMultiUI();
+}
+
+function handleLibraryMultiAddDate(){
+  if (!libraryMultiSelect.active || !libraryMultiDateInput) return;
+  const raw = getInputValue(libraryMultiDateInput) || state.selectedDate;
+  const iso = fmt(fromISO(raw));
+  if (addTargetToList(libraryMultiSelect.targets, iso)) {
+    updateLibraryMultiUI();
+  }
+  libraryMultiDateInput.value = "";
+  libraryMultiDateInput.focus();
+}
+
+function serializeLibraryMultiConfig(){
+  const goalInput = libraryMultiGoalInputs.find((input) => input.checked);
+  const goalType = normalizeGoalType(goalInput ? goalInput.value : "reps");
+  const payload = {
+    goalType,
+    weight: null,
+    notes: getInputValue(libraryMultiNotesInput),
+  };
+  const weightRaw = getInputValue(libraryMultiWeightInput);
+  if (weightRaw) {
+    const weightNumber = Number(weightRaw);
+    if (!Number.isFinite(weightNumber)) {
+      alert("Introduce un valor numérico para el lastre.");
+      return null;
+    }
+    payload.weight = weightNumber;
+  }
+  if (goalType === "reps") {
+    const series = Number(getInputValue(libraryMultiSeriesInput) || 0);
+    const reps = Number(getInputValue(libraryMultiRepsInput) || 0);
+    if (!series || !reps) {
+      alert("Indica series y repeticiones para el objetivo.");
+      return null;
+    }
+    payload.series = series;
+    payload.reps = reps;
+    payload.alFallo = isChecked(libraryMultiFailureInput);
+  } else if (goalType === "isometrico") {
+    const series = Number(getInputValue(libraryMultiIsoSeriesInput) || 0);
+    const seconds = Number(getInputValue(libraryMultiIsoSecondsInput) || 0);
+    if (!series || !seconds) {
+      alert("Indica series y segundos para el isométrico.");
+      return null;
+    }
+    payload.series = series;
+    payload.segundos = seconds;
+    payload.alFallo = isChecked(libraryMultiIsoFailureInput);
+  } else if (goalType === "fallo") {
+    const series = Number(getInputValue(libraryMultiFailSeriesInput) || 0);
+    if (!series) {
+      alert("Indica cuántas series harás al fallo.");
+      return null;
+    }
+    payload.series = series;
+    payload.alFallo = true;
+  } else if (goalType === "emom") {
+    const minutes = Number(getInputValue(libraryMultiEmomMinutesInput) || 0);
+    const repsPerMin = Number(getInputValue(libraryMultiEmomRepsInput) || 0);
+    if (!minutes || !repsPerMin) {
+      alert("Indica minutos y repeticiones por minuto para el EMOM.");
+      return null;
+    }
+    payload.minutos = minutes;
+    payload.repsPorMin = repsPerMin;
+    payload.series = null;
+  } else if (goalType === "cardio") {
+    const minutes = Number(getInputValue(libraryMultiCardioMinutesInput) || 0);
+    if (!minutes) {
+      alert("Indica los minutos de cardio.");
+      return null;
+    }
+    payload.minutos = minutes;
+    payload.series = null;
+  }
+  return payload;
+}
+
+function applyLibraryMultiSelection(){
+  if (!libraryMultiSelect.active) return;
+  const selectedIds = Array.from(libraryMultiSelect.selected);
+  if (!selectedIds.length) {
+    alert("Selecciona al menos un ejercicio de la librería.");
+    return;
+  }
+  if (!libraryMultiSelect.targets.length) {
+    alert("Añade al menos un día destino.");
+    return;
+  }
+  const config = serializeLibraryMultiConfig();
+  if (!config) return;
+  const libraryItems = getLibrary().filter((item) => selectedIds.includes(item.id));
+  if (!libraryItems.length) {
+    alert("Los ejercicios seleccionados ya no están disponibles.");
+    return;
+  }
+  const updates = new Map();
+  libraryMultiSelect.targets.forEach((target) => {
+    const iso = fmt(fromISO(target));
+    libraryItems.forEach((item) => {
+      const result = buildExerciseFromLibrary(item, { ...config, dateISO: iso });
+      if (!result) return;
+      const { dayISO, exercise } = result;
+      if (!updates.has(dayISO)) updates.set(dayISO, []);
+      updates.get(dayISO).push(exercise);
+    });
+  });
+  if (!updates.size) {
+    alert("No se pudieron preparar los ejercicios seleccionados.");
+    return;
+  }
+  updates.forEach((list, iso) => {
+    const existing = getDayWorkouts(iso);
+    state.workouts[iso] = existing.concat(list);
+  });
+  save();
+  updates.forEach((_, iso) => {
+    syncHistoryForDay(iso, { showToast: false });
+  });
+  renderDay(state.selectedDate);
+  renderMiniCalendar();
+  callSeguimiento("refresh");
+  const totalDays = updates.size;
+  alert(totalDays === 1 ? "Ejercicios añadidos al día seleccionado." : `Ejercicios añadidos en ${totalDays} días.`);
+  setLibraryMultiActive(false);
 }
 
 function computeDurationSummary(exercises){
@@ -3370,6 +3848,21 @@ function radioRow(text, name, checked=false){
   return {row, input};
 }
 
+function cloneExerciseForCopy(exercise){
+  if (!isPlainObject(exercise)) return null;
+  const sets = Math.max(1, Number(exercise.sets) || 1);
+  const clone = {
+    ...exercise,
+    id: randomUUID(),
+    plannedId: randomUUID(),
+    status: EXERCISE_STATUS.PENDING,
+    completed: false,
+    hecho: false,
+    done: exercise.failure ? Array.from({ length: sets }, () => null) : [],
+  };
+  return clone;
+}
+
 function removeExercise(dayISO, id){
   const list = getDayWorkouts(dayISO);
   const idx = list.findIndex(x=>x.id===id);
@@ -3384,6 +3877,58 @@ function removeExercise(dayISO, id){
   }
 }
 
+/* ========= Selección múltiple ========= */
+if (dayMultiToggleBtn) {
+  dayMultiToggleBtn.addEventListener("click", () => setDayMultiActive(!dayMultiSelect.active));
+}
+if (dayMultiCancelBtn) {
+  dayMultiCancelBtn.addEventListener("click", () => setDayMultiActive(false));
+}
+if (dayMultiAddDateBtn) {
+  dayMultiAddDateBtn.addEventListener("click", handleDayMultiAddDate);
+}
+if (dayMultiDateInput) {
+  dayMultiDateInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleDayMultiAddDate();
+    }
+  });
+}
+if (dayMultiApplyBtn) {
+  dayMultiApplyBtn.addEventListener("click", applyDayMultiSelection);
+}
+
+if (libraryMultiToggleBtn) {
+  libraryMultiToggleBtn.addEventListener("click", () => setLibraryMultiActive(!libraryMultiSelect.active));
+}
+if (libraryMultiCancelBtn) {
+  libraryMultiCancelBtn.addEventListener("click", () => setLibraryMultiActive(false));
+}
+if (libraryMultiAddDateBtn) {
+  libraryMultiAddDateBtn.addEventListener("click", handleLibraryMultiAddDate);
+}
+if (libraryMultiDateInput) {
+  libraryMultiDateInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleLibraryMultiAddDate();
+    }
+  });
+}
+if (libraryMultiApplyBtn) {
+  libraryMultiApplyBtn.addEventListener("click", applyLibraryMultiSelection);
+}
+if (libraryMultiGoalInputs.length) {
+  libraryMultiGoalInputs.forEach((input) => {
+    input.addEventListener("change", updateLibraryMultiGoalSections);
+  });
+}
+
+updateDayMultiUI();
+updateLibraryMultiGoalSections();
+updateLibraryMultiUI();
+
 /* ========= Copiar día ========= */
 copyDayToggleBtn.addEventListener("click", ()=>{
   copyDayBox.classList.toggle("hidden");
@@ -3396,20 +3941,15 @@ copyDayBtn.addEventListener("click", ()=>{
   const src = state.selectedDate;
   const dst = copyTargetDate.value;
   if (!dst){ alert("Selecciona una fecha destino."); return; }
+  const dstISO = fmt(fromISO(dst));
   const items = getDayWorkouts(src)
     .filter(isPlainObject)
-    .map(x=> ({
-    ...x,
-    id: randomUUID(),
-    done: x.failure ? Array.from({length: x.sets}, ()=>null) : [],
-    status: EXERCISE_STATUS.PENDING,
-    completed: false,
-    hecho: false
-  }));
-  const targetList = getDayWorkouts(dst);
-  state.workouts[dst] = targetList.concat(items);
+    .map(cloneExerciseForCopy)
+    .filter(Boolean);
+  const targetList = getDayWorkouts(dstISO);
+  state.workouts[dstISO] = targetList.concat(items);
   save();
-  syncHistoryForDay(dst, { showToast: false });
+  syncHistoryForDay(dstISO, { showToast: false });
   alert("Día copiado.");
   copyDayBox.classList.add("hidden");
   renderMiniCalendar();
