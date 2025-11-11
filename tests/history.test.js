@@ -68,7 +68,12 @@ function testAddOrUpdateFromDayRespectsHecho() {
   assert.strictEqual(result.entries.length, 1, 'Debe añadir el ejercicio al marcarlo como hecho');
   let entries = history.getAllEntries();
   assert.strictEqual(entries.length, 1, 'Debe existir un único registro para el ejercicio hecho');
-  assert.strictEqual(entries[0].valor, 33, 'Debe sumar las repeticiones realizadas al marcar como hecho');
+  assert.strictEqual(entries[0].valor, 12, 'Debe registrar la mejor serie realizada');
+  assert.deepStrictEqual(entries[0].series, [12, 10, 11], 'Debe guardar cada serie por separado');
+  assert.ok(
+    entries[0].notas && entries[0].notas.includes('Series: 12 · 10 · 11'),
+    'Las notas deben incluir el detalle de series'
+  );
 
   day.ejercicios[0].hecho = false;
   result = history.addOrUpdateFromDay(day);

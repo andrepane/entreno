@@ -101,7 +101,11 @@
   }
 
   function cloneEntry(entry) {
-    return { ...entry };
+    const copy = { ...entry };
+    if (Array.isArray(entry.series)) {
+      copy.series = entry.series.slice();
+    }
+    return copy;
   }
 
   function makeKey(fechaISO, ejercicio, tipo) {
@@ -113,12 +117,37 @@
     return Number.isFinite(num) ? num : null;
   }
 
-  function sumNumbers(values) {
-    if (!Array.isArray(values)) return 0;
-    return values.reduce((acc, item) => {
-      const num = Number(item);
-      return Number.isFinite(num) ? acc + num : acc;
-    }, 0);
+  function cleanSeriesValues(values) {
+    if (!Array.isArray(values)) return [];
+    const clean = [];
+    values.forEach((value) => {
+      const num = Number(value);
+      if (Number.isFinite(num) && num > 0) {
+        clean.push(num);
+      }
+    });
+    return clean;
+  }
+
+  function applySeriesDetails(entry, seriesValues) {
+    if (!entry || !entry.notas) return;
+    if (entry.notas instanceof Set) {
+      Array.from(entry.notas).forEach((note) => {
+        if (typeof note === "string" && /^serie[s]?:/i.test(note.trim())) {
+          entry.notas.delete(note);
+        }
+      });
+    }
+    const clean = cleanSeriesValues(seriesValues);
+    if (!clean.length) {
+      if (entry.series) {
+        delete entry.series;
+      }
+      return;
+    }
+    entry.series = clean;
+    const prefix = clean.length > 1 ? "Series: " : "Serie: ";
+    entry.notas.add(`${prefix}${clean.join(" · ")}`);
   }
 
   function normalizeDay(day) {
@@ -208,7 +237,8 @@
       const weight = ensureNumber(exerciseRaw.weightKg);
       const weightNote = weight && weight > 0 ? `lastre +${weight} kg` : null;
 
-      const pushValue = (tipo, valor, extraNotes = []) => {
+      const pushValue = (tipo, valor, options = {}) => {
+        const { extraNotes = [], seriesValues = null } = options;
         const num = Number(valor);
         if (!Number.isFinite(num) || num <= 0) return;
         const key = makeKey(fechaISO, name, tipo);
@@ -226,7 +256,8 @@
         if (tipo === "peso") {
           entry.valor = entry.valor == null ? num : Math.max(entry.valor, num);
         } else {
-          entry.valor = (entry.valor || 0) + num;
+          entry.valor = entry.valor == null ? num : Math.max(entry.valor, num);
+          applySeriesDetails(entry, seriesValues);
         }
         [...notes, ...extraNotes].forEach((note) => {
           if (note && typeof note === "string") {
@@ -236,47 +267,60 @@
       };
 
       if (weight && weight > 0) {
-        pushValue("peso", weight, weightNote ? [weightNote] : []);
+        pushValue("peso", weight, { extraNotes: weightNote ? [weightNote] : [] });
       }
 
       if (goal === "reps" || goal === "emom") {
-        let totalReps = 0;
-        if (hasDone) {
-          totalReps = sumNumbers(numericDone);
-        } else if (goal === "emom") {
+        if (goal === "emom") {
           const minutes = ensureNumber(exerciseRaw.emomMinutes) || 0;
           const repsPerMinute = ensureNumber(exerciseRaw.emomReps) || 0;
           if (minutes > 0 && repsPerMinute > 0) {
-            totalReps = minutes * repsPerMinute;
+            const totalReps = minutes * repsPerMinute;
+            if (totalReps > 0) {
+              pushValue("reps", totalReps, { extraNotes: weightNote ? [weightNote] : [] });
+            }
           }
         } else {
-          const planned = ensureNumber(exerciseRaw.reps);
-          if (planned && planned > 0) {
-            totalReps = planned * sets;
+          let seriesValues = [];
+          if (hasDone) {
+            seriesValues = cleanSeriesValues(numericDone);
+          } else {
+            const planned = ensureNumber(exerciseRaw.reps);
+            if (planned && planned > 0) {
+              seriesValues = Array.from({ length: sets }, () => planned);
+            }
+          }
+          if (seriesValues.length) {
+            const best = Math.max(...seriesValues);
+            pushValue("reps", best, {
+              extraNotes: weightNote ? [weightNote] : [],
+              seriesValues,
+            });
           }
         }
-        if (totalReps > 0) {
-          pushValue("reps", totalReps, weightNote ? [weightNote] : []);
-        }
       } else if (goal === "seconds") {
-        let totalSeconds = 0;
+        let seriesValues = [];
         if (hasDone) {
-          totalSeconds = sumNumbers(numericDone);
+          seriesValues = cleanSeriesValues(numericDone);
         } else {
           const seconds = ensureNumber(exerciseRaw.seconds);
           if (seconds && seconds > 0) {
-            totalSeconds = seconds * sets;
+            seriesValues = Array.from({ length: sets }, () => seconds);
           }
         }
-        if (totalSeconds > 0) {
-          pushValue("tiempo", totalSeconds, weightNote ? [weightNote] : []);
+        if (seriesValues.length) {
+          const best = Math.max(...seriesValues);
+          pushValue("tiempo", best, {
+            extraNotes: weightNote ? [weightNote] : [],
+            seriesValues,
+          });
         }
       } else if (goal === "cardio") {
         const minutes = ensureNumber(exerciseRaw.cardioMinutes);
         if (minutes && minutes > 0) {
           const seconds = minutesToSeconds(minutes * sets);
           if (seconds > 0) {
-            pushValue("tiempo", seconds, weightNote ? [weightNote] : []);
+            pushValue("tiempo", seconds, { extraNotes: weightNote ? [weightNote] : [] });
           }
         }
       }
@@ -289,6 +333,7 @@
         tipo: item.tipo,
         valor: item.valor == null ? 0 : Number(item.valor),
         notas: item.notas.size ? Array.from(item.notas).join(" · ") : undefined,
+        series: Array.isArray(item.series) && item.series.length ? item.series.slice() : undefined,
         sourceDayId,
       }))
       .filter((entry) => entry.valor > 0);
@@ -437,6 +482,16 @@
     if (raw.notas && typeof raw.notas === "string") {
       const clean = raw.notas.trim();
       if (clean) entry.notas = clean;
+    }
+    if (Array.isArray(raw.series)) {
+      const series = cleanSeriesValues(raw.series);
+      if (series.length) {
+        entry.series = series;
+        const maxSeries = Math.max(...series);
+        if (maxSeries > entry.valor) {
+          entry.valor = maxSeries;
+        }
+      }
     }
     if (raw.sourceDayId) {
       entry.sourceDayId = String(raw.sourceDayId);
@@ -634,6 +689,21 @@
         const val = Number(patch.valor);
         if (val > 0) {
           next.valor = val;
+          if (next.series) {
+            delete next.series;
+          }
+          if (typeof next.notas === "string") {
+            const parts = next.notas
+              .split("·")
+              .map((part) => part.trim())
+              .filter((part) => part);
+            const filtered = parts.filter((part) => !/^serie[s]?:/i.test(part));
+            if (filtered.length) {
+              next.notas = filtered.join(" · ");
+            } else {
+              delete next.notas;
+            }
+          }
         }
       }
       if (typeof patch.notas === "string") {

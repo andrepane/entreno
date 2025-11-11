@@ -1054,8 +1054,15 @@
 
   function formatValue(entry) {
     const value = Number(entry.valor);
+    if (!Number.isFinite(value)) return "—";
     const suffix = TYPE_SUFFIX[entry.tipo] || "";
-    return `${value} ${suffix}`.trim();
+    const formattedValue = Number.isInteger(value) ? String(value) : value.toFixed(2);
+    const base = `${formattedValue} ${suffix}`.trim();
+    if (Array.isArray(entry.series) && entry.series.length) {
+      const prefix = entry.series.length > 1 ? "Mejor serie: " : "Serie: ";
+      return `${prefix}${base}`.trim();
+    }
+    return base;
   }
 
   function formatDate(iso) {
