@@ -104,8 +104,26 @@
     return { ...entry };
   }
 
-  function makeKey(fechaISO, ejercicio, tipo) {
-    return `${fechaISO}__${ejercicio}__${tipo}`;
+  function normalizeSetIndex(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num < 0) return 0;
+    return Math.floor(num);
+  }
+
+  function normalizeLastre(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  function formatLastreKey(value) {
+    const normalized = normalizeLastre(value);
+    return normalized.toFixed(3);
+  }
+
+  function makeKey(fechaISO, ejercicio, tipo, setIndex = 0, lastreKg = 0) {
+    const safeSet = normalizeSetIndex(setIndex);
+    const loadKey = formatLastreKey(lastreKg);
+    return `${fechaISO}__${ejercicio}__${tipo}__${safeSet}__${loadKey}`;
   }
 
   function ensureNumber(value) {
@@ -186,112 +204,106 @@
   function extractEntriesFromDay(day) {
     const normalized = normalizeDay(day);
     if (!normalized) return [];
-    const map = new Map();
     const fechaISO = normalized.fechaISO;
     const sourceDayId = normalized.sourceDayId;
+    const results = [];
 
     normalized.ejercicios.forEach((exerciseRaw) => {
       const name = normalizeName(exerciseRaw.name || exerciseRaw.ejercicio);
       if (!name) return;
       if (!isMarkedDone(exerciseRaw)) return;
 
-      const sets = Math.max(1, Number(exerciseRaw.sets) || 1);
+      const goal = (exerciseRaw.goal || "").toLowerCase();
+      const setsPlanned = Number(exerciseRaw.sets);
+      const setCount = Number.isFinite(setsPlanned) && setsPlanned > 0 ? Math.floor(setsPlanned) : null;
       const doneValues = Array.isArray(exerciseRaw.done) ? exerciseRaw.done : [];
       const numericDone = doneValues.map((val) => {
         if (val == null || val === "") return null;
         const num = Number(val);
         return Number.isFinite(num) ? num : null;
       });
-      const hasDone = numericDone.some((val) => Number.isFinite(val));
-      const goal = (exerciseRaw.goal || "").toLowerCase();
+      const hasDone = numericDone.some((val) => Number.isFinite(val) && val > 0);
       const notes = collectNotes(exerciseRaw);
-      const weight = ensureNumber(exerciseRaw.weightKg);
-      const weightNote = weight && weight > 0 ? `lastre +${weight} kg` : null;
-
-      const pushValue = (tipo, valor, extraNotes = []) => {
-        const num = Number(valor);
-        if (!Number.isFinite(num) || num <= 0) return;
-        const key = makeKey(fechaISO, name, tipo);
-        if (!map.has(key)) {
-          map.set(key, {
-            fechaISO,
-            sourceDayId,
-            ejercicio: name,
-            tipo,
-            valor: tipo === "peso" ? null : 0,
-            notas: new Set(),
-          });
-        }
-        const entry = map.get(key);
-        if (tipo === "peso") {
-          entry.valor = entry.valor == null ? num : Math.max(entry.valor, num);
-        } else {
-          entry.valor = (entry.valor || 0) + num;
-        }
-        [...notes, ...extraNotes].forEach((note) => {
-          if (note && typeof note === "string") {
-            entry.notas.add(note);
-          }
-        });
-      };
-
-      if (weight && weight > 0) {
-        pushValue("peso", weight, weightNote ? [weightNote] : []);
+      const lastre = exerciseRaw.weightKg != null && exerciseRaw.weightKg !== "" ? Number(exerciseRaw.weightKg) : null;
+      const bodyweight = exerciseRaw.bodyweightKg != null && exerciseRaw.bodyweightKg !== "" ? Number(exerciseRaw.bodyweightKg) : null;
+      const baseNotes = [...notes];
+      if (Number.isFinite(lastre) && lastre !== 0) {
+        baseNotes.push(`lastre ${lastre > 0 ? "+" : ""}${lastre} kg`);
       }
 
-      if (goal === "reps" || goal === "emom") {
-        let totalReps = 0;
-        if (hasDone) {
-          totalReps = sumNumbers(numericDone);
-        } else if (goal === "emom") {
-          const minutes = ensureNumber(exerciseRaw.emomMinutes) || 0;
-          const repsPerMinute = ensureNumber(exerciseRaw.emomReps) || 0;
-          if (minutes > 0 && repsPerMinute > 0) {
-            totalReps = minutes * repsPerMinute;
-          }
+      const buildEntry = (tipo, setIndex, valor) => {
+        const num = Number(valor);
+        if (!Number.isFinite(num) || num <= 0) return;
+        const entry = {
+          fechaISO,
+          sourceDayId,
+          ejercicio: name,
+          tipo,
+          valor: num,
+          setIndex: normalizeSetIndex(setIndex),
+        };
+        if (setCount) {
+          entry.setCount = setCount;
+        }
+        if (Number.isFinite(lastre)) {
+          entry.lastreKg = normalizeLastre(lastre);
         } else {
-          const planned = ensureNumber(exerciseRaw.reps);
-          if (planned && planned > 0) {
-            totalReps = planned * sets;
+          entry.lastreKg = 0;
+        }
+        if (Number.isFinite(bodyweight) && bodyweight > 0) {
+          entry.bodyweightKg = bodyweight;
+        }
+        if (baseNotes.length) {
+          entry.notas = baseNotes.join(" · ");
+        }
+        results.push(entry);
+      };
+
+      if (goal === "reps") {
+        const plannedPerSet = ensureNumber(exerciseRaw.reps) || 0;
+        const setsToRecord = Math.max(hasDone ? numericDone.length : 0, setCount || 0, plannedPerSet > 0 ? setCount || 1 : 0);
+        const totalSets = setsToRecord || 1;
+        for (let index = 0; index < totalSets; index += 1) {
+          const performed = hasDone ? numericDone[index] : null;
+          const value = Number.isFinite(performed) && performed > 0 ? performed : plannedPerSet > 0 ? plannedPerSet : null;
+          if (Number.isFinite(value) && value > 0) {
+            buildEntry("reps", index, value);
           }
         }
-        if (totalReps > 0) {
-          pushValue("reps", totalReps, weightNote ? [weightNote] : []);
+      } else if (goal === "emom") {
+        const minutes = ensureNumber(exerciseRaw.emomMinutes) || 0;
+        const repsPerMinute = ensureNumber(exerciseRaw.emomReps) || 0;
+        const total = minutes > 0 && repsPerMinute > 0 ? minutes * repsPerMinute : 0;
+        if (total > 0) {
+          buildEntry("reps", 0, total);
         }
       } else if (goal === "seconds") {
-        let totalSeconds = 0;
-        if (hasDone) {
-          totalSeconds = sumNumbers(numericDone);
-        } else {
-          const seconds = ensureNumber(exerciseRaw.seconds);
-          if (seconds && seconds > 0) {
-            totalSeconds = seconds * sets;
+        const plannedSeconds = ensureNumber(exerciseRaw.seconds) || 0;
+        const setsToRecord = Math.max(hasDone ? numericDone.length : 0, setCount || 0, plannedSeconds > 0 ? setCount || 1 : 0);
+        const totalSets = setsToRecord || 1;
+        for (let index = 0; index < totalSets; index += 1) {
+          const performed = hasDone ? numericDone[index] : null;
+          const value = Number.isFinite(performed) && performed > 0 ? performed : plannedSeconds > 0 ? plannedSeconds : null;
+          if (Number.isFinite(value) && value > 0) {
+            buildEntry("tiempo", index, value);
           }
-        }
-        if (totalSeconds > 0) {
-          pushValue("tiempo", totalSeconds, weightNote ? [weightNote] : []);
         }
       } else if (goal === "cardio") {
         const minutes = ensureNumber(exerciseRaw.cardioMinutes);
         if (minutes && minutes > 0) {
-          const seconds = minutesToSeconds(minutes * sets);
+          const seconds = minutesToSeconds(minutes);
           if (seconds > 0) {
-            pushValue("tiempo", seconds, weightNote ? [weightNote] : []);
+            buildEntry("tiempo", 0, seconds);
           }
         }
       }
+
+      if (Number.isFinite(lastre) && lastre !== 0) {
+        buildEntry("peso", 0, Math.abs(lastre));
+      }
     });
 
-    return Array.from(map.values())
-      .map((item) => ({
-        fechaISO: item.fechaISO,
-        ejercicio: item.ejercicio,
-        tipo: item.tipo,
-        valor: item.valor == null ? 0 : Number(item.valor),
-        notas: item.notas.size ? Array.from(item.notas).join(" · ") : undefined,
-        sourceDayId,
-      }))
-      .filter((entry) => entry.valor > 0);
+    return results;
   }
 
   function cloneEntries(list) {
@@ -433,7 +445,22 @@
       ejercicio,
       tipo,
       valor,
+      setIndex: normalizeSetIndex(raw.setIndex),
     };
+    if (raw.setCount != null) {
+      const count = Number(raw.setCount);
+      if (Number.isFinite(count) && count > 0) {
+        entry.setCount = Math.floor(count);
+      }
+    }
+    const lastre = raw.lastreKg != null ? normalizeLastre(raw.lastreKg) : 0;
+    entry.lastreKg = lastre;
+    if (raw.bodyweightKg != null) {
+      const bw = Number(raw.bodyweightKg);
+      if (Number.isFinite(bw) && bw > 0) {
+        entry.bodyweightKg = bw;
+      }
+    }
     if (raw.notas && typeof raw.notas === "string") {
       const clean = raw.notas.trim();
       if (clean) entry.notas = clean;
@@ -492,6 +519,147 @@
     return { primero, ultimo, delta, pct };
   }
 
+  function isComparableLoad(a, b, toleranceKg = 2) {
+    const loadA = normalizeLastre(a);
+    const loadB = normalizeLastre(b);
+    const tolerance = Number.isFinite(Number(toleranceKg)) ? Math.abs(Number(toleranceKg)) : 0;
+    return Math.abs(loadA - loadB) <= tolerance;
+  }
+
+  function normalizeLoadForGrouping(value, step) {
+    const load = normalizeLastre(value);
+    const normalizedStep = Number.isFinite(step) && step > 0 ? step : 0.5;
+    const rounded = Math.round(load / normalizedStep) * normalizedStep;
+    return Number.isFinite(rounded) ? Number(rounded.toFixed(3)) : 0;
+  }
+
+  function groupEntriesBySetAndLoad(entries, options = {}) {
+    const groups = {};
+    if (!Array.isArray(entries)) return groups;
+    const step = Number.isFinite(options.loadStep) && options.loadStep > 0 ? options.loadStep : 0.5;
+    entries.forEach((entry) => {
+      if (!entry || typeof entry !== "object") return;
+      const setIndex = normalizeSetIndex(entry.setIndex);
+      const loadKey = normalizeLoadForGrouping(entry.lastreKg, step);
+      const key = `${setIndex}|${loadKey}`;
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push(cloneEntry(entry));
+    });
+    return groups;
+  }
+
+  function getPRsBySet(entries, tipo, options = {}) {
+    if (!Array.isArray(entries) || !VALID_TYPES.has(tipo)) return {};
+    const filtered = entries.filter((entry) => entry && entry.tipo === tipo);
+    const groups = groupEntriesBySetAndLoad(filtered, options);
+    const prs = {};
+    Object.keys(groups).forEach((key) => {
+      const list = groups[key];
+      if (!list.length) return;
+      const best = list.reduce((acc, item) => {
+        if (!acc) return item;
+        return Number(item.valor) > Number(acc.valor) ? item : acc;
+      }, null);
+      if (best) {
+        prs[key] = cloneEntry(best);
+      }
+    });
+    return prs;
+  }
+
+  function buildSetIndex(entries) {
+    const map = new Map();
+    entries
+      .filter((entry) => entry && typeof entry === "object")
+      .forEach((entry) => {
+        const idx = normalizeSetIndex(entry.setIndex);
+        if (!map.has(idx)) {
+          map.set(idx, []);
+        }
+        map.get(idx).push(cloneEntry(entry));
+      });
+    map.forEach((list) => {
+      list.sort((a, b) => normalizeLastre(a.lastreKg) - normalizeLastre(b.lastreKg));
+    });
+    return map;
+  }
+
+  function compareSessionsBySet(latestEntries, previousEntries, opts = {}) {
+    const tolerance = Number.isFinite(opts.toleranceKg) && opts.toleranceKg >= 0 ? opts.toleranceKg : 2;
+    const currentMap = buildSetIndex(Array.isArray(latestEntries) ? latestEntries : []);
+    const previousMap = buildSetIndex(Array.isArray(previousEntries) ? previousEntries : []);
+    const results = [];
+    const usedPrev = new Set();
+
+    const allSetIndices = new Set([...currentMap.keys(), ...previousMap.keys()]);
+    const sortedIndices = Array.from(allSetIndices).sort((a, b) => a - b);
+
+    sortedIndices.forEach((setIndex) => {
+      const currentList = currentMap.get(setIndex) || [];
+      const prevList = previousMap.get(setIndex) || [];
+
+      currentList.forEach((currentEntry) => {
+        let matched = null;
+        let matchedKey = null;
+        prevList.forEach((candidate) => {
+          const candidateKey = candidate.id || makeKey(candidate.fechaISO, candidate.ejercicio, candidate.tipo, candidate.setIndex, candidate.lastreKg);
+          if (matched || usedPrev.has(candidateKey)) return;
+          if (isComparableLoad(currentEntry.lastreKg, candidate.lastreKg, tolerance)) {
+            matched = candidate;
+            matchedKey = candidateKey;
+          }
+        });
+
+        if (matched) {
+          usedPrev.add(matchedKey);
+        }
+
+        const comparable = Boolean(matched);
+        const previous = comparable ? matched : prevList.length ? prevList[0] : null;
+        if (!comparable && previous) {
+          const previousKey =
+            previous.id || makeKey(previous.fechaISO, previous.ejercicio, previous.tipo, previous.setIndex, previous.lastreKg);
+          usedPrev.add(previousKey);
+        }
+        const reason = comparable
+          ? null
+          : prevList.length
+          ? "load-mismatch"
+          : "missing-prev";
+        const delta = comparable ? Number(currentEntry.valor) - Number(matched.valor) : null;
+        const pct = comparable && Number(matched.valor) !== 0 ? (delta / Number(matched.valor)) * 100 : null;
+        results.push({
+          setIndex,
+          current: cloneEntry(currentEntry),
+          previous: previous ? cloneEntry(previous) : null,
+          comparable,
+          reason,
+          delta,
+          pct,
+        });
+      });
+
+      prevList.forEach((candidate) => {
+        const candidateKey = candidate.id || makeKey(candidate.fechaISO, candidate.ejercicio, candidate.tipo, candidate.setIndex, candidate.lastreKg);
+        if (usedPrev.has(candidateKey)) return;
+        results.push({
+          setIndex,
+          current: null,
+          previous: cloneEntry(candidate),
+          comparable: false,
+          reason: "missing-current",
+          delta: null,
+          pct: null,
+        });
+      });
+    });
+
+    results.sort((a, b) => a.setIndex - b.setIndex);
+    return results;
+  }
+
   function buildDiffMessage(tipo, previous, current) {
     if (!previous) {
       return `🔰 Primer registro para este ejercicio (tipo ${TYPE_LABEL[tipo] || tipo}).`;
@@ -521,7 +689,10 @@
     const existingByKey = new Map();
     entries.forEach((entry) => {
       if (entry.fechaISO === normalizedDay.fechaISO) {
-        existingByKey.set(makeKey(entry.fechaISO, entry.ejercicio, entry.tipo), entry);
+        existingByKey.set(
+          makeKey(entry.fechaISO, entry.ejercicio, entry.tipo, entry.setIndex, entry.lastreKg),
+          entry
+        );
       }
     });
 
@@ -531,7 +702,13 @@
     const processedKeys = new Set();
 
     dayEntries.forEach((newEntry) => {
-      const key = makeKey(newEntry.fechaISO, newEntry.ejercicio, newEntry.tipo);
+      const key = makeKey(
+        newEntry.fechaISO,
+        newEntry.ejercicio,
+        newEntry.tipo,
+        newEntry.setIndex,
+        newEntry.lastreKg
+      );
       processedKeys.add(key);
 
       const previousComparable = entriesBefore
@@ -539,7 +716,9 @@
           (item) =>
             item.ejercicio === newEntry.ejercicio &&
             item.tipo === newEntry.tipo &&
-            item.fechaISO < newEntry.fechaISO
+            item.fechaISO < newEntry.fechaISO &&
+            normalizeSetIndex(item.setIndex) === normalizeSetIndex(newEntry.setIndex) &&
+            isComparableLoad(item.lastreKg, newEntry.lastreKg)
         )
         .sort((a, b) => a.fechaISO.localeCompare(b.fechaISO))
         .pop();
@@ -570,7 +749,7 @@
     const removed = [];
     entries = entries.filter((entry) => {
       if (entry.fechaISO !== normalizedDay.fechaISO) return true;
-      const key = makeKey(entry.fechaISO, entry.ejercicio, entry.tipo);
+      const key = makeKey(entry.fechaISO, entry.ejercicio, entry.tipo, entry.setIndex, entry.lastreKg);
       if (processedKeys.has(key)) return true;
       removed.push(cloneEntry(entry));
       return false;
@@ -634,6 +813,28 @@
         const val = Number(patch.valor);
         if (val > 0) {
           next.valor = val;
+        }
+      }
+      if (patch.setIndex != null) {
+        next.setIndex = normalizeSetIndex(patch.setIndex);
+      }
+      if (patch.setCount !== undefined) {
+        const count = Number(patch.setCount);
+        if (Number.isFinite(count) && count > 0) {
+          next.setCount = Math.floor(count);
+        } else {
+          delete next.setCount;
+        }
+      }
+      if (patch.lastreKg !== undefined) {
+        next.lastreKg = normalizeLastre(patch.lastreKg);
+      }
+      if (patch.bodyweightKg !== undefined) {
+        const bw = Number(patch.bodyweightKg);
+        if (Number.isFinite(bw) && bw > 0) {
+          next.bodyweightKg = bw;
+        } else {
+          delete next.bodyweightKg;
         }
       }
       if (typeof patch.notas === "string") {
@@ -718,7 +919,7 @@
     });
     const byKey = new Map();
     Array.from(dedupById.values()).forEach((item) => {
-      const key = makeKey(item.fechaISO, item.ejercicio, item.tipo);
+      const key = makeKey(item.fechaISO, item.ejercicio, item.tipo, item.setIndex, item.lastreKg);
       byKey.set(key, item);
     });
     entries = Array.from(byKey.values());
@@ -760,5 +961,9 @@
     minutesToSeconds,
     normalizeName,
     getAllEntries,
+    groupEntriesBySetAndLoad,
+    getPRsBySet,
+    compareSessionsBySet,
+    isComparableLoad,
   };
 });
