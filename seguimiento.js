@@ -32,6 +32,97 @@
     all: { label: "Todo", days: null }
   };
 
+  // --- NUEVO: soporte series / lastre ---
+
+  const WEIGHT_KEYS = ["lastre", "extraKg", "peso", "kg"];
+
+  function readNumber(obj, keys) {
+    if (!obj) return NaN;
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const v = Number(obj[key]);
+        if (Number.isFinite(v)) return v;
+      }
+    }
+    return NaN;
+  }
+
+  function getEntrySets(entry) {
+    if (!entry) return null;
+    if (Array.isArray(entry.series) && entry.series.length) {
+      return entry.series;
+    }
+    return null;
+  }
+
+  function getSetWeight(set) {
+    const v = readNumber(set, WEIGHT_KEYS);
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  }
+
+  function getPerSetValues(entry, sets) {
+    if (!entry || !sets || !sets.length) return [];
+    const tipo = entry.tipo;
+    if (tipo === "reps") {
+      return sets
+        .map((s) => readNumber(s, ["reps", "r"]))
+        .filter((v) => Number.isFinite(v) && v > 0);
+    }
+    if (tipo === "tiempo") {
+      return sets
+        .map((s) => readNumber(s, ["segundos", "s", "tiempo", "seconds"]))
+        .filter((v) => Number.isFinite(v) && v > 0);
+    }
+    if (tipo === "peso") {
+      return sets
+        .map((s) => readNumber(s, ["peso", "kg", "lastre", "extraKg"]))
+        .filter((v) => Number.isFinite(v) && v > 0);
+    }
+    return [];
+  }
+
+  function hasWeightedSets(sets) {
+    if (!sets) return false;
+    return sets.some((s) => getSetWeight(s) > 0);
+  }
+
+  function hasBodyweightSets(entry, sets) {
+    if (!entry || !sets) return false;
+    const tipo = entry.tipo;
+    return sets.some((s) => {
+      const w = getSetWeight(s);
+      if (w > 0) return false;
+      if (tipo === "reps") {
+        const reps = readNumber(s, ["reps", "r"]);
+        return Number.isFinite(reps) && reps > 0;
+      }
+      if (tipo === "tiempo") {
+        const secs = readNumber(s, ["segundos", "s", "tiempo", "seconds"]);
+        return Number.isFinite(secs) && secs > 0;
+      }
+      return false;
+    });
+  }
+
+  /**
+   * Métrica principal de una entrada:
+   * - Si hay series: mejor serie (reps o segundos, o kg).
+   * - Si no: entry.valor como antes.
+   */
+  function getEntryNumericValue(entry) {
+    if (!entry) return 0;
+    const sets = getEntrySets(entry);
+    const tipo = entry.tipo;
+    if (sets && sets.length && (tipo === "reps" || tipo === "tiempo" || tipo === "peso")) {
+      const perSet = getPerSetValues(entry, sets);
+      if (perSet.length) {
+        return Math.max(...perSet);
+      }
+    }
+    const raw = Number(entry.valor);
+    return Number.isFinite(raw) ? raw : 0;
+  }
+
   const state = {
     selectedExercise: null,
     selectedType: null,
@@ -443,11 +534,11 @@
       resetComparisonControls();
       return;
     }
+
     const comparison = historyStore.compareProgress(entries);
     const first = comparison.primero;
     const last = comparison.ultimo;
-    const delta = Number(comparison.delta || 0);
-    const pct = comparison.pct;
+
     if (!first || !last) {
       const empty = document.createElement("p");
       empty.className = "muted";
@@ -456,6 +547,12 @@
       resetComparisonControls();
       return;
     }
+
+    const firstValue = getEntryNumericValue(first);
+    const lastValue = getEntryNumericValue(last);
+    const delta = lastValue - firstValue;
+    const pct = firstValue !== 0 ? (delta / firstValue) * 100 : null;
+
     const badge = document.createElement("span");
     badge.className = "summary-badge";
     if (delta > 0) {
@@ -522,17 +619,20 @@
     const last = sorted[sorted.length - 1];
     const best = sorted.reduce((acc, entry) => {
       if (!acc) return entry;
-      return Number(entry.valor) > Number(acc.valor) ? entry : acc;
+      return getEntryNumericValue(entry) > getEntryNumericValue(acc) ? entry : acc;
     }, null);
+
     const now = new Date();
     const start = new Date(now);
     start.setDate(start.getDate() - 6);
     start.setHours(0, 0, 0, 0);
+
     const weeklyTotal = sorted.reduce((acc, entry) => {
       const d = new Date(entry.fechaISO);
       if (Number.isNaN(d.getTime()) || d < start) return acc;
-      return acc + Number(entry.valor || 0);
+      return acc + getEntryNumericValue(entry);
     }, 0);
+
     const suffix = TYPE_SUFFIX[state.selectedType] || "";
     const volumeLabel = weeklyTotal
       ? `${weeklyTotal % 1 === 0 ? weeklyTotal : weeklyTotal.toFixed(1)} ${suffix}`.trim()
@@ -552,6 +652,11 @@
     const highlights = buildHighlights(sorted, suffix, best);
     if (highlights) {
       elements.trends.append(highlights);
+    }
+
+    const weightedSplit = buildWeightedSplit(sorted);
+    if (weightedSplit) {
+      elements.trends.append(weightedSplit);
     }
   }
 
@@ -654,7 +759,7 @@
     canvas.height = height;
     canvas.className = "summary-sparkline";
     const ctx = canvas.getContext("2d");
-    const values = sorted.map((entry) => Number(entry.valor));
+    const values = sorted.map((entry) => getEntryNumericValue(entry));
     const max = Math.max(...values);
     const min = Math.min(...values);
     const range = max - min || 1;
@@ -666,7 +771,7 @@
     ctx.lineCap = "round";
     ctx.beginPath();
     sorted.forEach((entry, index) => {
-      const value = Number(entry.valor);
+      const value = getEntryNumericValue(entry);
       const x = padding + (index / denominator) * plotWidth;
       const normalized = (value - min) / range;
       const y = padding + (1 - normalized) * plotHeight;
@@ -739,7 +844,9 @@
     bar.className = "delta-bar";
     const fill = document.createElement("div");
     fill.className = "delta-bar-fill";
-    const baseline = Math.max(Math.abs(Number(first.valor)), Math.abs(Number(last.valor)));
+    const firstValue = getEntryNumericValue(first);
+    const lastValue = getEntryNumericValue(last);
+    const baseline = Math.max(Math.abs(firstValue), Math.abs(lastValue));
     const ratioSource = baseline > 0 ? baseline : Math.abs(delta);
     const ratio = ratioSource ? Math.min(Math.abs(delta) / ratioSource, 1) : 0;
     fill.style.setProperty("--delta-size", `${(ratio * 100).toFixed(2)}`);
@@ -765,7 +872,7 @@
     for (let i = 1; i < sorted.length; i += 1) {
       const previous = sorted[i - 1];
       const current = sorted[i];
-      const diff = Number(current.valor) - Number(previous.valor);
+      const diff = getEntryNumericValue(current) - getEntryNumericValue(previous);
       const prevDate = new Date(previous.fechaISO);
       const currDate = new Date(current.fechaISO);
       const daysBetween = Math.abs((currDate - prevDate) / (1000 * 60 * 60 * 24));
@@ -840,6 +947,102 @@
     info.append(heading, strong, metaSpan);
     card.append(iconSpan, info);
     return card;
+  }
+
+  // --- NUEVO: comparación sin lastre / con lastre a nivel de serie ---
+
+  function findBestSetAcross(entries, options) {
+    const { weighted } = options;
+    if (!entries || !entries.length) return null;
+    const tipo = entries[0].tipo; // asumimos mismo tipo en este bloque
+    if (tipo !== "reps" && tipo !== "tiempo") return null;
+
+    let best = null;
+
+    entries.forEach((entry) => {
+      const sets = getEntrySets(entry);
+      if (!sets || !sets.length) return;
+      sets.forEach((set) => {
+        const weight = getSetWeight(set);
+        const isWeighted = weight > 0;
+        if (weighted && !isWeighted) return;
+        if (!weighted && isWeighted) return;
+
+        let value;
+        if (tipo === "reps") {
+          value = readNumber(set, ["reps", "r"]);
+        } else {
+          value = readNumber(set, ["segundos", "s", "tiempo", "seconds"]);
+        }
+        if (!Number.isFinite(value) || value <= 0) return;
+
+        if (!best || value > best.value) {
+          best = { value, weight, entry, set };
+        }
+      });
+    });
+
+    return best;
+  }
+
+  function formatSetPerformance(best, tipo) {
+    if (!best) return "—";
+    const suffix = TYPE_SUFFIX[tipo] || "";
+    const base = `${best.value} ${suffix}`.trim();
+    if (best.weight && best.weight > 0) {
+      return `${base} @ +${best.weight} kg`;
+    }
+    return base;
+  }
+
+  function createWeightSplitCard(title, best, tipo, variant) {
+    const card = document.createElement("article");
+    card.className = `trend-card trend-weight-${variant}`;
+    const heading = document.createElement("h4");
+    heading.textContent = title;
+    const strong = document.createElement("strong");
+    strong.textContent = best ? formatSetPerformance(best, tipo) : "—";
+    const meta = document.createElement("span");
+    meta.className = "trend-meta";
+    meta.textContent = best && best.entry
+      ? formatDate(best.entry.fechaISO)
+      : "Sin datos";
+    card.append(heading, strong, meta);
+    return card;
+  }
+
+  function buildWeightedSplit(entries) {
+    if (!entries || !entries.length) return null;
+    const tipo = entries[0].tipo;
+    if (tipo !== "reps" && tipo !== "tiempo") return null;
+
+    const hasAnySeries = entries.some((e) => {
+      const s = getEntrySets(e);
+      return s && s.length;
+    });
+    if (!hasAnySeries) return null;
+
+    const bestBw = findBestSetAcross(entries, { weighted: false });
+    const bestWeighted = findBestSetAcross(entries, { weighted: true });
+
+    if (!bestBw && !bestWeighted) return null;
+
+    const container = document.createElement("div");
+    container.className = "trend-weight-split";
+
+    const title = document.createElement("h4");
+    title.textContent = "Comparación series sin / con lastre";
+    container.append(title);
+
+    const grid = document.createElement("div");
+    grid.className = "trend-weight-grid";
+    grid.append(
+      createWeightSplitCard("Mejor serie SIN lastre", bestBw, tipo, "bw"),
+      createWeightSplitCard("Mejor serie CON lastre", bestWeighted, tipo, "weighted")
+    );
+
+    container.append(grid);
+    return container;
   }
 
   function setupChartOverlay() {
@@ -1003,8 +1206,10 @@
       ? `${formatDate(current.fechaISO)} · ${currentPhaseLabel}`
       : formatDate(current.fechaISO);
 
-    const diff = Number(current.valor) - Number(selected.valor);
-    const base = Number(selected.valor);
+    const currentVal = getEntryNumericValue(current);
+    const selectedVal = getEntryNumericValue(selected);
+    const diff = currentVal - selectedVal;
+    const base = selectedVal;
     const pct = base !== 0 ? (diff / base) * 100 : null;
     elements.comparisonDiffValue.textContent = formatDelta(diff);
     if (pct !== null && Number.isFinite(pct)) {
@@ -1053,9 +1258,18 @@
   }
 
   function formatValue(entry) {
-    const value = Number(entry.valor);
+    const mainValue = getEntryNumericValue(entry);
     const suffix = TYPE_SUFFIX[entry.tipo] || "";
-    return `${value} ${suffix}`.trim();
+    const sets = getEntrySets(entry);
+    if (!sets || sets.length <= 1) {
+      return `${mainValue} ${suffix}`.trim();
+    }
+    const perSet = getPerSetValues(entry, sets);
+    const seriesText = perSet.length ? perSet.join(" / ") : "";
+    if (!seriesText) {
+      return `${mainValue} ${suffix}`.trim();
+    }
+    return `${mainValue} ${suffix} (mejor serie · series: ${seriesText})`;
   }
 
   function formatDate(iso) {
@@ -1132,7 +1346,7 @@
     const height = elements.canvas.height;
     if (!width || !height) return;
     const sorted = entries.slice().sort((a, b) => a.fechaISO.localeCompare(b.fechaISO));
-    const values = sorted.map((entry) => Number(entry.valor));
+    const values = sorted.map((entry) => getEntryNumericValue(entry));
     const max = Math.max(...values);
     const min = Math.min(...values);
     const range = max - min || 1;
@@ -1149,7 +1363,7 @@
     ctx.lineCap = "round";
     ctx.beginPath();
     sorted.forEach((entry, index) => {
-      const value = Number(entry.valor);
+      const value = getEntryNumericValue(entry);
       const x = paddingX + (index / denominator) * plotWidth;
       const normalized = (value - min) / range;
       const y = paddingY + (1 - normalized) * plotHeight;
