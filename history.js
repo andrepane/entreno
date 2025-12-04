@@ -113,6 +113,53 @@
     return Number.isFinite(num) ? num : null;
   }
 
+  function normalizeSeries(rawSeries) {
+    if (!Array.isArray(rawSeries)) return undefined;
+    const normalized = rawSeries
+      .map((item) => (item && typeof item === "object" ? item : null))
+      .filter(Boolean)
+      .map((item) => {
+        const reps = ensureNumber(item.reps);
+        const peso = ensureNumber(item.peso);
+        const next = {};
+        if (Number.isFinite(reps) && reps > 0) {
+          next.reps = reps;
+        }
+        if (Number.isFinite(peso) && peso > 0) {
+          next.peso = peso;
+        }
+        return Object.keys(next).length ? next : null;
+      })
+      .filter(Boolean);
+    return normalized.length ? normalized : undefined;
+  }
+
+  function computeSeriesMetric(series) {
+    if (!Array.isArray(series) || !series.length) return null;
+    let total = 0;
+    let hasData = false;
+    series.forEach((set) => {
+      if (!set || typeof set !== "object") return;
+      const reps = ensureNumber(set.reps);
+      const peso = ensureNumber(set.peso);
+      if (!Number.isFinite(reps) || reps <= 0) return;
+      hasData = true;
+      const weightFactor = Number.isFinite(peso) && peso > 0 ? peso : 1;
+      total += reps * weightFactor;
+    });
+    return hasData ? total : null;
+  }
+
+  function getComparableValue(entry) {
+    if (!entry) return 0;
+    const seriesValue = computeSeriesMetric(entry.series);
+    if (Number.isFinite(seriesValue) && seriesValue > 0) {
+      return seriesValue;
+    }
+    const numericValor = Number(entry.valor);
+    return Number.isFinite(numericValor) && numericValor > 0 ? numericValor : 0;
+  }
+
   function sumNumbers(values) {
     if (!Array.isArray(values)) return 0;
     return values.reduce((acc, item) => {
@@ -424,7 +471,10 @@
     const ejercicio = normalizeName(raw.ejercicio || raw.name);
     const tipo = raw.tipo;
     const valor = Number(raw.valor);
-    if (!ejercicio || !VALID_TYPES.has(tipo) || !Number.isFinite(valor) || valor <= 0) {
+    const normalizedSeries = normalizeSeries(raw.series);
+    const derivedValor = computeSeriesMetric(normalizedSeries);
+    const finalValor = Number.isFinite(valor) && valor > 0 ? valor : derivedValor;
+    if (!ejercicio || !VALID_TYPES.has(tipo) || !Number.isFinite(finalValor) || finalValor <= 0) {
       return null;
     }
     const entry = {
@@ -432,8 +482,11 @@
       fechaISO: toISODate(raw.fechaISO),
       ejercicio,
       tipo,
-      valor,
+      valor: finalValor,
     };
+    if (normalizedSeries) {
+      entry.series = normalizedSeries;
+    }
     if (raw.notas && typeof raw.notas === "string") {
       const clean = raw.notas.trim();
       if (clean) entry.notas = clean;
@@ -487,8 +540,12 @@
       .sort((a, b) => a.fechaISO.localeCompare(b.fechaISO));
     const primero = cloneEntry(sorted[0]);
     const ultimo = cloneEntry(sorted[sorted.length - 1]);
-    const delta = Number(ultimo.valor) - Number(primero.valor);
-    const pct = primero.valor > 0 ? (delta / primero.valor) * 100 : null;
+    const firstValue = getComparableValue(primero);
+    const lastValue = getComparableValue(ultimo);
+    primero.valor = firstValue;
+    ultimo.valor = lastValue;
+    const delta = Number(lastValue) - Number(firstValue);
+    const pct = firstValue > 0 ? (delta / firstValue) * 100 : null;
     return { primero, ultimo, delta, pct };
   }
 
@@ -544,11 +601,20 @@
         .sort((a, b) => a.fechaISO.localeCompare(b.fechaISO))
         .pop();
 
-      const message = buildDiffMessage(newEntry.tipo, previousComparable && previousComparable.valor, newEntry.valor);
+      const message = buildDiffMessage(
+        newEntry.tipo,
+        previousComparable && getComparableValue(previousComparable),
+        getComparableValue(newEntry)
+      );
 
       if (existingByKey.has(key)) {
         const stored = existingByKey.get(key);
         stored.valor = newEntry.valor;
+        if (newEntry.series) {
+          stored.series = newEntry.series;
+        } else {
+          delete stored.series;
+        }
         if (newEntry.notas) {
           stored.notas = newEntry.notas;
         } else {
@@ -630,10 +696,21 @@
       const next = { ...item };
       if (patch.fechaISO) next.fechaISO = toISODate(patch.fechaISO);
       if (patch.tipo && VALID_TYPES.has(patch.tipo)) next.tipo = patch.tipo;
+      const normalizedSeries = normalizeSeries(patch.series);
+      if (normalizedSeries) {
+        next.series = normalizedSeries;
+      } else if (patch.series) {
+        delete next.series;
+      }
       if (patch.valor != null && Number.isFinite(Number(patch.valor))) {
         const val = Number(patch.valor);
         if (val > 0) {
           next.valor = val;
+        }
+      } else if (normalizedSeries) {
+        const computed = computeSeriesMetric(normalizedSeries);
+        if (computed && computed > 0) {
+          next.valor = computed;
         }
       }
       if (typeof patch.notas === "string") {
@@ -760,5 +837,6 @@
     minutesToSeconds,
     normalizeName,
     getAllEntries,
+    getComparableValue,
   };
 });

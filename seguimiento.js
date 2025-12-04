@@ -522,7 +522,7 @@
     const last = sorted[sorted.length - 1];
     const best = sorted.reduce((acc, entry) => {
       if (!acc) return entry;
-      return Number(entry.valor) > Number(acc.valor) ? entry : acc;
+      return getEntryValue(entry) > getEntryValue(acc) ? entry : acc;
     }, null);
     const now = new Date();
     const start = new Date(now);
@@ -531,7 +531,7 @@
     const weeklyTotal = sorted.reduce((acc, entry) => {
       const d = new Date(entry.fechaISO);
       if (Number.isNaN(d.getTime()) || d < start) return acc;
-      return acc + Number(entry.valor || 0);
+      return acc + getEntryValue(entry);
     }, 0);
     const suffix = TYPE_SUFFIX[state.selectedType] || "";
     const volumeLabel = weeklyTotal
@@ -654,7 +654,7 @@
     canvas.height = height;
     canvas.className = "summary-sparkline";
     const ctx = canvas.getContext("2d");
-    const values = sorted.map((entry) => Number(entry.valor));
+    const values = sorted.map((entry) => getEntryValue(entry));
     const max = Math.max(...values);
     const min = Math.min(...values);
     const range = max - min || 1;
@@ -666,7 +666,7 @@
     ctx.lineCap = "round";
     ctx.beginPath();
     sorted.forEach((entry, index) => {
-      const value = Number(entry.valor);
+      const value = getEntryValue(entry);
       const x = padding + (index / denominator) * plotWidth;
       const normalized = (value - min) / range;
       const y = padding + (1 - normalized) * plotHeight;
@@ -739,7 +739,9 @@
     bar.className = "delta-bar";
     const fill = document.createElement("div");
     fill.className = "delta-bar-fill";
-    const baseline = Math.max(Math.abs(Number(first.valor)), Math.abs(Number(last.valor)));
+    const firstValue = getEntryValue(first);
+    const lastValue = getEntryValue(last);
+    const baseline = Math.max(Math.abs(firstValue), Math.abs(lastValue));
     const ratioSource = baseline > 0 ? baseline : Math.abs(delta);
     const ratio = ratioSource ? Math.min(Math.abs(delta) / ratioSource, 1) : 0;
     fill.style.setProperty("--delta-size", `${(ratio * 100).toFixed(2)}`);
@@ -765,7 +767,7 @@
     for (let i = 1; i < sorted.length; i += 1) {
       const previous = sorted[i - 1];
       const current = sorted[i];
-      const diff = Number(current.valor) - Number(previous.valor);
+      const diff = getEntryValue(current) - getEntryValue(previous);
       const prevDate = new Date(previous.fechaISO);
       const currDate = new Date(current.fechaISO);
       const daysBetween = Math.abs((currDate - prevDate) / (1000 * 60 * 60 * 24));
@@ -1003,8 +1005,8 @@
       ? `${formatDate(current.fechaISO)} · ${currentPhaseLabel}`
       : formatDate(current.fechaISO);
 
-    const diff = Number(current.valor) - Number(selected.valor);
-    const base = Number(selected.valor);
+    const diff = getEntryValue(current) - getEntryValue(selected);
+    const base = getEntryValue(selected);
     const pct = base !== 0 ? (diff / base) * 100 : null;
     elements.comparisonDiffValue.textContent = formatDelta(diff);
     if (pct !== null && Number.isFinite(pct)) {
@@ -1052,8 +1054,51 @@
     return "0";
   }
 
+  function getEntryValue(entry) {
+    if (!entry) return 0;
+    if (historyStore && typeof historyStore.getComparableValue === "function") {
+      const val = historyStore.getComparableValue(entry);
+      if (Number.isFinite(val)) return val;
+    }
+    const fallback = Number(entry.valor);
+    return Number.isFinite(fallback) ? fallback : 0;
+  }
+
+  function formatSeries(entry) {
+    if (!entry || !Array.isArray(entry.series) || !entry.series.length) return null;
+    const sets = entry.series.filter((set) => set && typeof set === "object");
+    if (!sets.length) return null;
+    const repsList = sets
+      .map((set) => (Number.isFinite(Number(set.reps)) ? Number(set.reps) : null))
+      .filter((num) => num !== null);
+    if (!repsList.length) return null;
+    const repText = repsList.join("-");
+    const weights = sets
+      .map((set) => (Number.isFinite(Number(set.peso)) && Number(set.peso) > 0 ? Number(set.peso) : null))
+      .filter((num) => num !== null);
+    const uniqueWeights = Array.from(new Set(weights));
+    if (uniqueWeights.length === 1) {
+      return `${repText} @ ${uniqueWeights[0]} kg`;
+    }
+    if (!weights.length) {
+      return `${repText} reps`;
+    }
+    const detailed = sets
+      .map((set) => {
+        const reps = Number.isFinite(Number(set.reps)) ? Number(set.reps) : null;
+        const peso = Number.isFinite(Number(set.peso)) && Number(set.peso) > 0 ? Number(set.peso) : null;
+        if (reps === null) return null;
+        if (peso !== null) return `${reps} @ ${peso} kg`;
+        return `${reps} reps`;
+      })
+      .filter(Boolean);
+    return detailed.length ? detailed.join(" · ") : `${repText} reps`;
+  }
+
   function formatValue(entry) {
-    const value = Number(entry.valor);
+    const seriesText = formatSeries(entry);
+    if (seriesText) return seriesText;
+    const value = getEntryValue(entry);
     const suffix = TYPE_SUFFIX[entry.tipo] || "";
     return `${value} ${suffix}`.trim();
   }
@@ -1132,7 +1177,7 @@
     const height = elements.canvas.height;
     if (!width || !height) return;
     const sorted = entries.slice().sort((a, b) => a.fechaISO.localeCompare(b.fechaISO));
-    const values = sorted.map((entry) => Number(entry.valor));
+    const values = sorted.map((entry) => getEntryValue(entry));
     const max = Math.max(...values);
     const min = Math.min(...values);
     const range = max - min || 1;
@@ -1149,7 +1194,7 @@
     ctx.lineCap = "round";
     ctx.beginPath();
     sorted.forEach((entry, index) => {
-      const value = Number(entry.valor);
+      const value = getEntryValue(entry);
       const x = paddingX + (index / denominator) * plotWidth;
       const normalized = (value - min) / range;
       const y = paddingY + (1 - normalized) * plotHeight;
