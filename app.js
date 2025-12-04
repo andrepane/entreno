@@ -72,6 +72,13 @@ const PHASE_LABELS = {
   descarga: "Descarga",
 };
 
+const WEEK_TYPE_KEYS = ["normal", "carga", "descarga"];
+const WEEK_TYPE_LABELS = {
+  normal: "Normal",
+  carga: "Carga",
+  descarga: "Descarga",
+};
+
 const EXERCISE_STATUS = {
   PENDING: "pending",
   DONE: "done",
@@ -188,6 +195,7 @@ let state = {
   selectedDate: fmt(new Date()),
   workouts: {}, // { "YYYY-MM-DD": [exercise, ...] }
   dayMeta: {},
+  weekTypes: {},
   futureExercises: [],
   libraryExercises: [],
   plannedExercises: [],
@@ -319,6 +327,32 @@ function normalizeDayMeta(rawMeta){
     base.phase = PHASE_KEYS.includes(phase) ? phase : "";
     normalized[dayISO] = base;
   }
+  return normalized;
+}
+
+function getWeekStartISO(dayISO){
+  const d = fromISO(dayISO);
+  const isoDay = (d.getDay() + 6) % 7; // Lunes = 0
+  d.setDate(d.getDate() - isoDay);
+  return fmt(d);
+}
+
+function getWeekEndISO(weekStartISO){
+  const end = fromISO(weekStartISO);
+  end.setDate(end.getDate() + 6);
+  return fmt(end);
+}
+
+function normalizeWeekTypes(raw){
+  if (!isPlainObject(raw)) return {};
+  const normalized = {};
+  Object.entries(raw).forEach(([week, value]) => {
+    const weekISO = fmt(fromISO(week));
+    const type = typeof value === "string" ? value.trim().toLowerCase() : "";
+    if (WEEK_TYPE_KEYS.includes(type)) {
+      normalized[weekISO] = type;
+    }
+  });
   return normalized;
 }
 
@@ -591,6 +625,33 @@ function getDayMeta(dayISO){
   };
 }
 
+function getWeekType(dayISO){
+  const weekKey = getWeekStartISO(dayISO);
+  const type = state.weekTypes && state.weekTypes[weekKey];
+  return WEEK_TYPE_KEYS.includes(type) ? type : "normal";
+}
+
+function setWeekType(dayISO, type){
+  if (!state.weekTypes) state.weekTypes = {};
+  const weekKey = getWeekStartISO(dayISO);
+  const normalized = WEEK_TYPE_KEYS.includes(type) ? type : "normal";
+  if (state.weekTypes[weekKey] === normalized) return normalized;
+  state.weekTypes[weekKey] = normalized;
+  save();
+  renderMiniCalendar();
+  return normalized;
+}
+
+function clearWeekType(dayISO){
+  if (!state.weekTypes) return;
+  const weekKey = getWeekStartISO(dayISO);
+  if (state.weekTypes[weekKey]) {
+    delete state.weekTypes[weekKey];
+    save();
+    renderMiniCalendar();
+  }
+}
+
 function clearStorageWarning() {
   if (!storageWarningEl) return;
   storageWarningEl.textContent = "";
@@ -662,6 +723,7 @@ function showStorageUsage() {
 }
 function save() {
   state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
+  state.weekTypes = normalizeWeekTypes(state.weekTypes);
   state.plannedExercises = buildPlannedFromWorkouts();
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -697,7 +759,10 @@ const todayRPEClear = document.getElementById("todayRPEClear");
 const todayBadges = document.getElementById("todayBadges");
 const todayHabitInputs = todayPanel ? todayPanel.querySelectorAll('[data-habit]') : [];
 const todayPhaseSelect = document.getElementById("todayPhase");
+const weekTypeSelect = document.getElementById("weekType");
+const weekTypeRange = document.getElementById("weekTypeRange");
 let suppressDayMetaEvents = false;
+let suppressWeekTypeEvents = false;
 
 let activeDrag = null;
 
@@ -898,6 +963,7 @@ const historyStore = typeof window !== "undefined" ? window.entrenoHistory : nul
 load();
 const originalWorkoutsJSON = JSON.stringify(state.workouts || {});
 const originalDayMetaJSON = JSON.stringify(state.dayMeta || {});
+const originalWeekTypesJSON = JSON.stringify(state.weekTypes || {});
 const originalFutureJSON = JSON.stringify(state.futureExercises || []);
 const originalLibraryJSON = JSON.stringify(state.libraryExercises || []);
 const originalPlannedJSON = JSON.stringify(state.plannedExercises || []);
@@ -905,6 +971,8 @@ const normalizedWorkouts = normalizeWorkouts(state.workouts);
 const normalizedWorkoutsJSON = JSON.stringify(normalizedWorkouts);
 const normalizedDayMeta = normalizeDayMeta(state.dayMeta);
 const normalizedDayMetaJSON = JSON.stringify(normalizedDayMeta);
+const normalizedWeekTypes = normalizeWeekTypes(state.weekTypes);
+const normalizedWeekTypesJSON = JSON.stringify(normalizedWeekTypes);
 const normalizedFutureExercises = normalizeFutureExercises(state.futureExercises);
 const normalizedFutureJSON = JSON.stringify(normalizedFutureExercises);
 const normalizedLibraryExercises = normalizeLibraryExercises(state.libraryExercises);
@@ -912,6 +980,7 @@ const normalizedLibraryJSON = JSON.stringify(normalizedLibraryExercises);
 const normalizedPlannedExercises = normalizePlannedExercises(state.plannedExercises);
 state.workouts = normalizedWorkouts;
 state.dayMeta = normalizedDayMeta;
+state.weekTypes = normalizedWeekTypes;
 state.futureExercises = normalizedFutureExercises;
 state.libraryExercises = normalizedLibraryExercises;
 state.plannedExercises = normalizedPlannedExercises.length ? normalizedPlannedExercises : buildPlannedFromWorkouts();
@@ -945,6 +1014,7 @@ attachLibraryEventListeners();
 if (
   originalWorkoutsJSON !== normalizedWorkoutsJSON ||
   originalDayMetaJSON !== normalizedDayMetaJSON ||
+  originalWeekTypesJSON !== normalizedWeekTypesJSON ||
   originalFutureJSON !== normalizedFutureJSON ||
   originalLibraryJSON !== normalizedLibraryJSON ||
   originalPlannedJSON !== JSON.stringify(state.plannedExercises) ||
@@ -1218,6 +1288,19 @@ if (todayPhaseSelect){
   todayPhaseSelect.addEventListener("change", ()=>{
     if (suppressDayMetaEvents) return;
     setDayMeta(state.selectedDate, { phase: todayPhaseSelect.value });
+    renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
+  });
+}
+if (weekTypeSelect){
+  weekTypeSelect.addEventListener("change", ()=>{
+    if (suppressWeekTypeEvents) return;
+    const picked = weekTypeSelect.value;
+    if (!picked) {
+      clearWeekType(state.selectedDate);
+      renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
+      return;
+    }
+    setWeekType(state.selectedDate, picked);
     renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
   });
 }
@@ -3070,6 +3153,9 @@ function renderTodayInsights(dayISO, exercises){
   const meta = getDayMeta(dayISO);
   const duration = computeDurationSummary(exercises);
   const focus = detectFocus(exercises);
+  const weekStartISO = getWeekStartISO(dayISO);
+  const weekEndISO = getWeekEndISO(weekStartISO);
+  const weekType = getWeekType(dayISO);
 
   suppressDayMetaEvents = true;
 
@@ -3113,6 +3199,16 @@ function renderTodayInsights(dayISO, exercises){
   }
   if (todayPhaseSelect) {
     todayPhaseSelect.value = meta.phase || "";
+  }
+  if (weekTypeRange) {
+    const startLabel = fromISO(weekStartISO).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+    const endLabel = fromISO(weekEndISO).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+    weekTypeRange.textContent = `Semana ${startLabel} – ${endLabel}`;
+  }
+  if (weekTypeSelect) {
+    suppressWeekTypeEvents = true;
+    weekTypeSelect.value = weekType || "";
+    suppressWeekTypeEvents = false;
   }
 
   renderTodayBadges(dayISO);
@@ -4067,6 +4163,10 @@ function renderMiniCalendar(){
     if (dayISO === state.selectedDate) btn.classList.add("selected");
     const hasExercises = getDayWorkouts(dayISO).length > 0;
     if (hasExercises) btn.classList.add("has");
+    const weekTypeKey = state.weekTypes && state.weekTypes[getWeekStartISO(dayISO)];
+    if (weekTypeKey) {
+      btn.classList.add(`week-type-${weekTypeKey}`);
+    }
 
     btn.addEventListener("click", ()=>{
       state.selectedDate = dayISO;
