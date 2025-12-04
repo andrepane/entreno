@@ -69,6 +69,29 @@
         </section>
       </div>
 
+      <section class="week-panel card" aria-live="polite">
+        <article class="insight-card week-type-card">
+          <header>Semana</header>
+          <label class="field compact" for="weekType">
+            <span>Tipo de semana</span>
+            <select id="weekType">
+              <option value="normal">Normal</option>
+              <option value="carga">Carga</option>
+              <option value="descarga">Descarga</option>
+            </select>
+          </label>
+          <small id="weekTypeRange" class="muted"></small>
+          <div id="weekTypeBanner" class="week-type-banner" aria-live="polite">
+            <span id="weekTypePill" class="week-pill week-pill-normal">Semana normal</span>
+            <span id="weekLoadStreak" class="week-streak muted">Sin racha de carga</span>
+          </div>
+          <div class="week-trend" aria-label="Últimas 6 semanas" title="Últimas 6 semanas">
+            <span class="muted">Últimas 6 semanas</span>
+            <ol id="weekTrend" class="week-trend-list" aria-live="polite"></ol>
+          </div>
+        </article>
+      </section>
+
       <ul id="exerciseList" class="exercise-list" aria-live="polite"></ul>
 
       <section id="todayPanel" class="today-panel card" aria-live="polite">
@@ -77,26 +100,6 @@
             <header>Duración estimada</header>
             <strong id="todayDuration" aria-live="polite">—</strong>
             <small id="todayVolumeHint" class="muted"></small>
-          </article>
-          <article class="insight-card week-type-card">
-            <header>Semana</header>
-            <label class="field compact" for="weekType">
-              <span>Tipo de semana</span>
-              <select id="weekType">
-                <option value="normal">Normal</option>
-                <option value="carga">Carga</option>
-                <option value="descarga">Descarga</option>
-              </select>
-            </label>
-            <small id="weekTypeRange" class="muted"></small>
-            <div id="weekTypeBanner" class="week-type-banner" aria-live="polite">
-              <span id="weekTypePill" class="week-pill week-pill-normal">Semana normal</span>
-              <span id="weekLoadStreak" class="week-streak muted">Sin racha de carga</span>
-            </div>
-            <div class="week-trend" aria-label="Últimas 6 semanas" title="Últimas 6 semanas">
-              <span class="muted">Últimas 6 semanas</span>
-              <ol id="weekTrend" class="week-trend-list" aria-live="polite"></ol>
-            </div>
           </article>
         </div>
 
