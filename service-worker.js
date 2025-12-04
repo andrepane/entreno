@@ -1,4 +1,6 @@
-const CACHE_NAME = 'entreno-app-shell-v3';
+// Al actualizar CACHE_NAME forzamos a iOS a descargar el nuevo shell
+// (incluyendo los estilos del calendario con semanas de carga/descarga).
+const CACHE_NAME = 'entreno-app-shell-v4';
 const APP_SHELL = [
   './',
   './index.html',
