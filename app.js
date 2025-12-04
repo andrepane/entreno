@@ -3098,32 +3098,6 @@ function computeCompletion(dayISO){
   return { total, completed, percent };
 }
 
-function computeStreaks(){
-  const days = Object.keys(state.workouts || {}).sort();
-  let best = 0;
-  let current = 0;
-  let previousCompleteDate = null;
-  days.forEach((dayISO) => {
-    const { total, completed } = computeCompletion(dayISO);
-    const isPerfect = total > 0 && completed === total;
-    const currentDate = fromISO(dayISO);
-    if (isPerfect) {
-      if (previousCompleteDate) {
-        const diff = Math.round((currentDate - previousCompleteDate) / (24 * 60 * 60 * 1000));
-        current = diff === 1 ? current + 1 : 1;
-      } else {
-        current = 1;
-      }
-      previousCompleteDate = currentDate;
-      best = Math.max(best, current);
-    } else {
-      previousCompleteDate = null;
-      current = 0;
-    }
-  });
-  return { best, current };
-}
-
 function computeLoadWeekStreak(dayISO){
   const startISO = getWeekStartISO(dayISO);
   let count = 0;
@@ -3156,7 +3130,6 @@ function renderTodayBadges(dayISO){
   if (!todayBadges) return;
   todayBadges.innerHTML = "";
   const completion = computeCompletion(dayISO);
-  const streaks = computeStreaks();
 
   const createBadge = (label, value) => {
     const box = document.createElement("div");
@@ -3174,9 +3147,7 @@ function renderTodayBadges(dayISO){
     createBadge(
       "Cumplimiento",
       completion.total ? `${completion.percent}% (${completion.completed}/${completion.total})` : "Sin ejercicios"
-    ),
-    createBadge("Mejor racha", `${streaks.best} ${streaks.best === 1 ? "día" : "días"}`),
-    createBadge("Racha actual", `${streaks.current} ${streaks.current === 1 ? "día" : "días"}`)
+    )
   );
 }
 
