@@ -761,6 +761,10 @@ const todayHabitInputs = todayPanel ? todayPanel.querySelectorAll('[data-habit]'
 const todayPhaseSelect = document.getElementById("todayPhase");
 const weekTypeSelect = document.getElementById("weekType");
 const weekTypeRange = document.getElementById("weekTypeRange");
+const weekTypeBanner = document.getElementById("weekTypeBanner");
+const weekTypePill = document.getElementById("weekTypePill");
+const weekLoadStreakEl = document.getElementById("weekLoadStreak");
+const weekTrendList = document.getElementById("weekTrend");
 let suppressDayMetaEvents = false;
 let suppressWeekTypeEvents = false;
 
@@ -3120,6 +3124,34 @@ function computeStreaks(){
   return { best, current };
 }
 
+function computeLoadWeekStreak(dayISO){
+  const startISO = getWeekStartISO(dayISO);
+  let count = 0;
+  let cursor = fromISO(startISO);
+  for (let i = 0; i < 52; i += 1) { // limitar a un año para evitar bucles infinitos
+    const weekISO = fmt(cursor);
+    if (getWeekType(weekISO) === "carga") {
+      count += 1;
+      cursor.setDate(cursor.getDate() - 7);
+      continue;
+    }
+    break;
+  }
+  return count;
+}
+
+function buildRecentWeekTypes(dayISO, amount = 6){
+  const startDate = fromISO(getWeekStartISO(dayISO));
+  const weeks = [];
+  for (let i = amount - 1; i >= 0; i -= 1) {
+    const cursor = new Date(startDate);
+    cursor.setDate(cursor.getDate() - i * 7);
+    const iso = fmt(cursor);
+    weeks.push({ weekStart: iso, type: getWeekType(iso) });
+  }
+  return weeks;
+}
+
 function renderTodayBadges(dayISO){
   if (!todayBadges) return;
   todayBadges.innerHTML = "";
@@ -3209,6 +3241,36 @@ function renderTodayInsights(dayISO, exercises){
     suppressWeekTypeEvents = true;
     weekTypeSelect.value = weekType || "";
     suppressWeekTypeEvents = false;
+  }
+  if (weekTypePill) {
+    const pillLabel = WEEK_TYPE_LABELS[weekType] || WEEK_TYPE_LABELS.normal;
+    weekTypePill.textContent = `Semana ${pillLabel.toLowerCase()}`;
+    weekTypePill.className = `week-pill week-pill-${weekType}`;
+  }
+  if (weekLoadStreakEl) {
+    const streak = computeLoadWeekStreak(dayISO);
+    weekLoadStreakEl.textContent = streak
+      ? `Racha de carga: ${streak} ${streak === 1 ? "semana" : "semanas"}`
+      : "Sin racha de carga";
+    weekLoadStreakEl.classList.toggle("accent", streak > 0);
+  }
+  if (weekTrendList) {
+    const recentWeeks = buildRecentWeekTypes(dayISO, 6);
+    weekTrendList.innerHTML = "";
+    recentWeeks.forEach(({ weekStart, type }) => {
+      const li = document.createElement("li");
+      const dot = document.createElement("span");
+      dot.className = `week-dot ${type}`;
+      const startLabel = fromISO(weekStart).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+      const endLabel = fromISO(getWeekEndISO(weekStart)).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+      const label = WEEK_TYPE_LABELS[type] || WEEK_TYPE_LABELS.normal;
+      li.title = `Semana ${startLabel} – ${endLabel}: ${label}`;
+      const srOnly = document.createElement("span");
+      srOnly.className = "week-dot-label";
+      srOnly.textContent = `Semana ${startLabel} – ${endLabel}: ${label}`;
+      li.append(dot, srOnly);
+      weekTrendList.append(li);
+    });
   }
 
   renderTodayBadges(dayISO);

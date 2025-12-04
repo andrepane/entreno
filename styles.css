@@ -450,6 +450,21 @@ button.icon-button.icon-with-label .icon{
 .habit-chip input{accent-color:var(--accent);}
 .habit-chip:hover{border-color:var(--accent); color:var(--accent);}
 .week-type-card small{min-height:18px; display:block;}
+.week-type-banner{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:6px;}
+.week-pill{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; font-weight:700; letter-spacing:.3px; font-size:.8rem; text-transform:uppercase; border:1px solid transparent;}
+.week-pill-normal{background:rgba(75,85,99,0.25); color:#e5e7eb; border-color:rgba(75,85,99,0.35);}
+.week-pill-carga{background:rgba(239,68,68,0.2); color:#fecdd3; border-color:rgba(239,68,68,0.5);}
+.week-pill-descarga{background:rgba(59,130,246,0.2); color:#bfdbfe; border-color:rgba(59,130,246,0.45);}
+.week-streak{font-size:.9rem;}
+.week-streak.accent{color:var(--accent); font-weight:700;}
+.week-trend{display:flex; align-items:center; gap:10px; margin-top:8px;}
+.week-trend-list{display:flex; align-items:center; gap:8px; list-style:none; padding:0; margin:0;}
+.week-trend-list li{position:relative;}
+.week-dot{width:14px; height:14px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; border:2px solid #0f131a; box-shadow:0 0 0 1px #252c3a;}
+.week-dot.normal{background:#6b7280;}
+.week-dot.carga{background:#ef4444;}
+.week-dot.descarga{background:#3b82f6;}
+.week-dot-label{position:absolute; left:-9999px;}
 .field.compact span{font-size:.75rem;}
 .field.compact input,.field.compact select{padding:8px;}
 .trend-card{background:#0f131a; border:1px solid #252c3a; border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:6px; box-shadow:inset 0 1px 0 rgba(255,255,255,0.02);}
