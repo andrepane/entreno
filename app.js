@@ -765,6 +765,9 @@ const weekTypeBanner = document.getElementById("weekTypeBanner");
 const weekTypePill = document.getElementById("weekTypePill");
 const weekLoadStreakEl = document.getElementById("weekLoadStreak");
 const weekTrendList = document.getElementById("weekTrend");
+const weekCalendarToggle = document.getElementById("weekCalendarToggle");
+const weekCalendar = document.getElementById("weekCalendar");
+const weekCalendarCount = document.getElementById("weekCalendarCount");
 let suppressDayMetaEvents = false;
 let suppressWeekTypeEvents = false;
 
@@ -1306,6 +1309,21 @@ if (weekTypeSelect){
     }
     setWeekType(state.selectedDate, picked);
     renderTodayInsights(state.selectedDate, getDayExercises(state.selectedDate));
+  });
+}
+if (weekCalendarToggle && weekCalendar){
+  const syncWeekCalendarLabel = () => {
+    weekCalendarToggle.textContent = weekCalendar.classList.contains("hidden")
+      ? "Ver todas las semanas"
+      : "Ocultar calendario";
+  };
+  syncWeekCalendarLabel();
+  weekCalendarToggle.addEventListener("click", ()=>{
+    weekCalendar.classList.toggle("hidden");
+    syncWeekCalendarLabel();
+    if (!weekCalendar.classList.contains("hidden")) {
+      renderWeekCalendar(state.selectedDate);
+    }
   });
 }
 
@@ -3126,6 +3144,120 @@ function buildRecentWeekTypes(dayISO, amount = 6){
   return weeks;
 }
 
+function buildTrackedWeekCalendar(dayISO){
+  const weekStarts = new Set();
+
+  const addWeekStart = (iso) => {
+    if (!iso) return;
+    weekStarts.add(getWeekStartISO(iso));
+  };
+
+  if (state.weekTypes) {
+    Object.keys(state.weekTypes).forEach((weekISO) => addWeekStart(weekISO));
+  }
+  if (state.workouts) {
+    Object.keys(state.workouts).forEach((dayISO) => addWeekStart(dayISO));
+  }
+
+  const todayISO = fmt(new Date());
+  addWeekStart(dayISO || state.selectedDate || todayISO);
+  addWeekStart(todayISO);
+
+  if (!weekStarts.size) return [];
+
+  const sortedStarts = Array.from(weekStarts)
+    .map((iso) => fromISO(getWeekStartISO(iso)))
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  const first = sortedStarts[0];
+  const last = sortedStarts[sortedStarts.length - 1];
+  const cursor = new Date(first);
+  const end = new Date(last);
+
+  const calendar = [];
+  while (cursor <= end) {
+    const weekStart = fmt(cursor);
+    calendar.push({
+      weekStart,
+      type: getWeekType(weekStart)
+    });
+    cursor.setDate(cursor.getDate() + 7);
+  }
+
+  return calendar;
+}
+
+function renderWeekCalendar(dayISO){
+  if (!weekCalendar) return;
+
+  const allWeeks = buildTrackedWeekCalendar(dayISO);
+  const selectedWeek = getWeekStartISO(dayISO || state.selectedDate || fmt(new Date()));
+  const currentWeek = getWeekStartISO(fmt(new Date()));
+
+  if (weekCalendarCount) {
+    weekCalendarCount.textContent = allWeeks.length
+      ? `${allWeeks.length} ${allWeeks.length === 1 ? "semana" : "semanas"}`
+      : "Sin semanas guardadas";
+  }
+
+  weekCalendar.innerHTML = "";
+  if (!allWeeks.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "Añade semanas de carga o descarga para ver el calendario.";
+    weekCalendar.append(empty);
+    return;
+  }
+
+  let currentMonthLabel = "";
+  let monthGrid = null;
+
+  allWeeks.forEach(({ weekStart, type }) => {
+    const start = fromISO(weekStart);
+    const end = fromISO(getWeekEndISO(weekStart));
+    const monthLabel = start.toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+
+    if (monthLabel !== currentMonthLabel) {
+      currentMonthLabel = monthLabel;
+      const monthSection = document.createElement("div");
+      monthSection.className = "week-month";
+      const title = document.createElement("div");
+      title.className = "week-month-title";
+      title.textContent = monthLabel;
+      monthGrid = document.createElement("div");
+      monthGrid.className = "week-month-grid";
+      monthSection.append(title, monthGrid);
+      weekCalendar.append(monthSection);
+    }
+
+    const card = document.createElement("div");
+    card.className = `week-week-card week-type-${type}`;
+    if (weekStart === selectedWeek) card.classList.add("selected");
+    if (weekStart === currentWeek) card.classList.add("current");
+
+    const range = document.createElement("span");
+    range.className = "week-range";
+    const startLabel = start.toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+    const endLabel = end.toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+    range.textContent = `${startLabel} – ${endLabel}`;
+
+    const typeTag = document.createElement("span");
+    typeTag.className = `week-type-tag ${type}`;
+    typeTag.textContent = WEEK_TYPE_LABELS[type] || WEEK_TYPE_LABELS.normal;
+
+    const legend = document.createElement("span");
+    legend.className = "week-legend";
+    legend.textContent = weekStart === currentWeek
+      ? "Semana actual"
+      : weekStart === selectedWeek
+        ? "Semana seleccionada"
+        : "Semana registrada";
+
+    card.append(range, typeTag, legend);
+    if (monthGrid) monthGrid.append(card);
+  });
+}
+
 function renderTodayBadges(dayISO){
   if (!todayBadges) return;
   todayBadges.innerHTML = "";
@@ -3243,6 +3375,8 @@ function renderTodayInsights(dayISO, exercises){
       weekTrendList.append(li);
     });
   }
+
+  renderWeekCalendar(dayISO);
 
   renderTodayBadges(dayISO);
 
