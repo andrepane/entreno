@@ -88,6 +88,9 @@
           <div class="week-trend" aria-label="Últimas 6 semanas" title="Últimas 6 semanas">
             <span class="muted">Últimas 6 semanas</span>
             <ol id="weekTrend" class="week-trend-list" aria-live="polite"></ol>
+            <button type="button" id="weekCalendarBtn" class="ghost micro" aria-haspopup="dialog">
+              Ver calendario
+            </button>
           </div>
         </article>
       </section>
@@ -586,6 +589,20 @@
           <button type="submit" class="primary">Guardar</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="weekCalendarModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="weekCalendarTitle">
+    <div class="modal-content week-calendar-modal">
+      <header class="modal-header">
+        <h2 id="weekCalendarTitle">Calendario de semanas</h2>
+        <button type="button" class="ghost" data-close-modal="weekCalendarModal" aria-label="Cerrar">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted">Revisa todas las semanas registradas y su tipo.</p>
+        <div id="weekCalendarEmpty" class="muted">Aún no hay semanas registradas.</div>
+        <div id="weekCalendarGrid" class="week-calendar" aria-live="polite"></div>
+      </div>
     </div>
   </div>
 

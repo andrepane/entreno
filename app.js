@@ -765,6 +765,10 @@ const weekTypeBanner = document.getElementById("weekTypeBanner");
 const weekTypePill = document.getElementById("weekTypePill");
 const weekLoadStreakEl = document.getElementById("weekLoadStreak");
 const weekTrendList = document.getElementById("weekTrend");
+const weekCalendarBtn = document.getElementById("weekCalendarBtn");
+const weekCalendarModal = document.getElementById("weekCalendarModal");
+const weekCalendarGrid = document.getElementById("weekCalendarGrid");
+const weekCalendarEmpty = document.getElementById("weekCalendarEmpty");
 let suppressDayMetaEvents = false;
 let suppressWeekTypeEvents = false;
 
@@ -1065,6 +1069,13 @@ document.addEventListener("keydown", (event) => {
     }
   }
 });
+
+if (weekCalendarBtn && weekCalendarModal) {
+  weekCalendarBtn.addEventListener("click", () => {
+    renderWeekCalendar();
+    openModal(weekCalendarModal);
+  });
+}
 
 prevDayBtn.addEventListener("click", ()=> shiftSelectedDay(-1));
 nextDayBtn.addEventListener("click", ()=> shiftSelectedDay(1));
@@ -3114,6 +3125,40 @@ function computeLoadWeekStreak(dayISO){
   return count;
 }
 
+function getEarliestWeekStartISO(){
+  const weekKeys = Object.keys(state.weekTypes || {});
+  const workoutWeeks = Object.keys(state.workouts || {}).map((day) => getWeekStartISO(day));
+  const candidates = [...weekKeys, ...workoutWeeks]
+    .map((iso) => fromISO(iso))
+    .filter((date) => Number.isFinite(date.getTime()))
+    .sort((a, b) => a - b);
+  if (candidates.length) {
+    return fmt(candidates[0]);
+  }
+  return null;
+}
+
+function buildWeekTimeline(){
+  const firstWeekISO = getEarliestWeekStartISO();
+  if (!firstWeekISO) return [];
+  const lastWeekISO = getWeekStartISO(fmt(new Date()));
+  const startDate = fromISO(firstWeekISO);
+  const endDate = fromISO(lastWeekISO);
+  if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())) {
+    return [];
+  }
+  const weeks = [];
+  const cursor = new Date(startDate);
+  let safety = 0;
+  while (cursor <= endDate && safety < 520) { // máximo 10 años de semanas
+    const weekStart = fmt(cursor);
+    weeks.push({ weekStart, type: getWeekType(weekStart) });
+    cursor.setDate(cursor.getDate() + 7);
+    safety += 1;
+  }
+  return weeks;
+}
+
 function buildRecentWeekTypes(dayISO, amount = 6){
   const startDate = fromISO(getWeekStartISO(dayISO));
   const weeks = [];
@@ -3124,6 +3169,71 @@ function buildRecentWeekTypes(dayISO, amount = 6){
     weeks.push({ weekStart: iso, type: getWeekType(iso) });
   }
   return weeks;
+}
+
+function renderWeekCalendar(){
+  if (!weekCalendarGrid || !weekCalendarEmpty) return;
+  const weeks = buildWeekTimeline();
+  weekCalendarGrid.innerHTML = "";
+  weekCalendarEmpty.classList.toggle("hidden", weeks.length > 0);
+  if (!weeks.length) return;
+
+  const legend = document.createElement("div");
+  legend.className = "week-calendar-legend";
+  ["normal", "carga", "descarga"].forEach((key) => {
+    const item = document.createElement("span");
+    const dot = document.createElement("span");
+    dot.className = `legend-dot ${key}`;
+    const label = document.createElement("span");
+    label.textContent = WEEK_TYPE_LABELS[key];
+    item.append(dot, label);
+    legend.append(item);
+  });
+  weekCalendarGrid.append(legend);
+
+  const months = new Map();
+  weeks.forEach((week) => {
+    const monthKey = week.weekStart.slice(0, 7);
+    if (!months.has(monthKey)) {
+      months.set(monthKey, []);
+    }
+    months.get(monthKey).push(week);
+  });
+
+  const sortedMonths = Array.from(months.keys()).sort();
+  sortedMonths.forEach((monthKey) => {
+    const monthWeeks = months.get(monthKey) || [];
+    monthWeeks.sort((a, b) => fromISO(a.weekStart) - fromISO(b.weekStart));
+    const section = document.createElement("section");
+    section.className = "week-calendar-month";
+    const header = document.createElement("header");
+    const title = document.createElement("h3");
+    title.textContent = fromISO(`${monthKey}-01`).toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+    header.append(title);
+    section.append(header);
+    const list = document.createElement("ol");
+    list.className = "week-calendar-grid";
+    monthWeeks.forEach(({ weekStart, type }) => {
+      const item = document.createElement("li");
+      item.className = "week-calendar-item";
+      const dot = document.createElement("span");
+      dot.className = `week-dot ${type}`;
+      dot.setAttribute("aria-hidden", "true");
+      const info = document.createElement("div");
+      const startLabel = fromISO(weekStart).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+      const endLabel = fromISO(getWeekEndISO(weekStart)).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+      const range = document.createElement("strong");
+      range.textContent = `${startLabel} – ${endLabel}`;
+      const typeLabel = document.createElement("span");
+      typeLabel.className = "muted";
+      typeLabel.textContent = WEEK_TYPE_LABELS[type] || WEEK_TYPE_LABELS.normal;
+      info.append(range, typeLabel);
+      item.append(dot, info);
+      list.append(item);
+    });
+    section.append(list);
+    weekCalendarGrid.append(section);
+  });
 }
 
 function renderTodayBadges(dayISO){
@@ -3242,6 +3352,10 @@ function renderTodayInsights(dayISO, exercises){
       li.append(dot, srOnly);
       weekTrendList.append(li);
     });
+  }
+
+  if (weekCalendarModal && !weekCalendarModal.classList.contains("hidden")) {
+    renderWeekCalendar();
   }
 
   renderTodayBadges(dayISO);
