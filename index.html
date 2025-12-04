@@ -78,28 +78,6 @@
             <strong id="todayDuration" aria-live="polite">—</strong>
             <small id="todayVolumeHint" class="muted"></small>
           </article>
-          <article class="insight-card">
-            <header>Foco del día</header>
-            <strong id="todayFocus">—</strong>
-            <small id="todayFocusDetail" class="muted"></small>
-          </article>
-          <article class="insight-card">
-            <header>Movilidad</header>
-            <p id="todayMobility">Registra tu movilidad para mantener la cadena abierta.</p>
-            <button type="button" id="todayMobilityToggle" class="ghost small">Marcar movilidad</button>
-          </article>
-          <article class="insight-card">
-            <header>Fase</header>
-            <label class="field compact" for="todayPhase">
-              <span>Estado actual</span>
-              <select id="todayPhase">
-                <option value="">Sin fase</option>
-                <option value="base">Base</option>
-                <option value="intensificacion">Intensificación</option>
-                <option value="descarga">Descarga</option>
-              </select>
-            </label>
-          </article>
           <article class="insight-card week-type-card">
             <header>Semana</header>
             <label class="field compact" for="weekType">
@@ -122,37 +100,7 @@
           </article>
         </div>
 
-        <div class="today-cta">
-          <div class="rpe-header">
-            <h3 class="card-title heading-tight">Registra tu sensación (RPE)</h3>
-            <span id="todayRPEBadge" class="summary-badge">Sin registrar</span>
-          </div>
-          <div class="rpe-control">
-            <input type="range" id="todayRPE" min="1" max="10" step="1" />
-            <output id="todayRPEValue" for="todayRPE">—</output>
-            <button type="button" id="todayRPEClear" class="ghost small">Limpiar</button>
-          </div>
-        </div>
-
         <div id="todayBadges" class="today-badges summary-grid" aria-live="polite"></div>
-
-        <div class="today-habits">
-          <h3 class="card-title heading-tight">Hábitos complementarios</h3>
-          <div class="habit-list chip-group">
-            <label class="habit-chip">
-              <input type="checkbox" data-habit="sleep" />
-              <span>8h sueño</span>
-            </label>
-            <label class="habit-chip">
-              <input type="checkbox" data-habit="mobility" />
-              <span>Movilidad</span>
-            </label>
-            <label class="habit-chip">
-              <input type="checkbox" data-habit="handstand" />
-              <span>Handstand practice</span>
-            </label>
-          </div>
-        </div>
       </section>
 
       <div class="empty-hint" id="emptyDayHint">
