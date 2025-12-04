@@ -101,7 +101,12 @@
   }
 
   function cloneEntry(entry) {
-    return { ...entry };
+    if (!entry || typeof entry !== "object") return {};
+    const cloned = { ...entry };
+    if (Array.isArray(entry.series)) {
+      cloned.series = entry.series.map((set) => ({ ...set }));
+    }
+    return cloned;
   }
 
   function makeKey(fechaISO, ejercicio, tipo) {
@@ -183,6 +188,47 @@
     return false;
   }
 
+  function normalizeSeriesList(series, fallbackWeight) {
+    if (!Array.isArray(series)) return [];
+    return series
+      .map((item) => {
+        const reps = ensureNumber(item && item.reps);
+        const peso = ensureNumber(item && (item.peso ?? item.weight));
+        if (!Number.isFinite(reps) || reps <= 0) return null;
+        return { reps, peso: Number.isFinite(peso) ? peso : fallbackWeight != null ? fallbackWeight : undefined };
+      })
+      .filter(Boolean);
+  }
+
+  function buildSeriesForExercise(exerciseRaw, sets, numericDone, hasDone, weight) {
+    const series = [];
+    if (hasDone) {
+      numericDone.forEach((val) => {
+        if (!Number.isFinite(val) || val <= 0) return;
+        series.push({ reps: val, peso: weight });
+      });
+      return series;
+    }
+
+    const goal = (exerciseRaw.goal || "").toLowerCase();
+    if (goal === "emom") {
+      const minutes = ensureNumber(exerciseRaw.emomMinutes) || 0;
+      const repsPerMinute = ensureNumber(exerciseRaw.emomReps) || 0;
+      if (minutes > 0 && repsPerMinute > 0) {
+        series.push({ reps: minutes * repsPerMinute, peso: weight });
+      }
+      return series;
+    }
+
+    const planned = ensureNumber(exerciseRaw.reps);
+    if (planned && planned > 0) {
+      for (let i = 0; i < sets; i += 1) {
+        series.push({ reps: planned, peso: weight });
+      }
+    }
+    return series;
+  }
+
   function extractEntriesFromDay(day) {
     const normalized = normalizeDay(day);
     if (!normalized) return [];
@@ -208,7 +254,7 @@
       const weight = ensureNumber(exerciseRaw.weightKg);
       const weightNote = weight && weight > 0 ? `lastre +${weight} kg` : null;
 
-      const pushValue = (tipo, valor, extraNotes = []) => {
+      const pushValue = (tipo, valor, extraNotes = [], series = []) => {
         const num = Number(valor);
         if (!Number.isFinite(num) || num <= 0) return;
         const key = makeKey(fechaISO, name, tipo);
@@ -220,6 +266,7 @@
             tipo,
             valor: tipo === "peso" ? null : 0,
             notas: new Set(),
+            series: [],
           });
         }
         const entry = map.get(key);
@@ -227,6 +274,9 @@
           entry.valor = entry.valor == null ? num : Math.max(entry.valor, num);
         } else {
           entry.valor = (entry.valor || 0) + num;
+        }
+        if (Array.isArray(series) && series.length) {
+          entry.series = series.slice();
         }
         [...notes, ...extraNotes].forEach((note) => {
           if (note && typeof note === "string") {
@@ -241,6 +291,7 @@
 
       if (goal === "reps" || goal === "emom") {
         let totalReps = 0;
+        const series = buildSeriesForExercise(exerciseRaw, sets, numericDone, hasDone, weight);
         if (hasDone) {
           totalReps = sumNumbers(numericDone);
         } else if (goal === "emom") {
@@ -256,7 +307,7 @@
           }
         }
         if (totalReps > 0) {
-          pushValue("reps", totalReps, weightNote ? [weightNote] : []);
+          pushValue("reps", totalReps, weightNote ? [weightNote] : [], series);
         }
       } else if (goal === "seconds") {
         let totalSeconds = 0;
@@ -290,6 +341,7 @@
         valor: item.valor == null ? 0 : Number(item.valor),
         notas: item.notas.size ? Array.from(item.notas).join(" · ") : undefined,
         sourceDayId,
+        series: normalizeSeriesList(item.series),
       }))
       .filter((entry) => entry.valor > 0);
   }
@@ -424,7 +476,11 @@
     const ejercicio = normalizeName(raw.ejercicio || raw.name);
     const tipo = raw.tipo;
     const valor = Number(raw.valor);
-    if (!ejercicio || !VALID_TYPES.has(tipo) || !Number.isFinite(valor) || valor <= 0) {
+    const pesoLegacy = ensureNumber(raw.peso);
+    const series = normalizeSeriesList(raw.series, pesoLegacy);
+    const computedValor = series.length ? series.reduce((acc, set) => acc + (Number(set.reps) || 0), 0) : null;
+    const resolvedValor = Number.isFinite(valor) && valor > 0 ? valor : computedValor;
+    if (!ejercicio || !VALID_TYPES.has(tipo) || !Number.isFinite(resolvedValor) || resolvedValor <= 0) {
       return null;
     }
     const entry = {
@@ -432,8 +488,13 @@
       fechaISO: toISODate(raw.fechaISO),
       ejercicio,
       tipo,
-      valor,
+      valor: resolvedValor,
     };
+    if (series.length) {
+      entry.series = series;
+    } else if (tipo === "reps") {
+      entry.series = normalizeSeriesList([{ reps: resolvedValor, peso: pesoLegacy }]);
+    }
     if (raw.notas && typeof raw.notas === "string") {
       const clean = raw.notas.trim();
       if (clean) entry.notas = clean;

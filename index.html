@@ -457,63 +457,35 @@
 
     <!-- Sección SEGUIMIENTO -->
     <section id="tab-seguimiento" class="tab-panel hidden" role="tabpanel">
-      <div class="seguimiento-header">
-        <button id="historyRebuildBtn" class="ghost" aria-label="Reconstruir historial">Reconstruir historial</button>
-      </div>
-
-      <div id="historyWarnings" class="alert hidden" role="status" aria-live="polite"></div>
-
-      <div class="seguimiento-layout">
-        <aside id="historyExercisePanel" class="seguimiento-panel" aria-label="Ejercicios guardados">
-          <ul id="historyExerciseList" class="history-list" role="listbox"></ul>
-          <div id="historyExerciseEmpty" class="empty-hint">Sin registros todavía. Añade entrenos para comenzar.</div>
-        </aside>
-
-        <section id="historyDetailPanel" class="seguimiento-panel" aria-live="polite">
-          <div id="historyDetailEmpty" class="empty-hint">Selecciona un ejercicio para ver su historial.</div>
-          <div id="historyDetail" class="history-detail hidden">
-            <header class="history-detail-header">
-              <h2 id="historyDetailTitle"></h2>
-              <div id="historyTypeSelector" class="type-selector" role="tablist" aria-label="Tipos disponibles"></div>
-            </header>
-
-            <div class="history-controls">
-              <label for="historyRange">Rango</label>
-              <select id="historyRange" aria-label="Filtrar por rango"></select>
-              <label for="historyPhaseFilter">Fase</label>
-              <select id="historyPhaseFilter" aria-label="Filtrar por fase">
-                <option value="all">Todas</option>
-                <option value="base">Base</option>
-                <option value="intensificacion">Intensificación</option>
-                <option value="descarga">Descarga</option>
-              </select>
-              <button id="historyOrderBtn" class="ghost" type="button">Ordenar</button>
-            </div>
-
-            <div id="historySummary" class="history-summary" aria-live="polite"></div>
-
-            <div id="historyTrends" class="history-trends" aria-live="polite"></div>
-
-            <div class="history-chart-wrapper">
-              <canvas id="historyChart" width="360" height="140" role="img" aria-label="Tendencia del ejercicio"></canvas>
-            </div>
-
-            <div class="table-scroll">
-              <table id="historyTable" class="data-table" aria-label="Historial de registros">
-                <thead>
-                  <tr>
-                    <th scope="col">Fecha</th>
-                    <th scope="col">Valor</th>
-                    <th scope="col">Fase</th>
-                    <th scope="col">Notas</th>
-                    <th scope="col" class="actions-header">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody id="historyTableBody"></tbody>
-              </table>
-            </div>
+      <div class="card">
+        <header class="seguimiento-header">
+          <div>
+            <h2>Progresión de fuerza</h2>
+            <p class="muted">Series y lastre por ejercicio de la librería.</p>
           </div>
-        </section>
+        </header>
+
+        <div class="strength-grid">
+          <section class="strength-list-panel">
+            <h3 class="heading-tight">Ejercicios</h3>
+            <ul id="strengthExerciseList" class="strength-list" aria-live="polite"></ul>
+            <div id="strengthEmpty" class="empty-hint">Sin historial de fuerza por ahora.</div>
+          </section>
+
+          <section id="strengthDetail" class="strength-detail card hidden" aria-live="polite">
+            <header class="strength-detail-header">
+              <div>
+                <p class="muted">Resumen de sesiones</p>
+                <h3 id="strengthExerciseName" class="heading-tight"></h3>
+              </div>
+              <div class="strength-meta">
+                <span id="strengthBestLabel" class="chip"></span>
+                <button id="strengthBackBtn" class="ghost small" type="button">Cerrar</button>
+              </div>
+            </header>
+            <div id="strengthSessions" class="session-list"></div>
+          </section>
+        </div>
       </div>
 
       <div id="historyToast" class="toast" role="alert" aria-live="assertive"></div>

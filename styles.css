@@ -90,14 +90,11 @@ main{flex:1 1 auto; padding:clamp(14px, 5vw, 28px)}
 
 .seguimiento-header{
   display:flex;
-  justify-content:flex-end;
+  justify-content:space-between;
+  align-items:flex-start;
   margin-bottom:16px;
-  position:sticky;
-  top:calc(var(--header-sticky-offset) + clamp(8px, 3vw, 18px));
-  z-index:2;
-  padding:12px 0;
-  background:rgba(13,15,18,0.92);
-  backdrop-filter:blur(8px);
+  position:relative;
+  padding:4px 0 12px;
 }
 .seguimiento-header button{flex:0 0 auto;}
 
@@ -669,6 +666,24 @@ body.modal-open{overflow:hidden;}
 .mini-cal-grid button.day.has{box-shadow: inset 0 0 0 2px var(--accent-ghost)}
 .mini-cal-grid button.day.selected{background:var(--accent); color:#062410}
 
+.strength-grid{display:grid; gap:16px;}
+.strength-list-panel{display:flex; flex-direction:column; gap:8px; background:rgba(15,19,26,0.65); border:1px solid #252c3a; border-radius:var(--radius); padding:16px; box-shadow:var(--shadow);}
+.strength-list{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px;}
+.strength-item{border:1px solid #2a3240; border-radius:12px; overflow:hidden; background:#0f131a;}
+.strength-item-btn{width:100%; text-align:left; padding:12px; display:flex; flex-direction:column; gap:6px; border:none; background:transparent; color:var(--text); cursor:pointer;}
+.strength-item-btn:hover,.strength-item-btn.active{background:rgba(36,106,68,0.18); box-shadow:inset 0 0 0 1px var(--accent-ghost);}
+.strength-item-title{font-weight:700; color:var(--text);}
+.strength-item-meta,.strength-item-best{font-size:0.9rem; color:var(--muted); display:flex; align-items:center; gap:6px;}
+.strength-item-best .chip{background:var(--accent-ghost); color:var(--accent-dark); padding:4px 8px; border-radius:999px; font-size:0.8rem;}
+
+.strength-detail{border:1px solid #252c3a; border-radius:var(--radius); background:rgba(15,19,26,0.8); box-shadow:var(--shadow);}
+.strength-detail-header{display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px;}
+.strength-meta{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+.session-list{display:flex; flex-direction:column; gap:10px;}
+.session-row{display:flex; gap:8px; font-size:0.95rem; color:var(--text); align-items:center;}
+.session-date{color:var(--muted); font-weight:600;}
+.session-label{font-weight:600;}
+
 @media (max-width: 640px){
   .mini-cal{display:none}
   .app-header,
@@ -689,4 +704,5 @@ body.modal-open{overflow:hidden;}
 
 @media (min-width: 800px){
   main{max-width:900px; margin:0 auto}
+  .strength-grid{grid-template-columns:1fr 1fr; align-items:start;}
 }
