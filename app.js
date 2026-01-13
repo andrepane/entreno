@@ -52,9 +52,19 @@ const STORAGE_APPROX_MAX_BYTES = 5 * 1024 * 1024; // NEW: Máximo aproximado per
 const STORAGE_WARN_THRESHOLD_BYTES = 4.5 * 1024 * 1024; // NEW: Umbral para mostrar alerta visual de almacenamiento
 const STORAGE_SAVE_ERROR_MESSAGE =
   "No se pudo guardar tu entrenamiento en este dispositivo. Comprueba si el modo privado está activado o libera espacio y vuelve a intentarlo.";
+const FIREBASE_COLLECTION = "workouts";
+const FIREBASE_DOC_VERSION = 1;
 let storageWarningEl = null;
 let storageSaveFailed = false;
 let lastStorageUsageBytes = 0; // NEW: Seguimiento del uso estimado de localStorage en bytes
+let firebaseApp = null;
+let firebaseAuth = null;
+let firebaseDb = null;
+let firebaseDocRef = null;
+let firebaseUserId = null;
+let firebaseUnsubscribe = null;
+let firebaseSaveTimeout = null;
+let firebaseReady = false;
 const CATEGORY_KEYS = ["calistenia", "musculacion", "piernas", "cardio", "skill", "movilidad", "otro"];
 const CATEGORY_LABELS = {
   calistenia: "Calistenia",
@@ -244,6 +254,7 @@ let state = {
   futureExercises: [],
   libraryExercises: [],
   plannedExercises: [],
+  lastModifiedAt: null,
 };
 
 const dayMultiSelect = {
@@ -766,15 +777,121 @@ function showStorageUsage() {
   const warn = lastStorageUsageBytes >= STORAGE_WARN_THRESHOLD_BYTES; // NEW: Determina si debe activarse el estado de alerta
   storageInfoEl.classList.toggle("warn", warn); // NEW: Alterna la clase de alerta cuando se supera el umbral
 }
-function save() {
+
+function getFirebaseConfig() {
+  if (typeof window === "undefined") return null;
+  const config = window.FIREBASE_CONFIG;
+  return isPlainObject(config) ? config : null;
+}
+
+function getTimestampMillis(value) {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function cloneStateForRemote() {
+  return JSON.parse(JSON.stringify(state));
+}
+
+function applyRemoteState(remoteState) {
+  state = { ...state, ...remoteState };
+  state.workouts = normalizeWorkouts(state.workouts);
+  state.dayMeta = normalizeDayMeta(state.dayMeta);
+  state.weekTypes = normalizeWeekTypes(state.weekTypes);
+  state.futureExercises = normalizeFutureExercises(state.futureExercises);
+  state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
+  state.plannedExercises = normalizePlannedExercises(state.plannedExercises);
+  state.plannedExercises = state.plannedExercises.length ? state.plannedExercises : buildPlannedFromWorkouts();
+
+  const selected = fmt(fromISO(state.selectedDate));
+  state.selectedDate = selected;
+  if (selectedDateInput) selectedDateInput.value = state.selectedDate;
+  if (formDate) formDate.value = state.selectedDate;
+
+  renderAll();
+  save({ skipRemote: true, updateTimestamp: false });
+}
+
+function queueRemoteSave() {
+  if (!firebaseDocRef || typeof firebase === "undefined") return;
+  if (firebaseSaveTimeout) clearTimeout(firebaseSaveTimeout);
+  firebaseSaveTimeout = setTimeout(() => {
+    const payload = {
+      state: cloneStateForRemote(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      version: FIREBASE_DOC_VERSION,
+    };
+    firebaseDocRef.set(payload, { merge: true }).catch((err) => {
+      console.warn("No se pudo sincronizar con Firebase", err);
+    });
+  }, 800);
+}
+
+function subscribeToRemoteState() {
+  if (!firebaseDocRef) return;
+  if (firebaseUnsubscribe) firebaseUnsubscribe();
+  firebaseUnsubscribe = firebaseDocRef.onSnapshot(
+    (doc) => {
+      firebaseReady = true;
+      if (!doc.exists) {
+        if (state.lastModifiedAt) {
+          queueRemoteSave();
+        }
+        return;
+      }
+      const data = doc.data() || {};
+      if (!isPlainObject(data.state)) return;
+      const remoteState = data.state;
+      const remoteUpdated = getTimestampMillis(remoteState.lastModifiedAt);
+      const localUpdated = getTimestampMillis(state.lastModifiedAt);
+      if (!localUpdated || (remoteUpdated && remoteUpdated > localUpdated)) {
+        applyRemoteState(remoteState);
+      }
+    },
+    (err) => {
+      console.warn("Error al escuchar cambios en Firebase", err);
+    }
+  );
+}
+
+function initFirebaseSync() {
+  const config = getFirebaseConfig();
+  if (!config || typeof firebase === "undefined") {
+    return;
+  }
+  firebaseApp = firebase.initializeApp(config);
+  firebaseAuth = firebase.auth();
+  firebaseDb = firebase.firestore();
+
+  firebaseAuth.onAuthStateChanged((user) => {
+    if (user) {
+      firebaseUserId = user.uid;
+      firebaseDocRef = firebaseDb.collection(FIREBASE_COLLECTION).doc(firebaseUserId);
+      subscribeToRemoteState();
+      return;
+    }
+    firebaseAuth.signInAnonymously().catch((err) => {
+      console.warn("No se pudo iniciar sesión anónima en Firebase", err);
+    });
+  });
+}
+
+function save({ skipRemote = false, updateTimestamp = true } = {}) {
   state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
   state.weekTypes = normalizeWeekTypes(state.weekTypes);
   state.plannedExercises = buildPlannedFromWorkouts();
+  if (updateTimestamp) {
+    state.lastModifiedAt = new Date().toISOString();
+  }
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     showStorageUsage(); // NEW: Actualiza el indicador visual tras guardar en localStorage
     storageSaveFailed = false;
     clearStorageWarning();
+    if (!skipRemote) {
+      queueRemoteSave();
+    }
   } catch (err) {
     console.warn("No se pudo guardar el estado de entreno", err);
     if (!storageSaveFailed) {
@@ -1018,6 +1135,7 @@ const historyStore = typeof window !== "undefined" ? window.entrenoHistory : nul
 
 /* ========= Inicialización ========= */
 load();
+initFirebaseSync();
 const originalWorkoutsJSON = JSON.stringify(state.workouts || {});
 const originalDayMetaJSON = JSON.stringify(state.dayMeta || {});
 const originalWeekTypesJSON = JSON.stringify(state.weekTypes || {});
