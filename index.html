@@ -467,66 +467,131 @@
 
     <!-- Sección SEGUIMIENTO -->
     <section id="tab-seguimiento" class="tab-panel hidden" role="tabpanel">
-      <div class="seguimiento-header">
-        <button id="historyRebuildBtn" class="ghost" aria-label="Reconstruir historial">Reconstruir historial</button>
+      <div class="tracking-header">
+        <div>
+          <h2>Seguimiento</h2>
+          <p class="muted">Dashboard rápido para ver progreso de un vistazo.</p>
+        </div>
       </div>
 
-      <div id="historyWarnings" class="alert hidden" role="status" aria-live="polite"></div>
+      <section class="tracking-entry card">
+        <header class="tracking-section-header">
+          <h3>Entrada rápida</h3>
+          <small class="muted">Guarda un top set y opcionalmente backoff.</small>
+        </header>
+        <form id="trackingEntryForm" class="tracking-entry-form">
+          <label class="field">
+            <span>Ejercicio</span>
+            <select id="trackingExercise" required></select>
+          </label>
+          <label class="field hidden" id="trackingExerciseCustomWrap">
+            <span>Nombre</span>
+            <input type="text" id="trackingExerciseCustom" placeholder="Ejercicio nuevo" />
+          </label>
+          <label class="field">
+            <span>Fecha</span>
+            <input type="date" id="trackingDate" required />
+          </label>
+          <label class="field">
+            <span>Top set reps</span>
+            <input type="number" id="trackingTopReps" min="1" step="1" required />
+          </label>
+          <label class="field">
+            <span>Top set lastre (kg)</span>
+            <input type="number" id="trackingTopLoad" min="0" step="0.5" required />
+          </label>
+          <div class="tracking-backoff">
+            <label class="field">
+              <span>Backoff sets</span>
+              <input type="number" id="trackingBackoffSets" min="0" step="1" placeholder="0" />
+            </label>
+            <label class="field">
+              <span>Backoff reps</span>
+              <input type="number" id="trackingBackoffReps" min="0" step="1" placeholder="0" />
+            </label>
+            <label class="field">
+              <span>Backoff lastre (kg)</span>
+              <input type="number" id="trackingBackoffLoad" min="0" step="0.5" placeholder="0" />
+            </label>
+          </div>
+          <label class="field full">
+            <span>Notas (opcional)</span>
+            <input type="text" id="trackingNotes" placeholder="RPE, técnica, etc." />
+          </label>
+          <button type="submit" class="primary tracking-save">Guardar sesión</button>
+        </form>
+      </section>
 
-      <div class="seguimiento-layout">
-        <aside id="historyExercisePanel" class="seguimiento-panel" aria-label="Ejercicios guardados">
-          <ul id="historyExerciseList" class="history-list" role="listbox"></ul>
-          <div id="historyExerciseEmpty" class="empty-hint">Sin registros todavía. Añade entrenos para comenzar.</div>
-        </aside>
+      <section class="tracking-summary">
+        <div id="trackingSummary" class="tracking-summary-grid" aria-live="polite"></div>
+      </section>
 
-        <section id="historyDetailPanel" class="seguimiento-panel" aria-live="polite">
-          <div id="historyDetailEmpty" class="empty-hint">Selecciona un ejercicio para ver su historial.</div>
-          <div id="historyDetail" class="history-detail hidden">
-            <header class="history-detail-header">
-              <h2 id="historyDetailTitle"></h2>
-              <div id="historyTypeSelector" class="type-selector" role="tablist" aria-label="Tipos disponibles"></div>
+      <section class="tracking-attention card">
+        <header class="tracking-section-header">
+          <h3>Atención</h3>
+          <small class="muted">Ejercicios con cambios recientes.</small>
+        </header>
+        <ul id="trackingAttentionList" class="tracking-attention-list" aria-live="polite"></ul>
+      </section>
+
+      <div class="tracking-layout">
+        <section class="tracking-table card">
+          <header class="tracking-section-header">
+            <h3>Resumen por ejercicio</h3>
+          </header>
+          <div class="table-scroll">
+            <table class="data-table" aria-label="Resumen por ejercicio">
+              <thead>
+                <tr>
+                  <th scope="col">Ejercicio</th>
+                  <th scope="col">Último set</th>
+                  <th scope="col">Mejor histórico</th>
+                  <th scope="col">Tendencia</th>
+                  <th scope="col">Estado</th>
+                </tr>
+              </thead>
+              <tbody id="trackingExerciseTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="tracking-detail card" aria-live="polite">
+          <div id="trackingDetailEmpty" class="empty-hint">Selecciona un ejercicio para ver el detalle.</div>
+          <div id="trackingDetail" class="tracking-detail-body hidden">
+            <header class="tracking-detail-header">
+              <div>
+                <h3 id="trackingDetailTitle"></h3>
+                <span id="trackingDetailDelta" class="tracking-detail-delta"></span>
+              </div>
+              <div class="tracking-detail-filters">
+                <label class="field inline">
+                  <span>Rango</span>
+                  <select id="trackingRange">
+                    <option value="30">30 días</option>
+                    <option value="90" selected>90 días</option>
+                    <option value="all">Todo</option>
+                  </select>
+                </label>
+                <label class="field inline toggle">
+                  <input type="checkbox" id="trackingTopOnly" checked />
+                  <span>Solo top set</span>
+                </label>
+              </div>
             </header>
-
-            <div class="history-controls">
-              <label for="historyRange">Rango</label>
-              <select id="historyRange" aria-label="Filtrar por rango"></select>
-              <label for="historyPhaseFilter">Fase</label>
-              <select id="historyPhaseFilter" aria-label="Filtrar por fase">
-                <option value="all">Todas</option>
-                <option value="base">Base</option>
-                <option value="intensificacion">Intensificación</option>
-                <option value="descarga">Descarga</option>
-              </select>
-              <button id="historyOrderBtn" class="ghost" type="button">Ordenar</button>
+            <div id="trackingDetailChips" class="tracking-detail-chips"></div>
+            <div class="tracking-chart-block">
+              <h4 id="trackingScatterTitle">Reps vs Lastre</h4>
+              <div id="trackingScatter" class="tracking-chart"></div>
             </div>
-
-            <div id="historySummary" class="history-summary" aria-live="polite"></div>
-
-            <div id="historyTrends" class="history-trends" aria-live="polite"></div>
-
-            <div class="history-chart-wrapper">
-              <canvas id="historyChart" width="360" height="140" role="img" aria-label="Tendencia del ejercicio"></canvas>
-            </div>
-
-            <div class="table-scroll">
-              <table id="historyTable" class="data-table" aria-label="Historial de registros">
-                <thead>
-                  <tr>
-                    <th scope="col">Fecha</th>
-                    <th scope="col">Valor</th>
-                    <th scope="col">Fase</th>
-                    <th scope="col">Notas</th>
-                    <th scope="col" class="actions-header">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody id="historyTableBody"></tbody>
-              </table>
+            <div class="tracking-chart-block">
+              <h4>Volumen por sesión</h4>
+              <div id="trackingVolume" class="tracking-chart"></div>
             </div>
           </div>
         </section>
       </div>
 
-      <div id="historyToast" class="toast" role="alert" aria-live="assertive"></div>
+      <div id="trackingToast" class="toast" role="alert" aria-live="assertive"></div>
     </section>
   </main>
 
