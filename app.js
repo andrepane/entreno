@@ -815,6 +815,7 @@ function applyRemoteState(remoteState) {
 
 function queueRemoteSave() {
   if (!firebaseDocRef || typeof firebase === "undefined") return;
+  if (!firebaseReady) return;
   if (firebaseSaveTimeout) clearTimeout(firebaseSaveTimeout);
   firebaseSaveTimeout = setTimeout(() => {
     const payload = {
@@ -826,6 +827,21 @@ function queueRemoteSave() {
       console.warn("No se pudo sincronizar con Firebase", err);
     });
   }, 800);
+}
+
+function flushRemoteSave() {
+  if (!firebaseDocRef || typeof firebase === "undefined") return;
+  if (!firebaseSaveTimeout) return;
+  clearTimeout(firebaseSaveTimeout);
+  firebaseSaveTimeout = null;
+  const payload = {
+    state: cloneStateForRemote(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    version: FIREBASE_DOC_VERSION,
+  };
+  firebaseDocRef.set(payload, { merge: true }).catch((err) => {
+    console.warn("No se pudo sincronizar con Firebase", err);
+  });
 }
 
 function subscribeToRemoteState() {
@@ -847,6 +863,10 @@ function subscribeToRemoteState() {
       const localUpdated = getTimestampMillis(state.lastModifiedAt);
       if (!localUpdated || (remoteUpdated && remoteUpdated > localUpdated)) {
         applyRemoteState(remoteState);
+        return;
+      }
+      if (localUpdated && (!remoteUpdated || localUpdated > remoteUpdated)) {
+        queueRemoteSave();
       }
     },
     (err) => {
@@ -1184,8 +1204,19 @@ if (
   originalPlannedJSON !== JSON.stringify(state.plannedExercises) ||
   resetToToday
 ) {
-  save();
+  const deferRemoteSync = firebaseDocRef && !firebaseReady;
+  save(deferRemoteSync ? { skipRemote: true, updateTimestamp: false } : undefined);
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    flushRemoteSave();
+  }
+});
+
+window.addEventListener("pagehide", () => {
+  flushRemoteSave();
+});
 
 tabs.forEach(btn=>{
   btn.addEventListener("click", ()=>{
