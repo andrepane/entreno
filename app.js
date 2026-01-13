@@ -939,6 +939,9 @@ const weekTrendList = document.getElementById("weekTrend");
 const weekCalendarToggle = document.getElementById("weekCalendarToggle");
 const weekCalendar = document.getElementById("weekCalendar");
 const weekCalendarCount = document.getElementById("weekCalendarCount");
+const notificationPrompt = document.getElementById("notificationPrompt");
+const notificationPromptText = document.getElementById("notificationPromptText");
+const notificationPromptBtn = document.getElementById("notificationPromptBtn");
 let suppressDayMetaEvents = false;
 let suppressWeekTypeEvents = false;
 
@@ -1052,10 +1055,50 @@ function scheduleNextDayReminder() {
   }, delay);
 }
 
-function ensureReminderPermission() {
+function updateNotificationPrompt() {
+  if (!notificationPrompt) return;
+  if (!("Notification" in window)) {
+    notificationPrompt.classList.add("hidden");
+    return;
+  }
+  if (Notification.permission === "granted") {
+    notificationPrompt.classList.add("hidden");
+    return;
+  }
+
+  notificationPrompt.classList.remove("hidden");
+  if (Notification.permission === "denied") {
+    if (notificationPromptText) {
+      notificationPromptText.textContent =
+        "Has bloqueado las notificaciones. Actívalas en Ajustes/Safari para recibir recordatorios.";
+    }
+    if (notificationPromptBtn) {
+      notificationPromptBtn.disabled = true;
+      notificationPromptBtn.textContent = "Bloqueado";
+    }
+    return;
+  }
+
+  if (notificationPromptText) {
+    notificationPromptText.textContent =
+      "Recibirás un aviso para planificar el entreno del día siguiente. En iOS debe hacerse desde un toque.";
+  }
+  if (notificationPromptBtn) {
+    notificationPromptBtn.disabled = false;
+    notificationPromptBtn.textContent = "Activar";
+  }
+}
+
+function requestReminderPermission() {
   if (!("Notification" in window)) return;
-  if (Notification.permission !== "default") return;
-  Notification.requestPermission().catch(() => null);
+  Notification.requestPermission()
+    .then(() => {
+      updateNotificationPrompt();
+      if (Notification.permission === "granted") {
+        checkNextDayReminder();
+      }
+    })
+    .catch(() => null);
 }
 
 function decorateIcons(target, icon, options) {
@@ -4667,6 +4710,12 @@ if ('serviceWorker' in navigator) {
 }
 
 window.addEventListener("load", () => {
-  ensureReminderPermission();
+  updateNotificationPrompt();
   scheduleNextDayReminder();
 });
+
+if (notificationPromptBtn) {
+  notificationPromptBtn.addEventListener("click", () => {
+    requestReminderPermission();
+  });
+}
