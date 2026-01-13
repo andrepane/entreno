@@ -58,10 +58,8 @@ let storageWarningEl = null;
 let storageSaveFailed = false;
 let lastStorageUsageBytes = 0; // NEW: Seguimiento del uso estimado de localStorage en bytes
 let firebaseApp = null;
-let firebaseAuth = null;
 let firebaseDb = null;
 let firebaseDocRef = null;
-let firebaseUserId = null;
 let firebaseUnsubscribe = null;
 let firebaseSaveTimeout = null;
 let firebaseReady = false;
@@ -128,6 +126,8 @@ const EXERCISE_STATUS_ALIASES = new Map([
   ["skipped", EXERCISE_STATUS.NOT_DONE],
   ["skip", EXERCISE_STATUS.NOT_DONE],
 ]);
+
+const FIREBASE_DOC_ID = "shared";
 
 function hasValue(value) {
   return value !== undefined && value !== null;
@@ -861,20 +861,9 @@ function initFirebaseSync() {
     return;
   }
   firebaseApp = firebase.initializeApp(config);
-  firebaseAuth = firebase.auth();
   firebaseDb = firebase.firestore();
-
-  firebaseAuth.onAuthStateChanged((user) => {
-    if (user) {
-      firebaseUserId = user.uid;
-      firebaseDocRef = firebaseDb.collection(FIREBASE_COLLECTION).doc(firebaseUserId);
-      subscribeToRemoteState();
-      return;
-    }
-    firebaseAuth.signInAnonymously().catch((err) => {
-      console.warn("No se pudo iniciar sesión anónima en Firebase", err);
-    });
-  });
+  firebaseDocRef = firebaseDb.collection(FIREBASE_COLLECTION).doc(FIREBASE_DOC_ID);
+  subscribeToRemoteState();
 }
 
 function save({ skipRemote = false, updateTimestamp = true } = {}) {
