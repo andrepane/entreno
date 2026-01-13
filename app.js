@@ -269,6 +269,10 @@ const libraryMultiSelect = {
   targets: [],
 };
 
+const emomInstances = new Map();
+let emomIntervalId = null;
+let emomSaveTimeout = null;
+
 const isPlainObject = (value) => value && typeof value === "object" && !Array.isArray(value);
 
 function normalizeCategory(value){
@@ -442,6 +446,81 @@ const GOAL_TYPES = ["reps", "isometrico", "fallo", "emom", "cardio"];
 function normalizeGoalType(value){
   const key = (value || "").toString().toLowerCase();
   return GOAL_TYPES.includes(key) ? key : "reps";
+}
+
+function getExerciseGoalType(exercise){
+  if (!exercise || typeof exercise !== "object") return "reps";
+  if (exercise.goalType) return normalizeGoalType(exercise.goalType);
+  if (exercise.goal === "seconds") return "isometrico";
+  if (exercise.goal === "emom") return "emom";
+  if (exercise.goal === "cardio") return "cardio";
+  if (exercise.goal === "fallo") return "fallo";
+  return "reps";
+}
+
+function getEmomTotalSeconds(exercise){
+  const minutes = Number(exercise && exercise.emomMinutes);
+  if (!Number.isFinite(minutes) || minutes <= 0) return 0;
+  return Math.round(minutes * 60);
+}
+
+function resetEmomTimerState(exercise){
+  const totalSeconds = getEmomTotalSeconds(exercise);
+  const totalMinutes = totalSeconds ? Math.ceil(totalSeconds / 60) : 0;
+  const timer = {
+    remainingSeconds: totalSeconds,
+    currentMinute: totalMinutes ? 1 : 0,
+    repsThisMinute: 0,
+    isRunning: false,
+    lastTick: null,
+  };
+  if (exercise && typeof exercise === "object") {
+    exercise.emomTimer = timer;
+  }
+  return timer;
+}
+
+function ensureEmomTimerState(exercise){
+  if (!exercise || typeof exercise !== "object") return null;
+  const totalSeconds = getEmomTotalSeconds(exercise);
+  const totalMinutes = totalSeconds ? Math.ceil(totalSeconds / 60) : 0;
+  if (!isPlainObject(exercise.emomTimer)) {
+    return resetEmomTimerState(exercise);
+  }
+  const timer = exercise.emomTimer;
+  const remaining = Number(timer.remainingSeconds);
+  timer.remainingSeconds = Number.isFinite(remaining) ? Math.max(0, Math.floor(remaining)) : totalSeconds;
+  if (totalSeconds && timer.remainingSeconds > totalSeconds) {
+    timer.remainingSeconds = totalSeconds;
+  }
+  const derivedMinute = totalMinutes
+    ? Math.min(totalMinutes, Math.floor((totalSeconds - timer.remainingSeconds) / 60) + 1)
+    : 0;
+  const current = Number(timer.currentMinute);
+  timer.currentMinute = totalMinutes
+    ? Math.min(totalMinutes, Math.max(1, Number.isFinite(current) ? Math.floor(current) || derivedMinute : derivedMinute))
+    : 0;
+  const reps = Number(timer.repsThisMinute);
+  timer.repsThisMinute = Number.isFinite(reps) && reps >= 0 ? Math.floor(reps) : 0;
+  timer.isRunning = !!timer.isRunning;
+  timer.lastTick = Number.isFinite(timer.lastTick) ? timer.lastTick : null;
+  if (!totalSeconds) {
+    timer.remainingSeconds = 0;
+    timer.currentMinute = 0;
+    timer.repsThisMinute = 0;
+    timer.isRunning = false;
+    timer.lastTick = null;
+  } else if (timer.isRunning && !timer.lastTick) {
+    timer.lastTick = Date.now();
+  }
+  return timer;
+}
+
+function formatEmomTime(totalSeconds){
+  const safeSeconds = Number.isFinite(totalSeconds) && totalSeconds > 0 ? Math.floor(totalSeconds) : 0;
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function normalizeTags(input){
@@ -1757,6 +1836,12 @@ addForm.addEventListener("submit", (e)=>{
     ex.emomReps = null;
   }
 
+  if (getExerciseGoalType(ex) === "emom") {
+    resetEmomTimerState(ex);
+  } else {
+    delete ex.emomTimer;
+  }
+
   if (!state.workouts[normalizedDay]) state.workouts[normalizedDay] = [];
   if (ex.failure) {
     ex.done = Array.from({length: ex.sets}, ()=>null);
@@ -2726,6 +2811,9 @@ function buildExerciseFromLibrary(libraryExercise, config){
     weightKg: config.weight != null && config.weight !== "" ? Number(config.weight) : null,
     perceivedEffort: null,
   };
+  if (getExerciseGoalType(exercise) === "emom") {
+    resetEmomTimerState(exercise);
+  }
   if (exercise.failure) {
     exercise.done = Array.from({ length: exercise.sets }, () => null);
   }
@@ -2769,6 +2857,7 @@ function renderDay(dayISO){
   const list = getDayExercises(dayISO);
   humanDateSpan.textContent = toHuman(dayISO);
   exerciseList.innerHTML = "";
+  clearEmomInstances();
   emptyDayHint.style.display = list.length ? "none" : "block";
   renderTodayInsights(dayISO, list);
 
@@ -3014,6 +3103,8 @@ function renderDay(dayISO){
     });
 
     li.append(categoryTag, title, meta);
+    const emomControls = buildEmomControls(ex, dayISO);
+    if (emomControls) li.append(emomControls);
     if (recoveryStrip) li.append(recoveryStrip);
     li.append(noteBox);
     if (setsBox) li.append(setsBox);
@@ -4219,13 +4310,7 @@ if (typeof window !== "undefined") {
 }
 
 function metaText(ex){
-  const goalType = ex.goalType ? normalizeGoalType(ex.goalType) : (() => {
-    if (ex.goal === "seconds") return "isometrico";
-    if (ex.goal === "emom") return "emom";
-    if (ex.goal === "cardio") return "cardio";
-    if (ex.goal === "fallo") return "fallo";
-    return "reps";
-  })();
+  const goalType = getExerciseGoalType(ex);
   const parts = [];
   if (goalType !== "cardio" && goalType !== "emom") {
     parts.push(`<span><strong>Series:</strong> ${ex.sets}</span>`);
@@ -4255,6 +4340,179 @@ function metaText(ex){
 
   if (ex.weightKg!=null) parts.push(`<span><strong>Lastre:</strong> ${ex.weightKg} kg</span>`);
   return parts.join(" · ");
+}
+
+function updateEmomUI(instance){
+  if (!instance || !instance.ex || !instance.elements) return;
+  const { ex, elements } = instance;
+  const timer = ensureEmomTimerState(ex);
+  const totalSeconds = getEmomTotalSeconds(ex);
+  const totalMinutes = totalSeconds ? Math.ceil(totalSeconds / 60) : 0;
+  const repsGoal = ex.emomReps && ex.emomReps > 0 ? ex.emomReps : "—";
+  elements.timeEl.textContent = formatEmomTime(timer ? timer.remainingSeconds : 0);
+  elements.minuteEl.textContent = totalMinutes
+    ? `Minuto ${timer.currentMinute} de ${totalMinutes}`
+    : "Minuto —";
+  elements.repsCount.textContent = timer ? timer.repsThisMinute : 0;
+  elements.repsGoal.textContent = `Reps objetivo: ${repsGoal}`;
+  elements.toggleBtn.textContent = timer && timer.isRunning ? "Pausar" : "Iniciar";
+  const disabled = totalSeconds === 0;
+  elements.toggleBtn.disabled = disabled;
+  elements.resetBtn.disabled = disabled;
+}
+
+function scheduleEmomSave(){
+  if (emomSaveTimeout) return;
+  emomSaveTimeout = setTimeout(() => {
+    save({ updateTimestamp: false });
+    emomSaveTimeout = null;
+  }, 1000);
+}
+
+function tickEmomTimers(){
+  if (!emomInstances.size) return;
+  const now = Date.now();
+  let shouldSave = false;
+  emomInstances.forEach((instance) => {
+    const timer = ensureEmomTimerState(instance.ex);
+    if (!timer || !timer.isRunning) return;
+    const totalSeconds = getEmomTotalSeconds(instance.ex);
+    if (!totalSeconds) {
+      timer.isRunning = false;
+      timer.lastTick = null;
+      updateEmomUI(instance);
+      return;
+    }
+    const lastTick = Number(timer.lastTick) || now;
+    const elapsedSeconds = Math.floor((now - lastTick) / 1000);
+    if (elapsedSeconds <= 0) return;
+    timer.lastTick = now;
+    const prevMinute = timer.currentMinute;
+    timer.remainingSeconds = Math.max(0, timer.remainingSeconds - elapsedSeconds);
+    const totalMinutes = Math.ceil(totalSeconds / 60);
+    const elapsedTotal = totalSeconds - timer.remainingSeconds;
+    timer.currentMinute = Math.min(totalMinutes, Math.floor(elapsedTotal / 60) + 1);
+    if (timer.currentMinute !== prevMinute) {
+      timer.repsThisMinute = 0;
+    }
+    if (timer.remainingSeconds === 0) {
+      timer.isRunning = false;
+      timer.lastTick = null;
+    }
+    updateEmomUI(instance);
+    shouldSave = true;
+  });
+  if (shouldSave) {
+    scheduleEmomSave();
+  }
+}
+
+function ensureEmomInterval(){
+  if (!emomIntervalId) {
+    emomIntervalId = setInterval(tickEmomTimers, 1000);
+  }
+}
+
+function registerEmomInstance(ex, dayISO, elements){
+  if (!ex || !elements) return;
+  emomInstances.set(ex.id, { ex, dayISO, elements });
+  ensureEmomInterval();
+  updateEmomUI({ ex, dayISO, elements });
+}
+
+function clearEmomInstances(){
+  emomInstances.clear();
+}
+
+function buildEmomControls(ex, dayISO){
+  const goalType = getExerciseGoalType(ex);
+  if (goalType !== "emom") return null;
+  ensureEmomTimerState(ex);
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "emom-controls";
+
+  const timerBox = document.createElement("div");
+  timerBox.className = "emom-timer";
+  const timeEl = document.createElement("div");
+  timeEl.className = "emom-time";
+  const minuteEl = document.createElement("div");
+  minuteEl.className = "emom-minute";
+  timerBox.append(timeEl, minuteEl);
+
+  const actions = document.createElement("div");
+  actions.className = "emom-actions";
+  const toggleBtn = button("Iniciar", "small ghost emom-toggle");
+  const resetBtn = button("Reset", "small ghost emom-reset");
+  actions.append(toggleBtn, resetBtn);
+
+  const repsBox = document.createElement("div");
+  repsBox.className = "emom-reps";
+  const repsLabel = document.createElement("span");
+  repsLabel.className = "emom-reps-label";
+  repsLabel.textContent = "Reps del minuto";
+  const repsControls = document.createElement("div");
+  repsControls.className = "emom-reps-controls";
+  const decBtn = button("−", "small ghost");
+  const repsCount = document.createElement("span");
+  repsCount.className = "emom-reps-count";
+  const incBtn = button("+", "small ghost");
+  repsControls.append(decBtn, repsCount, incBtn);
+  const repsGoal = document.createElement("div");
+  repsGoal.className = "emom-reps-goal";
+  repsBox.append(repsLabel, repsControls, repsGoal);
+
+  wrapper.append(timerBox, actions, repsBox);
+
+  registerEmomInstance(ex, dayISO, {
+    timeEl,
+    minuteEl,
+    toggleBtn,
+    resetBtn,
+    repsCount,
+    repsGoal,
+  });
+
+  toggleBtn.addEventListener("click", () => {
+    const timer = ensureEmomTimerState(ex);
+    if (!timer) return;
+    if (timer.isRunning) {
+      timer.isRunning = false;
+      timer.lastTick = null;
+    } else {
+      if (timer.remainingSeconds <= 0) {
+        resetEmomTimerState(ex);
+      }
+      timer.isRunning = true;
+      timer.lastTick = Date.now();
+    }
+    updateEmomUI({ ex, dayISO, elements: { timeEl, minuteEl, toggleBtn, resetBtn, repsCount, repsGoal } });
+    save();
+  });
+
+  resetBtn.addEventListener("click", () => {
+    resetEmomTimerState(ex);
+    updateEmomUI({ ex, dayISO, elements: { timeEl, minuteEl, toggleBtn, resetBtn, repsCount, repsGoal } });
+    save();
+  });
+
+  incBtn.addEventListener("click", () => {
+    const timer = ensureEmomTimerState(ex);
+    if (!timer) return;
+    timer.repsThisMinute += 1;
+    updateEmomUI({ ex, dayISO, elements: { timeEl, minuteEl, toggleBtn, resetBtn, repsCount, repsGoal } });
+    save();
+  });
+
+  decBtn.addEventListener("click", () => {
+    const timer = ensureEmomTimerState(ex);
+    if (!timer) return;
+    timer.repsThisMinute = Math.max(0, timer.repsThisMinute - 1);
+    updateEmomUI({ ex, dayISO, elements: { timeEl, minuteEl, toggleBtn, resetBtn, repsCount, repsGoal } });
+    save();
+  });
+
+  return wrapper;
 }
 
 function button(text, cls=""){
@@ -4296,13 +4554,7 @@ function buildEditForm(ex){
   legend.textContent = "Tipo de objetivo";
   typeWrap.appendChild(legend);
 
-  const goalType = ex.goalType ? normalizeGoalType(ex.goalType) : (() => {
-    if (ex.goal === "seconds") return "isometrico";
-    if (ex.goal === "emom") return "emom";
-    if (ex.goal === "cardio") return "cardio";
-    if (ex.goal === "fallo") return "fallo";
-    return "reps";
-  })();
+  const goalType = getExerciseGoalType(ex);
 
   const rReps = radioRow("Repeticiones", "goalEdit-"+ex.id, goalType === "reps");
   const rSecs = radioRow("Isométrico (segundos)", "goalEdit-"+ex.id, goalType === "isometrico");
@@ -4372,6 +4624,8 @@ function buildEditForm(ex){
   box.append(fName.wrap, categoryWrap, fSets.wrap, typeWrap, wField.wrap, actions);
 
   saveBtn.addEventListener("click", ()=>{
+    const prevGoalType = getExerciseGoalType(ex);
+    const prevEmomMinutes = ex.emomMinutes;
     ex.name = fName.input.value.trim() || ex.name;
     ex.sets = Math.max(1, Number(fSets.input.value||1));
     ex.category = normalizeCategory(categorySelect.value);
@@ -4415,6 +4669,17 @@ function buildEditForm(ex){
       ex.goal="cardio";
       ex.cardioMinutes = Number(cardioField.input.value||0);
       ex.reps = null; ex.failure=false; ex.seconds=null; ex.emomMinutes=null; ex.emomReps=null;
+    }
+
+    const nextGoalType = getExerciseGoalType(ex);
+    if (nextGoalType === "emom") {
+      if (prevGoalType !== "emom" || prevEmomMinutes !== ex.emomMinutes) {
+        resetEmomTimerState(ex);
+      } else {
+        ensureEmomTimerState(ex);
+      }
+    } else if (prevGoalType === "emom") {
+      delete ex.emomTimer;
     }
 
     // Ajustar tamaño del array done

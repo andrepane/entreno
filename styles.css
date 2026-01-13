@@ -516,6 +516,16 @@ button.icon-button.icon-with-label .icon{
 .exercise .title-main h3{margin:0; flex:1; min-width:0}
 .exercise .meta{color:var(--muted); font-size:.9rem; margin:6px 0; display:flex; flex-wrap:wrap; gap:6px}
 .exercise .meta span{background:#0b0f16; padding:2px 8px; border-radius:8px; border:1px solid #1e2633}
+.emom-controls{display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:10px 12px; margin:8px 0; border:1px solid #252c3a; border-radius:12px; background:rgba(15,19,26,0.55);}
+.emom-timer{display:flex; flex-direction:column; gap:4px; min-width:120px;}
+.emom-time{font-size:1.4rem; font-weight:700; letter-spacing:.4px;}
+.emom-minute{font-size:.85rem; color:var(--muted);}
+.emom-actions{display:flex; gap:8px; flex-wrap:wrap;}
+.emom-reps{display:flex; flex-direction:column; gap:6px;}
+.emom-reps-label{font-size:.8rem; color:var(--muted);}
+.emom-reps-controls{display:flex; align-items:center; gap:8px;}
+.emom-reps-count{min-width:32px; text-align:center; font-weight:700;}
+.emom-reps-goal{font-size:.8rem; color:var(--muted);}
 
 .recovery-strip{display:flex; flex-wrap:wrap; gap:16px; align-items:center; background:rgba(15,19,26,0.55); border:1px solid #252c3a; border-radius:12px; padding:10px 12px; margin:8px 0;}
 .recovery-effort{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
