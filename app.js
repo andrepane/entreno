@@ -135,6 +135,51 @@ function isChecked(input) {
   return !!(input && input.checked);
 }
 
+function formatWeightOption(value) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function buildWeightOptions(select, { includeEmpty = true, emptyLabel = "Sin lastre" } = {}) {
+  if (!select) return;
+  select.innerHTML = "";
+  if (includeEmpty) {
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = emptyLabel;
+    select.append(emptyOption);
+  }
+  for (let i = 0; i <= 400; i += 1) {
+    const weight = i / 2;
+    const value = formatWeightOption(weight);
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = `${value} kg`;
+    select.append(option);
+  }
+}
+
+function setWeightSelectValue(select, value) {
+  if (!select) return;
+  if (!hasValue(value) || value === "") {
+    select.value = "";
+    return;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    select.value = "";
+    return;
+  }
+  const formatted = formatWeightOption(numeric);
+  const hasOption = Array.from(select.options).some((option) => option.value === formatted);
+  if (!hasOption) {
+    const option = document.createElement("option");
+    option.value = formatted;
+    option.textContent = `${formatted} kg`;
+    select.append(option);
+  }
+  select.value = formatted;
+}
+
 function normalizeExerciseStatus(rawStatus, fallbackCompleted, fallbackHecho) {
   if (typeof rawStatus === "string") {
     const normalized = rawStatus.trim().toLowerCase();
@@ -933,6 +978,11 @@ const goalConfigFailSeries = document.getElementById("goalConfigFailSeries");
 const goalConfigEmomMinutes = document.getElementById("goalConfigEmomMinutes");
 const goalConfigEmomReps = document.getElementById("goalConfigEmomReps");
 const goalConfigCardioMinutes = document.getElementById("goalConfigCardioMinutes");
+const weightSelectInputs = [formWeight, libraryMultiWeightInput, goalConfigWeight].filter(Boolean);
+weightSelectInputs.forEach((select) => {
+  buildWeightOptions(select);
+  setWeightSelectValue(select, select.value);
+});
 
 /* Ejercicios futuros */
 const futureForm = document.getElementById("futureForm");
@@ -4032,7 +4082,7 @@ function buildEditForm(ex){
   typeWrap.append(rReps.row, rowReps, rSecs.row, rowSecs, rFail.row, rowFailure, rEmom.row, rowEmom, rCardio.row, rowCardio);
 
   // Lastre
-  const wField = field("Lastre (kg)", "number", hasValue(ex.weightKg) ? ex.weightKg : "", {step:0.5});
+  const wField = weightField("Lastre (kg)", hasValue(ex.weightKg) ? ex.weightKg : "");
 
   const actions = document.createElement("div");
   actions.className = "actions";
@@ -4136,6 +4186,15 @@ function field(label, type, value, attrs={}){
   Object.entries(attrs).forEach(([k,v])=> input.setAttribute(k,v));
   wrap.append(span, input);
   return {wrap, input};
+}
+function weightField(label, value){
+  const wrap = document.createElement("label"); wrap.className="field";
+  const span = document.createElement("span"); span.textContent = label;
+  const select = document.createElement("select");
+  buildWeightOptions(select);
+  setWeightSelectValue(select, value);
+  wrap.append(span, select);
+  return {wrap, input: select};
 }
 function fieldInline(label, type, value, attrs={}){
   const wrap = document.createElement("label"); wrap.className="field inline";
