@@ -968,6 +968,96 @@ function hasIconDecorator() {
   );
 }
 
+const REMINDER_STORAGE_KEY = "entreno.reminder.nextday.v1";
+const REMINDER_HOUR = 10;
+const REMINDER_MINUTE = 0;
+let reminderTimeout = null;
+
+function getNextReminderTime(now = new Date()) {
+  const target = new Date(now);
+  target.setHours(REMINDER_HOUR, REMINDER_MINUTE, 0, 0);
+  if (now >= target) {
+    target.setDate(target.getDate() + 1);
+  }
+  return target;
+}
+
+function sendReminderNotification(targetISO) {
+  const title = "Planifica el entreno de mañana";
+  const body = `Aún no tienes ejercicios para ${toHuman(targetISO)}.`;
+  const options = {
+    body,
+    icon: "./icons/icon-192.png",
+    badge: "./icons/icon-192.png",
+    tag: "next-day-reminder",
+    renotify: false,
+  };
+
+  if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+    navigator.serviceWorker.ready
+      .then((registration) => {
+        if (registration && typeof registration.showNotification === "function") {
+          return registration.showNotification(title, options);
+        }
+        return null;
+      })
+      .catch(() => {
+        try {
+          new Notification(title, options);
+        } catch (error) {
+          console.warn("No se pudo enviar la notificación", error);
+        }
+      });
+    return;
+  }
+
+  try {
+    new Notification(title, options);
+  } catch (error) {
+    console.warn("No se pudo enviar la notificación", error);
+  }
+}
+
+function checkNextDayReminder() {
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+
+  const now = new Date();
+  const targetDate = new Date(now);
+  targetDate.setDate(targetDate.getDate() + 1);
+  const targetISO = fmt(targetDate);
+  const workouts = getDayWorkouts(targetISO);
+  if (workouts.length > 0) {
+    localStorage.removeItem(REMINDER_STORAGE_KEY);
+    return;
+  }
+
+  const lastNotified = localStorage.getItem(REMINDER_STORAGE_KEY);
+  if (lastNotified === targetISO) return;
+
+  sendReminderNotification(targetISO);
+  localStorage.setItem(REMINDER_STORAGE_KEY, targetISO);
+}
+
+function scheduleNextDayReminder() {
+  if (!("Notification" in window)) return;
+  if (reminderTimeout) {
+    clearTimeout(reminderTimeout);
+  }
+  const nextTime = getNextReminderTime();
+  const delay = Math.max(0, nextTime.getTime() - Date.now());
+  reminderTimeout = window.setTimeout(() => {
+    checkNextDayReminder();
+    scheduleNextDayReminder();
+  }, delay);
+}
+
+function ensureReminderPermission() {
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "default") return;
+  Notification.requestPermission().catch(() => null);
+}
+
 function decorateIcons(target, icon, options) {
   if (hasIconDecorator()) {
     globalThis.CaliGymIcons.decorate(target, icon, options);
@@ -4575,3 +4665,8 @@ if ('serviceWorker' in navigator) {
       .catch((err) => console.warn('Error registrando el service worker', err));
   });
 }
+
+window.addEventListener("load", () => {
+  ensureReminderPermission();
+  scheduleNextDayReminder();
+});
