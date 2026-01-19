@@ -139,6 +139,7 @@
     elements.rangeSelect = $("historyRange");
     elements.orderBtn = $("historyOrderBtn");
     elements.summary = $("historySummary");
+    elements.highlights = $("historyHighlights");
     elements.tableBody = $("historyTableBody");
     elements.table = $("historyTable");
     elements.canvas = $("historyChart");
@@ -436,6 +437,9 @@
       if (elements.trends) {
         elements.trends.innerHTML = "";
       }
+      if (elements.highlights) {
+        elements.highlights.innerHTML = "";
+      }
       resetComparisonControls();
       return;
     }
@@ -509,6 +513,9 @@
   function renderTrends(entries) {
     if (!elements.trends) return;
     elements.trends.innerHTML = "";
+    if (elements.highlights) {
+      elements.highlights.innerHTML = "";
+    }
     if (!entries.length) {
       const empty = document.createElement("p");
       empty.className = "muted";
@@ -550,8 +557,8 @@
     elements.trends.append(...cards);
 
     const highlights = buildHighlights(sorted, suffix, best);
-    if (highlights) {
-      elements.trends.append(highlights);
+    if (highlights && highlights.length && elements.highlights) {
+      elements.highlights.append(...highlights);
     }
   }
 
@@ -755,7 +762,7 @@
   }
 
   function buildHighlights(sorted, suffix, bestEntry) {
-    if (!sorted || !sorted.length) return null;
+    if (!sorted || !sorted.length) return [];
 
     const gainWeek = { diff: -Infinity };
     const gainAny = { diff: -Infinity };
@@ -791,32 +798,27 @@
     const rise = gainWeek.from ? gainWeek : gainAny.from ? gainAny : null;
     const fall = dropWeek.from ? dropWeek : dropAny.from ? dropAny : null;
 
-    const container = document.createElement("div");
-    container.className = "history-highlights";
-
     const formattedSuffix = suffix ? ` ${suffix}` : "";
 
     const riseValue = rise ? `${formatDelta(rise.diff)}${formattedSuffix}`.trim() : "—";
     const riseMeta = rise
       ? `${formatDate(rise.from.fechaISO)} → ${formatDate(rise.to.fechaISO)}${rise.days ? ` · ${Math.round(rise.days)} días` : ""}`
       : "Sin datos recientes";
-    container.append(
+    const cards = [
       createHighlightCard("🔥", "Mayor subida en una semana", riseValue, riseMeta, "gain")
-    );
+    ];
 
     const fallValue = fall ? `${formatDelta(fall.diff)}${formattedSuffix}`.trim() : "—";
     const fallMeta = fall
       ? `${formatDate(fall.from.fechaISO)} → ${formatDate(fall.to.fechaISO)}${fall.days ? ` · ${Math.round(fall.days)} días` : ""}`
       : "Sin datos recientes";
-    container.append(
-      createHighlightCard("⚠️", "Mayor caída", fallValue, fallMeta, "drop")
-    );
+    cards.push(createHighlightCard("⚠️", "Mayor caída", fallValue, fallMeta, "drop"));
 
     const prValue = bestEntry ? formatValue(bestEntry) : "—";
     const prMeta = bestEntry ? formatDate(bestEntry.fechaISO) : "Aún sin PR";
-    container.append(createHighlightCard("🛡️", "Mayor PR", prValue, prMeta, "pr"));
+    cards.push(createHighlightCard("🛡️", "Mayor PR", prValue, prMeta, "pr"));
 
-    return container;
+    return cards;
   }
 
   function createHighlightCard(icon, title, value, meta, variant = "") {

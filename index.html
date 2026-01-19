@@ -30,6 +30,7 @@
       <button class="tab" data-tab="nuevo" role="tab" aria-selected="false">Añadir</button>
       <button class="tab" data-tab="libreria" role="tab" aria-selected="false">Librería</button>
       <button class="tab" data-tab="seguimiento" role="tab" aria-selected="false">Seguimiento</button>
+      <button class="tab" data-tab="ajustes" role="tab" aria-selected="false">Ajustes</button>
     </nav>
   </header>
 
@@ -105,6 +106,35 @@
           </div>
           <div id="weekCalendar" class="week-calendar hidden" aria-live="polite"></div>
         </article>
+      </section>
+
+      <section class="training-hub card" aria-live="polite">
+        <header class="training-hub-header">
+          <div>
+            <h3 class="heading-tight">Modo entreno express</h3>
+            <p class="muted">Registra más rápido, descansa bien y mantén el foco.</p>
+          </div>
+          <button id="focusModeToggle" class="ghost small" type="button">Modo foco</button>
+        </header>
+        <div class="training-actions">
+          <button id="quickCompleteAll" class="primary">Marcar todo hecho</button>
+          <button id="quickRepeatLast" class="ghost">Repetir último ejercicio</button>
+          <button id="quickAddSet" class="ghost">Añadir serie al último</button>
+        </div>
+        <div class="rest-timer">
+          <div class="rest-display">
+            <span class="muted">Descanso</span>
+            <strong id="restTimerValue">00:00</strong>
+          </div>
+          <div class="rest-controls">
+            <button type="button" class="ghost small" data-rest="60">60s</button>
+            <button type="button" class="ghost small" data-rest="90">90s</button>
+            <button type="button" class="ghost small" data-rest="120">120s</button>
+            <button type="button" id="restStartBtn" class="primary small">Iniciar</button>
+            <button type="button" id="restPauseBtn" class="ghost small">Pausar</button>
+            <button type="button" id="restResetBtn" class="ghost small">Reiniciar</button>
+          </div>
+        </div>
       </section>
 
       <ul id="exerciseList" class="exercise-list" aria-live="polite"></ul>
@@ -319,6 +349,24 @@
           No hay ejercicios guardados. Añade alguno para que no se te olviden las siguientes ideas.
         </div>
       </section>
+
+      <section class="card template-section" aria-labelledby="templateTitle">
+        <div class="template-header">
+          <div>
+            <h2 id="templateTitle">Plantillas de rutina</h2>
+            <p class="muted">Guarda días completos y reutilízalos en semanas futuras.</p>
+          </div>
+          <button id="saveTemplateBtn" class="primary" type="button">Guardar día actual</button>
+        </div>
+        <div class="template-actions">
+          <label class="field inline">
+            <span>Aplicar en fecha</span>
+            <input type="date" id="templateApplyDate" />
+          </label>
+        </div>
+        <div id="templateEmpty" class="empty-hint">Aún no tienes plantillas guardadas.</div>
+        <ul id="templateList" class="template-list" aria-live="polite"></ul>
+      </section>
     </section>
 
     <!-- Sección LIBRERÍA -->
@@ -350,6 +398,27 @@
             <option value="skill">Skill</option>
             <option value="movilidad">Movilidad</option>
             <option value="otro">Otro</option>
+          </select>
+        </label>
+        <label class="field inline">
+          <span>Equipamiento</span>
+          <select id="libraryEquipmentFilter">
+            <option value="all">Todo</option>
+            <option value="ninguno">Sin equipo</option>
+            <option value="barra">Barra</option>
+            <option value="mancuernas">Mancuernas</option>
+            <option value="anillas">Anillas</option>
+            <option value="banda">Bandas</option>
+            <option value="maquina">Máquina</option>
+          </select>
+        </label>
+        <label class="field inline">
+          <span>Nivel</span>
+          <select id="libraryLevelFilter">
+            <option value="all">Todos</option>
+            <option value="principiante">Principiante</option>
+            <option value="intermedio">Intermedio</option>
+            <option value="avanzado">Avanzado</option>
           </select>
         </label>
         <label class="field inline">
@@ -502,6 +571,8 @@
 
             <div id="historySummary" class="history-summary" aria-live="polite"></div>
 
+            <div id="historyHighlights" class="history-highlights" aria-live="polite"></div>
+
             <div id="historyTrends" class="history-trends" aria-live="polite"></div>
 
             <div class="history-chart-wrapper">
@@ -527,6 +598,65 @@
       </div>
 
       <div id="historyToast" class="toast" role="alert" aria-live="assertive"></div>
+    </section>
+
+    <!-- Sección AJUSTES -->
+    <section id="tab-ajustes" class="tab-panel hidden" role="tabpanel">
+      <h2>Ajustes y personalización</h2>
+      <section class="card settings-section">
+        <h3 class="heading-tight">Estilo</h3>
+        <div class="settings-grid">
+          <label class="field">
+            <span>Tema</span>
+            <select id="themeSelect">
+              <option value="dark">Oscuro</option>
+              <option value="light">Claro</option>
+              <option value="auto">Auto (sistema)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Color de acento</span>
+            <select id="accentSelect">
+              <option value="green">Verde</option>
+              <option value="blue">Azul</option>
+              <option value="purple">Morado</option>
+              <option value="orange">Naranja</option>
+              <option value="pink">Rosa</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="card settings-section">
+        <h3 class="heading-tight">Backups & datos</h3>
+        <div class="settings-grid">
+          <button id="exportDataBtn" class="primary">Exportar datos</button>
+          <label class="field file-field">
+            <span>Importar datos</span>
+            <input type="file" id="importDataInput" accept="application/json" />
+          </label>
+        </div>
+        <small class="muted">Incluye entrenos, librería, plantillas y ajustes.</small>
+      </section>
+
+      <section class="card settings-section">
+        <h3 class="heading-tight">Notificaciones inteligentes</h3>
+        <div class="settings-grid">
+          <label class="field inline">
+            <span>Recordatorios</span>
+            <select id="notificationFrequency">
+              <option value="off">Desactivado</option>
+              <option value="daily">Diario</option>
+              <option value="training">Solo días de entreno</option>
+            </select>
+          </label>
+          <label class="field inline">
+            <span>Hora</span>
+            <input type="time" id="notificationTime" value="20:30" />
+          </label>
+        </div>
+        <button id="notificationSaveBtn" class="ghost">Guardar recordatorio</button>
+      </section>
     </section>
   </main>
 
@@ -591,6 +721,35 @@
         <label class="field">
           <span>Notas (opcional)</span>
           <textarea id="libraryFormNotes" rows="3"></textarea>
+        </label>
+        <label class="field">
+          <span>Equipamiento</span>
+          <select id="libraryFormEquipment" required>
+            <option value="ninguno">Sin equipo</option>
+            <option value="barra">Barra</option>
+            <option value="mancuernas">Mancuernas</option>
+            <option value="anillas">Anillas</option>
+            <option value="banda">Bandas</option>
+            <option value="maquina">Máquina</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Nivel</span>
+          <select id="libraryFormLevel" required>
+            <option value="principiante">Principiante</option>
+            <option value="intermedio">Intermedio</option>
+            <option value="avanzado">Avanzado</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Objetivo principal</span>
+          <select id="libraryFormGoal" required>
+            <option value="fuerza">Fuerza</option>
+            <option value="hipertrofia">Hipertrofia</option>
+            <option value="resistencia">Resistencia</option>
+            <option value="skill">Skill</option>
+            <option value="movilidad">Movilidad</option>
+          </select>
         </label>
         <label class="field">
           <span>Tags (separados por comas)</span>
