@@ -198,6 +198,64 @@ main{flex:1 1 auto; padding:clamp(14px, 5vw, 28px)}
 .history-chart-ready{position:relative;}
 .history-chart-overlay{position:absolute; inset:12px; pointer-events:none; border-radius:12px; --marker-position:100%;}
 .history-chart-highlight{position:absolute; top:0; bottom:0; left:var(--marker-position); right:0; background:linear-gradient(90deg, rgba(72,208,109,0.16) 0%, rgba(72,208,109,0.02) 100%);}
+
+.training-hub{display:flex; flex-direction:column; gap:16px; margin-bottom:16px;}
+.training-hub-header{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+.training-actions{display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));}
+.rest-timer{display:flex; flex-direction:column; gap:10px; background:rgba(12,16,23,0.6); border:1px solid #1f2532; border-radius:14px; padding:12px;}
+.rest-display{display:flex; align-items:baseline; justify-content:space-between; gap:12px;}
+.rest-display strong{font-size:1.6rem; letter-spacing:.05em;}
+.rest-display strong.is-running{color:var(--accent);}
+.rest-controls{display:flex; flex-wrap:wrap; gap:8px;}
+
+.template-section{display:flex; flex-direction:column; gap:12px; margin-top:16px;}
+.template-header{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+.template-actions{display:flex; flex-wrap:wrap; gap:12px;}
+.template-list{list-style:none; margin:0; padding:0; display:grid; gap:12px;}
+.template-card{border:1px solid #252c3a; border-radius:16px; padding:14px; background:rgba(15,19,26,0.7); display:flex; flex-direction:column; gap:10px;}
+.template-card-header{display:flex; justify-content:space-between; gap:8px; align-items:center;}
+.template-card-title{font-weight:600;}
+.template-card-actions{display:flex; flex-wrap:wrap; gap:8px;}
+.template-tags{display:flex; flex-wrap:wrap; gap:6px;}
+.template-tag{background:#0f131a; border:1px solid #2a3240; color:var(--muted); border-radius:999px; padding:4px 10px; font-size:.75rem;}
+
+.library-card-meta{display:flex; flex-wrap:wrap; gap:6px;}
+.library-meta-chip{border-radius:999px; padding:4px 10px; font-size:.72rem; border:1px solid #2a3240; color:var(--muted); background:#0f131a;}
+
+.settings-section{margin-top:16px; display:flex; flex-direction:column; gap:12px;}
+.settings-grid{display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(200px,1fr));}
+.file-field input[type="file"]{background:var(--panel); color:var(--muted); border:1px dashed #2a3240; padding:10px; border-radius:12px;}
+
+body.theme-light{
+  --bg:#f5f7fb;
+  --panel:#ffffff;
+  --muted:#5b6474;
+  --text:#111827;
+  --accent:#22c55e;
+  --accent-ghost:rgba(34,197,94,0.18);
+  --danger:#ef4444;
+  background:linear-gradient(180deg,#f5f7fb 0%,#eef1f8 100%);
+}
+body.theme-light .app-header{background:rgba(255,255,255,0.85); border-bottom:1px solid #e2e8f0;}
+body.theme-light .card,
+body.theme-light .seguimiento-panel,
+body.theme-light .summary-card,
+body.theme-light .comparison-panel{box-shadow:0 10px 20px rgba(15,23,42,0.08);}
+body.theme-light .tab{border-color:#d8dee9; color:#64748b;}
+body.theme-light .tab.active{color:var(--text); border-color:var(--accent);}
+body.theme-light .rest-timer{background:#f8fafc; border-color:#e2e8f0;}
+body.theme-light .template-card{background:#ffffff;}
+body.theme-light .library-meta-chip{background:#f8fafc; border-color:#e2e8f0;}
+
+body.accent-blue{--accent:#60a5fa; --accent-ghost:rgba(96,165,250,0.2);}
+body.accent-purple{--accent:#a78bfa; --accent-ghost:rgba(167,139,250,0.2);}
+body.accent-orange{--accent:#f97316; --accent-ghost:rgba(249,115,22,0.2);}
+body.accent-pink{--accent:#f472b6; --accent-ghost:rgba(244,114,182,0.2);}
+
+body.focus-mode .app-header,
+body.focus-mode .mini-cal,
+body.focus-mode .app-footer{display:none;}
+body.focus-mode main{padding-top:24px;}
 .history-chart-marker{position:absolute; top:0; bottom:0; width:2px; left:var(--marker-position); transform:translateX(-50%); background:var(--accent); box-shadow:0 0 12px rgba(72,208,109,0.45);}
 .history-chart-slider-container{margin:12px 0 20px;}
 .history-chart-slider{width:100%; accent-color:var(--accent); background:transparent;}

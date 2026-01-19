@@ -73,6 +73,29 @@ const CATEGORY_LABELS = {
   movilidad: "Movilidad",
   otro: "Otro",
 };
+const EQUIPMENT_KEYS = ["ninguno", "barra", "mancuernas", "anillas", "banda", "maquina"];
+const EQUIPMENT_LABELS = {
+  ninguno: "Sin equipo",
+  barra: "Barra",
+  mancuernas: "Mancuernas",
+  anillas: "Anillas",
+  banda: "Bandas",
+  maquina: "Máquina",
+};
+const LEVEL_KEYS = ["principiante", "intermedio", "avanzado"];
+const LEVEL_LABELS = {
+  principiante: "Principiante",
+  intermedio: "Intermedio",
+  avanzado: "Avanzado",
+};
+const GOAL_KEYS = ["fuerza", "hipertrofia", "resistencia", "skill", "movilidad"];
+const GOAL_LABELS = {
+  fuerza: "Fuerza",
+  hipertrofia: "Hipertrofia",
+  resistencia: "Resistencia",
+  skill: "Skill",
+  movilidad: "Movilidad",
+};
 const PHASE_KEYS = ["base", "intensificacion", "descarga"];
 const PHASE_LABELS = {
   base: "Base",
@@ -254,6 +277,12 @@ let state = {
   futureExercises: [],
   libraryExercises: [],
   plannedExercises: [],
+  templates: [],
+  settings: {
+    theme: "dark",
+    accent: "green",
+    notifications: { frequency: "off", time: "20:30" },
+  },
   lastModifiedAt: null,
 };
 
@@ -601,6 +630,9 @@ function normalizeLibraryExercises(rawList){
     }
     const notes = typeof item.notes === "string" ? item.notes : "";
     const tags = normalizeTags(item.tags);
+    const equipment = EQUIPMENT_KEYS.includes(item.equipment) ? item.equipment : "ninguno";
+    const level = LEVEL_KEYS.includes(item.level) ? item.level : "principiante";
+    const goal = GOAL_KEYS.includes(item.goal) ? item.goal : "fuerza";
     normalized.push({
       id,
       name,
@@ -611,10 +643,84 @@ function normalizeLibraryExercises(rawList){
       iconName: iconType === "asset" ? iconName : "",
       notes,
       tags,
+      equipment,
+      level,
+      goal,
     });
     seen.add(id);
   });
   return normalized;
+}
+
+function normalizeTemplates(rawList){
+  if (!Array.isArray(rawList)) return [];
+  const normalized = [];
+  const seen = new Set();
+  rawList.forEach((item) => {
+    if (!isPlainObject(item)) return;
+    const id = typeof item.id === "string" && item.id ? item.id : randomUUID();
+    if (seen.has(id)) return;
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    if (!name) return;
+    const exercises = Array.isArray(item.exercises)
+      ? item.exercises.filter(isPlainObject).map((exercise) => ({
+        ...exercise,
+        id: randomUUID(),
+        plannedId: randomUUID(),
+        done: [],
+        status: EXERCISE_STATUS.PENDING,
+        completed: false,
+        hecho: false,
+      }))
+      : [];
+    normalized.push({
+      id,
+      name,
+      exercises,
+      createdAt: typeof item.createdAt === "string" ? item.createdAt : new Date().toISOString(),
+    });
+    seen.add(id);
+  });
+  return normalized;
+}
+
+function normalizeSettings(rawSettings){
+  const settings = isPlainObject(rawSettings) ? rawSettings : {};
+  const theme = ["dark", "light", "auto"].includes(settings.theme) ? settings.theme : "dark";
+  const accent = ["green", "blue", "purple", "orange", "pink"].includes(settings.accent) ? settings.accent : "green";
+  const notifications = isPlainObject(settings.notifications) ? settings.notifications : {};
+  const frequency = ["off", "daily", "training"].includes(notifications.frequency) ? notifications.frequency : "off";
+  const time = typeof notifications.time === "string" ? notifications.time : "20:30";
+  return { theme, accent, notifications: { frequency, time } };
+}
+
+function cloneExerciseForTemplate(exercise) {
+  if (!isPlainObject(exercise)) return null;
+  const base = { ...exercise };
+  base.id = randomUUID();
+  base.plannedId = randomUUID();
+  base.done = [];
+  base.status = EXERCISE_STATUS.PENDING;
+  base.completed = false;
+  base.hecho = false;
+  return base;
+}
+
+function buildTemplateFromDay(dayISO, name) {
+  const exercises = getDayExercises(dayISO).map(cloneExerciseForTemplate).filter(Boolean);
+  return {
+    id: randomUUID(),
+    name,
+    exercises,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function formatTemplateMeta(template) {
+  if (!template || !template.createdAt) return "";
+  const date = new Date(template.createdAt);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function normalizePlannedExercises(rawList){
@@ -882,6 +988,8 @@ function applyRemoteState(remoteState) {
   state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
   state.plannedExercises = normalizePlannedExercises(state.plannedExercises);
   state.plannedExercises = state.plannedExercises.length ? state.plannedExercises : buildPlannedFromWorkouts();
+  state.templates = normalizeTemplates(state.templates);
+  state.settings = normalizeSettings(state.settings);
 
   const selected = fmt(fromISO(state.selectedDate));
   state.selectedDate = selected;
@@ -889,6 +997,7 @@ function applyRemoteState(remoteState) {
   if (formDate) formDate.value = state.selectedDate;
 
   renderAll();
+  applyThemeSettings();
   save({ skipRemote: true, updateTimestamp: false });
 }
 
@@ -969,6 +1078,8 @@ function save({ skipRemote = false, updateTimestamp = true } = {}) {
   state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
   state.weekTypes = normalizeWeekTypes(state.weekTypes);
   state.plannedExercises = buildPlannedFromWorkouts();
+  state.templates = normalizeTemplates(state.templates);
+  state.settings = normalizeSettings(state.settings);
   if (updateTimestamp) {
     state.lastModifiedAt = new Date().toISOString();
   }
@@ -1018,6 +1129,15 @@ const weekTrendList = document.getElementById("weekTrend");
 const weekCalendarToggle = document.getElementById("weekCalendarToggle");
 const weekCalendar = document.getElementById("weekCalendar");
 const weekCalendarCount = document.getElementById("weekCalendarCount");
+const focusModeToggle = document.getElementById("focusModeToggle");
+const quickCompleteAllBtn = document.getElementById("quickCompleteAll");
+const quickRepeatLastBtn = document.getElementById("quickRepeatLast");
+const quickAddSetBtn = document.getElementById("quickAddSet");
+const restTimerValue = document.getElementById("restTimerValue");
+const restStartBtn = document.getElementById("restStartBtn");
+const restPauseBtn = document.getElementById("restPauseBtn");
+const restResetBtn = document.getElementById("restResetBtn");
+const restPresetButtons = Array.from(document.querySelectorAll("[data-rest]"));
 const notificationPrompt = document.getElementById("notificationPrompt");
 const notificationPromptText = document.getElementById("notificationPromptText");
 const notificationPromptBtn = document.getElementById("notificationPromptBtn");
@@ -1191,7 +1311,8 @@ const tabPanels = {
   entreno: document.getElementById("tab-entreno"),
   nuevo: document.getElementById("tab-nuevo"),
   libreria: document.getElementById("tab-libreria"),
-  seguimiento: document.getElementById("tab-seguimiento")
+  seguimiento: document.getElementById("tab-seguimiento"),
+  ajustes: document.getElementById("tab-ajustes")
 };
 
 const prevDayBtn = document.getElementById("prevDayBtn");
@@ -1243,6 +1364,8 @@ const libraryListEl = document.getElementById("libraryList");
 const libraryEmptyEl = document.getElementById("libraryEmpty");
 const librarySearchInput = document.getElementById("librarySearch");
 const libraryCategoryFilter = document.getElementById("libraryCategoryFilter");
+const libraryEquipmentFilter = document.getElementById("libraryEquipmentFilter");
+const libraryLevelFilter = document.getElementById("libraryLevelFilter");
 const libraryTagsFilter = document.getElementById("libraryTagsFilter");
 const libraryMultiToggleBtn = document.getElementById("libraryMultiToggle");
 const libraryMultiBox = document.getElementById("libraryMultiBox");
@@ -1281,6 +1404,9 @@ const libraryFormEmoji = document.getElementById("libraryFormEmoji");
 const libraryFormIcon = document.getElementById("libraryFormIcon");
 const libraryIconPreview = document.getElementById("libraryIconPreview");
 const libraryFormNotes = document.getElementById("libraryFormNotes");
+const libraryFormEquipment = document.getElementById("libraryFormEquipment");
+const libraryFormLevel = document.getElementById("libraryFormLevel");
+const libraryFormGoal = document.getElementById("libraryFormGoal");
 const libraryFormTags = document.getElementById("libraryFormTags");
 
 const EXERCISE_ICON_BASE_PATH = "./icons/exercises";
@@ -1327,6 +1453,10 @@ const futureForm = document.getElementById("futureForm");
 const futureInput = document.getElementById("futureInput");
 const futureList = document.getElementById("futureList");
 const futureEmpty = document.getElementById("futureEmpty");
+const templateList = document.getElementById("templateList");
+const templateEmpty = document.getElementById("templateEmpty");
+const templateApplyDate = document.getElementById("templateApplyDate");
+const saveTemplateBtn = document.getElementById("saveTemplateBtn");
 
 /* Copiar día */
 const copyDayToggleBtn = document.getElementById("copyDayToggleBtn");
@@ -1354,6 +1484,120 @@ const DOW = ["L","M","X","J","V","S","D"];
 /* Seguimiento */
 const historyStore = typeof window !== "undefined" ? window.entrenoHistory : null;
 
+/* Ajustes */
+const themeSelect = document.getElementById("themeSelect");
+const accentSelect = document.getElementById("accentSelect");
+const exportDataBtn = document.getElementById("exportDataBtn");
+const importDataInput = document.getElementById("importDataInput");
+const notificationFrequency = document.getElementById("notificationFrequency");
+const notificationTime = document.getElementById("notificationTime");
+const notificationSaveBtn = document.getElementById("notificationSaveBtn");
+
+const restTimerState = {
+  duration: 90,
+  remaining: 0,
+  running: false,
+  endAt: 0,
+  intervalId: null,
+};
+
+function applyThemeSettings() {
+  const settings = normalizeSettings(state.settings);
+  state.settings = settings;
+  const prefersDark = prefersDarkMedia ? prefersDarkMedia.matches : true;
+  const isLight = settings.theme === "light" || (settings.theme === "auto" && !prefersDark);
+  document.body.classList.toggle("theme-light", isLight);
+  document.body.classList.remove("accent-blue", "accent-purple", "accent-orange", "accent-pink");
+  if (settings.accent && settings.accent !== "green") {
+    document.body.classList.add(`accent-${settings.accent}`);
+  }
+  if (themeSelect) themeSelect.value = settings.theme;
+  if (accentSelect) accentSelect.value = settings.accent;
+  if (notificationFrequency) notificationFrequency.value = settings.notifications.frequency;
+  if (notificationTime) notificationTime.value = settings.notifications.time;
+}
+
+const prefersDarkMedia = typeof window !== "undefined" && window.matchMedia
+  ? window.matchMedia("(prefers-color-scheme: dark)")
+  : null;
+if (prefersDarkMedia) {
+  prefersDarkMedia.addEventListener("change", () => {
+    if (state.settings && state.settings.theme === "auto") {
+      applyThemeSettings();
+    }
+  });
+}
+
+function updateRestTimerDisplay() {
+  if (!restTimerValue) return;
+  restTimerValue.textContent = formatEmomTime(restTimerState.remaining);
+  if (restTimerState.remaining === 0) {
+    restTimerValue.classList.remove("is-running");
+  } else if (restTimerState.running) {
+    restTimerValue.classList.add("is-running");
+  }
+}
+
+function setRestTimer(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) return;
+  restTimerState.duration = Math.round(value);
+  restTimerState.remaining = restTimerState.duration;
+  updateRestTimerDisplay();
+}
+
+function tickRestTimer() {
+  if (!restTimerState.running) return;
+  const remainingMs = restTimerState.endAt - Date.now();
+  restTimerState.remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+  updateRestTimerDisplay();
+  if (restTimerState.remaining <= 0) {
+    stopRestTimer();
+    if (navigator.vibrate) {
+      navigator.vibrate([200, 100, 200]);
+    }
+  }
+}
+
+function startRestTimer() {
+  if (restTimerState.running) return;
+  if (!restTimerState.remaining) {
+    restTimerState.remaining = restTimerState.duration;
+  }
+  restTimerState.running = true;
+  restTimerState.endAt = Date.now() + restTimerState.remaining * 1000;
+  if (restTimerState.intervalId) clearInterval(restTimerState.intervalId);
+  restTimerState.intervalId = setInterval(tickRestTimer, 500);
+  tickRestTimer();
+}
+
+function pauseRestTimer() {
+  if (!restTimerState.running) return;
+  restTimerState.running = false;
+  if (restTimerState.intervalId) {
+    clearInterval(restTimerState.intervalId);
+    restTimerState.intervalId = null;
+  }
+  tickRestTimer();
+}
+
+function stopRestTimer() {
+  restTimerState.running = false;
+  restTimerState.remaining = 0;
+  if (restTimerState.intervalId) {
+    clearInterval(restTimerState.intervalId);
+    restTimerState.intervalId = null;
+  }
+  updateRestTimerDisplay();
+}
+
+function toggleFocusMode() {
+  document.body.classList.toggle("focus-mode");
+  if (focusModeToggle) {
+    focusModeToggle.textContent = document.body.classList.contains("focus-mode") ? "Salir de foco" : "Modo foco";
+  }
+}
+
 /* ========= Inicialización ========= */
 load();
 initFirebaseSync();
@@ -1363,6 +1607,8 @@ const originalWeekTypesJSON = JSON.stringify(state.weekTypes || {});
 const originalFutureJSON = JSON.stringify(state.futureExercises || []);
 const originalLibraryJSON = JSON.stringify(state.libraryExercises || []);
 const originalPlannedJSON = JSON.stringify(state.plannedExercises || []);
+const originalTemplatesJSON = JSON.stringify(state.templates || []);
+const originalSettingsJSON = JSON.stringify(state.settings || {});
 const normalizedWorkouts = normalizeWorkouts(state.workouts);
 const normalizedWorkoutsJSON = JSON.stringify(normalizedWorkouts);
 const normalizedDayMeta = normalizeDayMeta(state.dayMeta);
@@ -1374,12 +1620,18 @@ const normalizedFutureJSON = JSON.stringify(normalizedFutureExercises);
 const normalizedLibraryExercises = normalizeLibraryExercises(state.libraryExercises);
 const normalizedLibraryJSON = JSON.stringify(normalizedLibraryExercises);
 const normalizedPlannedExercises = normalizePlannedExercises(state.plannedExercises);
+const normalizedTemplates = normalizeTemplates(state.templates);
+const normalizedTemplatesJSON = JSON.stringify(normalizedTemplates);
+const normalizedSettings = normalizeSettings(state.settings);
+const normalizedSettingsJSON = JSON.stringify(normalizedSettings);
 state.workouts = normalizedWorkouts;
 state.dayMeta = normalizedDayMeta;
 state.weekTypes = normalizedWeekTypes;
 state.futureExercises = normalizedFutureExercises;
 state.libraryExercises = normalizedLibraryExercises;
 state.plannedExercises = normalizedPlannedExercises.length ? normalizedPlannedExercises : buildPlannedFromWorkouts();
+state.templates = normalizedTemplates;
+state.settings = normalizedSettings;
 
 function getCalendarSnapshot(){
   const snapshot = {};
@@ -1402,9 +1654,12 @@ state.selectedDate = todayISO;
 mcRefDate = new Date(today.getFullYear(), today.getMonth(), 1);
 selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
+if (templateApplyDate) templateApplyDate.value = state.selectedDate;
 formCategory.value = normalizeCategory(formCategory.value);
 renderAll();
 showStorageUsage(); // NEW: Muestra el uso estimado de almacenamiento al iniciar la app
+applyThemeSettings();
+setRestTimer(restTimerState.duration);
 Promise.resolve().then(ensureExerciseIconsLoaded);
 attachLibraryEventListeners();
 if (
@@ -1414,6 +1669,8 @@ if (
   originalFutureJSON !== normalizedFutureJSON ||
   originalLibraryJSON !== normalizedLibraryJSON ||
   originalPlannedJSON !== JSON.stringify(state.plannedExercises) ||
+  originalTemplatesJSON !== normalizedTemplatesJSON ||
+  originalSettingsJSON !== normalizedSettingsJSON ||
   resetToToday
 ) {
   const deferRemoteSync = firebaseDocRef && !firebaseReady;
@@ -1451,6 +1708,157 @@ tabs.forEach(btn=>{
   });
 });
 
+if (focusModeToggle) {
+  focusModeToggle.addEventListener("click", toggleFocusMode);
+}
+
+if (quickCompleteAllBtn) {
+  quickCompleteAllBtn.addEventListener("click", () => {
+    const list = getDayExercises(state.selectedDate);
+    if (!list.length) return;
+    list.forEach((exercise) => {
+      setExerciseStatus(exercise, EXERCISE_STATUS.DONE);
+    });
+    save();
+    syncHistoryForDay(state.selectedDate, { showToast: true });
+    renderDay(state.selectedDate);
+    renderMiniCalendar();
+    callSeguimiento("refresh");
+  });
+}
+
+if (quickRepeatLastBtn) {
+  quickRepeatLastBtn.addEventListener("click", () => {
+    const list = getDayExercises(state.selectedDate);
+    const last = list[list.length - 1];
+    if (!last) {
+      alert("No hay ejercicios para repetir.");
+      return;
+    }
+    const clone = cloneExerciseForTemplate(last);
+    if (!clone) return;
+    state.workouts[state.selectedDate] = [...list, clone];
+    save();
+    renderDay(state.selectedDate);
+    renderMiniCalendar();
+  });
+}
+
+if (quickAddSetBtn) {
+  quickAddSetBtn.addEventListener("click", () => {
+    const list = getDayExercises(state.selectedDate);
+    const last = list[list.length - 1];
+    if (!last) {
+      alert("No hay ejercicios para añadir series.");
+      return;
+    }
+    last.sets = Math.max(1, Number(last.sets) || 1) + 1;
+    if (last.failure) {
+      const doneList = Array.isArray(last.done) ? last.done : [];
+      doneList.push(null);
+      last.done = doneList;
+    }
+    save();
+    renderDay(state.selectedDate);
+    renderMiniCalendar();
+  });
+}
+
+if (restPresetButtons.length) {
+  restPresetButtons.forEach((btn) => {
+    btn.addEventListener("click", () => setRestTimer(btn.dataset.rest));
+  });
+}
+
+if (restStartBtn) restStartBtn.addEventListener("click", startRestTimer);
+if (restPauseBtn) restPauseBtn.addEventListener("click", pauseRestTimer);
+if (restResetBtn) restResetBtn.addEventListener("click", stopRestTimer);
+
+if (themeSelect) {
+  themeSelect.addEventListener("change", () => {
+    state.settings.theme = themeSelect.value;
+    applyThemeSettings();
+    save();
+  });
+}
+
+if (accentSelect) {
+  accentSelect.addEventListener("change", () => {
+    state.settings.accent = accentSelect.value;
+    applyThemeSettings();
+    save();
+  });
+}
+
+if (exportDataBtn) {
+  exportDataBtn.addEventListener("click", () => {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      state: cloneStateForRemote(),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `caligym-backup-${fmt(new Date())}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });
+}
+
+if (importDataInput) {
+  importDataInput.addEventListener("change", async () => {
+    const file = importDataInput.files && importDataInput.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const incoming = isPlainObject(parsed.state) ? parsed.state : parsed;
+      if (!isPlainObject(incoming)) {
+        alert("Archivo inválido.");
+        return;
+      }
+      state = { ...state, ...incoming };
+      state.workouts = normalizeWorkouts(state.workouts);
+      state.dayMeta = normalizeDayMeta(state.dayMeta);
+      state.weekTypes = normalizeWeekTypes(state.weekTypes);
+      state.futureExercises = normalizeFutureExercises(state.futureExercises);
+      state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
+      state.plannedExercises = normalizePlannedExercises(state.plannedExercises);
+      state.templates = normalizeTemplates(state.templates);
+      state.settings = normalizeSettings(state.settings);
+      state.selectedDate = fmt(fromISO(state.selectedDate));
+      if (selectedDateInput) selectedDateInput.value = state.selectedDate;
+      if (formDate) formDate.value = state.selectedDate;
+      if (templateApplyDate) templateApplyDate.value = state.selectedDate;
+      save();
+      renderAll();
+      applyThemeSettings();
+      alert("Datos importados correctamente.");
+    } catch (err) {
+      console.error("Error importando datos", err);
+      alert("No se pudo importar el archivo.");
+    } finally {
+      importDataInput.value = "";
+    }
+  });
+}
+
+if (notificationSaveBtn) {
+  notificationSaveBtn.addEventListener("click", () => {
+    if (!state.settings) state.settings = normalizeSettings({});
+    state.settings.notifications = {
+      frequency: notificationFrequency ? notificationFrequency.value : "off",
+      time: notificationTime ? notificationTime.value : "20:30",
+    };
+    save();
+    alert("Recordatorio guardado. Recuerda permitir notificaciones en el navegador.");
+  });
+}
+
 document.querySelectorAll("[data-close-modal]").forEach((btn) => {
   btn.addEventListener("click", () => {
     const targetId = btn.getAttribute("data-close-modal");
@@ -1476,6 +1884,7 @@ selectedDateInput.addEventListener("change", (e)=>{
   state.selectedDate = fmt(picked);
   selectedDateInput.value = state.selectedDate;
   formDate.value = state.selectedDate;
+  if (templateApplyDate) templateApplyDate.value = state.selectedDate;
   mcRefDate = new Date(picked.getFullYear(), picked.getMonth(), 1);
   save(); renderAll();
   highlightMiniCalSelected();
@@ -1914,11 +2323,68 @@ if (futureList) {
   });
 }
 
+if (saveTemplateBtn) {
+  saveTemplateBtn.addEventListener("click", () => {
+    const exercises = getDayExercises(state.selectedDate);
+    if (!exercises.length) {
+      alert("Añade ejercicios antes de guardar una plantilla.");
+      return;
+    }
+    const name = prompt("Nombre de la plantilla:", `Rutina ${toHuman(state.selectedDate)}`);
+    if (!name || !name.trim()) return;
+    const template = buildTemplateFromDay(state.selectedDate, name.trim());
+    state.templates = Array.isArray(state.templates) ? [template, ...state.templates] : [template];
+    save();
+    renderTemplates();
+  });
+}
+
+if (templateList) {
+  templateList.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const action = target.dataset.action;
+    const id = target.dataset.id;
+    if (!action || !id) return;
+    const templates = Array.isArray(state.templates) ? state.templates : [];
+    const template = templates.find((item) => item.id === id);
+    if (!template) return;
+    if (action === "apply-template") {
+      const dayISO = templateApplyDate && templateApplyDate.value ? fmt(fromISO(templateApplyDate.value)) : state.selectedDate;
+      if (!dayISO) return;
+      const list = Array.isArray(state.workouts[dayISO]) ? state.workouts[dayISO] : [];
+      const cloned = Array.isArray(template.exercises) ? template.exercises.map(cloneExerciseForTemplate).filter(Boolean) : [];
+      state.workouts[dayISO] = [...list, ...cloned];
+      save();
+      state.selectedDate = dayISO;
+      selectedDateInput.value = dayISO;
+      formDate.value = dayISO;
+      renderAll();
+      switchToTab("entreno");
+    }
+    if (action === "rename-template") {
+      const nextName = prompt("Nuevo nombre de plantilla:", template.name);
+      if (!nextName) return;
+      template.name = nextName.trim() || template.name;
+      save();
+      renderTemplates();
+    }
+    if (action === "delete-template") {
+      const ok = confirm("¿Eliminar esta plantilla?");
+      if (!ok) return;
+      state.templates = templates.filter((item) => item.id !== id);
+      save();
+      renderTemplates();
+    }
+  });
+}
+
 /* ========= Render ========= */
 function renderAll(){
   renderDay(state.selectedDate);
   renderMiniCalendar();
   renderFutureExercises();
+  renderTemplates();
   renderLibrary();
   renderLibrarySelector();
   callSeguimiento("refresh");
@@ -1976,6 +2442,57 @@ function renderFutureExercises(){
     li.append(actions);
 
     futureList.append(li);
+  });
+}
+
+function renderTemplates() {
+  if (!templateList || !templateEmpty) return;
+  templateList.innerHTML = "";
+  const templates = Array.isArray(state.templates) ? state.templates : [];
+  templateEmpty.style.display = templates.length ? "none" : "block";
+  if (!templates.length) return;
+  templates.forEach((template) => {
+    if (!template || typeof template !== "object") return;
+    const li = document.createElement("li");
+    li.className = "template-card";
+    li.dataset.id = template.id;
+
+    const header = document.createElement("div");
+    header.className = "template-card-header";
+    const title = document.createElement("div");
+    title.className = "template-card-title";
+    title.textContent = template.name;
+    const meta = document.createElement("span");
+    meta.className = "muted";
+    meta.textContent = formatTemplateMeta(template);
+    header.append(title, meta);
+
+    const tagsWrap = document.createElement("div");
+    tagsWrap.className = "template-tags";
+    const exerciseCount = Array.isArray(template.exercises) ? template.exercises.length : 0;
+    const countChip = document.createElement("span");
+    countChip.className = "template-tag";
+    countChip.textContent = `${exerciseCount} ejercicios`;
+    tagsWrap.append(countChip);
+
+    const actions = document.createElement("div");
+    actions.className = "template-card-actions";
+    const applyBtn = button("Aplicar", "primary small");
+    applyBtn.type = "button";
+    applyBtn.dataset.action = "apply-template";
+    applyBtn.dataset.id = template.id;
+    const renameBtn = button("Renombrar", "ghost small");
+    renameBtn.type = "button";
+    renameBtn.dataset.action = "rename-template";
+    renameBtn.dataset.id = template.id;
+    const deleteBtn = button("Eliminar", "danger small");
+    deleteBtn.type = "button";
+    deleteBtn.dataset.action = "delete-template";
+    deleteBtn.dataset.id = template.id;
+    actions.append(applyBtn, renameBtn, deleteBtn);
+
+    li.append(header, tagsWrap, actions);
+    templateList.append(li);
   });
 }
 
@@ -2166,10 +2683,14 @@ function createMiniatureElement(source, options = {}){
 function filterLibraryItems(items, filters){
   const search = (filters.search || "").trim().toLowerCase();
   const category = (filters.category || "all").toLowerCase();
+  const equipment = (filters.equipment || "all").toLowerCase();
+  const level = (filters.level || "all").toLowerCase();
   const tags = normalizeTags(filters.tags || []);
   return items.filter((item) => {
     if (!item) return false;
     if (category !== "all" && item.category !== category) return false;
+    if (equipment !== "all" && item.equipment !== equipment) return false;
+    if (level !== "all" && item.level !== level) return false;
     if (search) {
       const haystack = `${item.name} ${Array.isArray(item.tags) ? item.tags.join(" ") : ""}`.toLowerCase();
       if (!haystack.includes(search)) return false;
@@ -2188,6 +2709,8 @@ function renderLibrary(){
   const filters = {
     search: getInputValue(librarySearchInput),
     category: getInputValue(libraryCategoryFilter) || "all",
+    equipment: getInputValue(libraryEquipmentFilter) || "all",
+    level: getInputValue(libraryLevelFilter) || "all",
     tags: libraryTagsFilter ? normalizeTags(libraryTagsFilter.value) : [],
   };
   const items = filterLibraryItems(getLibrary(), filters);
@@ -2232,6 +2755,21 @@ function renderLibrary(){
       notes.textContent = item.notes;
       body.append(notes);
     }
+    const meta = document.createElement("div");
+    meta.className = "library-card-meta";
+    const metaItems = [
+      { label: EQUIPMENT_LABELS[item.equipment] || item.equipment },
+      { label: LEVEL_LABELS[item.level] || item.level },
+      { label: GOAL_LABELS[item.goal] || item.goal },
+    ];
+    metaItems.forEach((info) => {
+      if (!info.label) return;
+      const chip = document.createElement("span");
+      chip.className = "library-meta-chip";
+      chip.textContent = info.label;
+      meta.append(chip);
+    });
+    body.append(meta);
     if (Array.isArray(item.tags) && item.tags.length) {
       const tagsWrap = document.createElement("div");
       tagsWrap.className = "library-card-tags";
@@ -2532,6 +3070,9 @@ function openLibraryForm(item){
         if (libraryFormEmoji) libraryFormEmoji.value = item.emoji || "";
       }
       if (libraryFormNotes) libraryFormNotes.value = item.notes || "";
+      if (libraryFormEquipment) libraryFormEquipment.value = item.equipment || "ninguno";
+      if (libraryFormLevel) libraryFormLevel.value = item.level || "principiante";
+      if (libraryFormGoal) libraryFormGoal.value = item.goal || "fuerza";
       if (libraryFormTags) libraryFormTags.value = Array.isArray(item.tags) ? item.tags.join(", ") : "";
     }
     updateLibraryIconRows();
@@ -2573,6 +3114,9 @@ function serializeLibraryForm(){
   }
   const notes = getInputValue(libraryFormNotes);
   const tags = normalizeTags(getInputValue(libraryFormTags));
+  const equipment = EQUIPMENT_KEYS.includes(getInputValue(libraryFormEquipment)) ? getInputValue(libraryFormEquipment) : "ninguno";
+  const level = LEVEL_KEYS.includes(getInputValue(libraryFormLevel)) ? getInputValue(libraryFormLevel) : "principiante";
+  const goal = GOAL_KEYS.includes(getInputValue(libraryFormGoal)) ? getInputValue(libraryFormGoal) : "fuerza";
   const base = {
     id: libraryFormId && libraryFormId.value ? libraryFormId.value : randomUUID(),
     name,
@@ -2583,6 +3127,9 @@ function serializeLibraryForm(){
     iconName: iconType === "asset" ? iconName : "",
     notes,
     tags,
+    equipment,
+    level,
+    goal,
   };
   return base;
 }
@@ -2601,6 +3148,8 @@ function attachLibraryEventListeners(){
   }
   if (librarySearchInput) librarySearchInput.addEventListener("input", renderLibrary);
   if (libraryCategoryFilter) libraryCategoryFilter.addEventListener("change", renderLibrary);
+  if (libraryEquipmentFilter) libraryEquipmentFilter.addEventListener("change", renderLibrary);
+  if (libraryLevelFilter) libraryLevelFilter.addEventListener("change", renderLibrary);
   if (libraryTagsFilter) libraryTagsFilter.addEventListener("input", renderLibrary);
   if (librarySelectorSearch) librarySelectorSearch.addEventListener("input", renderLibrarySelector);
   if (librarySelectorCategory) librarySelectorCategory.addEventListener("change", renderLibrarySelector);
@@ -2794,6 +3343,9 @@ function buildExerciseFromLibrary(libraryExercise, config){
     imageDataUrl: libraryExercise.imageDataUrl,
     iconName: libraryExercise.iconName,
     tags: Array.isArray(libraryExercise.tags) ? libraryExercise.tags.slice() : [],
+    equipment: libraryExercise.equipment,
+    level: libraryExercise.level,
+    goalFocus: libraryExercise.goal,
     note: config.notes != null && config.notes !== "" ? config.notes : libraryExercise.notes || "",
     sets,
     goalType,
@@ -4865,6 +5417,7 @@ function shiftSelectedDay(delta){
   state.selectedDate = fmt(d);
   selectedDateInput.value = state.selectedDate;
   formDate.value = state.selectedDate;
+  if (templateApplyDate) templateApplyDate.value = state.selectedDate;
   mcRefDate = new Date(d.getFullYear(), d.getMonth(), 1);
   save(); renderAll();
   highlightMiniCalSelected();
