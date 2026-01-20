@@ -1152,8 +1152,7 @@ const weekCalendar = document.getElementById("weekCalendar");
 const weekCalendarCount = document.getElementById("weekCalendarCount");
 const focusModeToggle = document.getElementById("focusModeToggle");
 const quickCompleteAllBtn = document.getElementById("quickCompleteAll");
-const quickRepeatLastBtn = document.getElementById("quickRepeatLast");
-const quickAddSetBtn = document.getElementById("quickAddSet");
+const quickMarkAllNotDoneBtn = document.getElementById("quickMarkAllNotDone");
 const restTimerValue = document.getElementById("restTimerValue");
 const restStartBtn = document.getElementById("restStartBtn");
 const restPauseBtn = document.getElementById("restPauseBtn");
@@ -1618,40 +1617,18 @@ if (quickCompleteAllBtn) {
   });
 }
 
-if (quickRepeatLastBtn) {
-  quickRepeatLastBtn.addEventListener("click", () => {
+if (quickMarkAllNotDoneBtn) {
+  quickMarkAllNotDoneBtn.addEventListener("click", () => {
     const list = getDayExercises(state.selectedDate);
-    const last = list[list.length - 1];
-    if (!last) {
-      alert("No hay ejercicios para repetir.");
-      return;
-    }
-    const clone = cloneExerciseForTemplate(last);
-    if (!clone) return;
-    state.workouts[state.selectedDate] = [...list, clone];
+    if (!list.length) return;
+    list.forEach((exercise) => {
+      setExerciseStatus(exercise, EXERCISE_STATUS.NOT_DONE);
+    });
     save();
+    syncHistoryForDay(state.selectedDate, { showToast: true });
     renderDay(state.selectedDate);
     renderMiniCalendar();
-  });
-}
-
-if (quickAddSetBtn) {
-  quickAddSetBtn.addEventListener("click", () => {
-    const list = getDayExercises(state.selectedDate);
-    const last = list[list.length - 1];
-    if (!last) {
-      alert("No hay ejercicios para añadir series.");
-      return;
-    }
-    last.sets = Math.max(1, Number(last.sets) || 1) + 1;
-    if (last.failure) {
-      const doneList = Array.isArray(last.done) ? last.done : [];
-      doneList.push(null);
-      last.done = doneList;
-    }
-    save();
-    renderDay(state.selectedDate);
-    renderMiniCalendar();
+    callSeguimiento("refresh");
   });
 }
 
