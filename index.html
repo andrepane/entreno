@@ -70,16 +70,6 @@
         </section>
       </div>
 
-      <section id="notificationPrompt" class="alert notification-prompt hidden" aria-live="polite">
-        <div class="notification-prompt-body">
-          <strong>Activa las notificaciones</strong>
-          <p id="notificationPromptText" class="muted">
-            Recibirás un aviso para planificar el entreno del día siguiente. En iOS debe hacerse desde un toque.
-          </p>
-        </div>
-        <button id="notificationPromptBtn" class="primary" type="button">Activar</button>
-      </section>
-
       <section class="week-panel card" aria-live="polite">
         <article class="insight-card week-type-card">
           <header>Semana</header>
@@ -619,24 +609,6 @@
         </div>
       </section>
 
-      <section class="card settings-section">
-        <h3 class="heading-tight">Notificaciones inteligentes</h3>
-        <div class="settings-grid">
-          <label class="field inline">
-            <span>Recordatorios</span>
-            <select id="notificationFrequency">
-              <option value="off">Desactivado</option>
-              <option value="daily">Diario</option>
-              <option value="training">Solo días de entreno</option>
-            </select>
-          </label>
-          <label class="field inline">
-            <span>Hora</span>
-            <input type="time" id="notificationTime" value="20:30" />
-          </label>
-        </div>
-        <button id="notificationSaveBtn" class="ghost">Guardar recordatorio</button>
-      </section>
     </section>
   </main>
 
