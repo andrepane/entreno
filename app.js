@@ -283,6 +283,10 @@ let state = {
   templates: [],
   settings: {
     theme: "neon",
+    density: "normal",
+    fontSize: "normal",
+    highContrast: false,
+    reduceMotion: false,
   },
   lastModifiedAt: null,
 };
@@ -688,6 +692,8 @@ function normalizeTemplates(rawList){
 function normalizeSettings(rawSettings){
   const settings = isPlainObject(rawSettings) ? rawSettings : {};
   const themeRaw = typeof settings.theme === "string" ? settings.theme.toLowerCase() : "";
+  const densityRaw = typeof settings.density === "string" ? settings.density.toLowerCase() : "";
+  const fontSizeRaw = typeof settings.fontSize === "string" ? settings.fontSize.toLowerCase() : "";
   let theme = "neon";
   if (THEME_KEYS.includes(themeRaw)) {
     theme = themeRaw;
@@ -696,7 +702,17 @@ function normalizeSettings(rawSettings){
   } else if (themeRaw === "dark" || themeRaw === "auto") {
     theme = "neon";
   }
-  return { theme };
+  const density = ["compact", "normal", "spacious"].includes(densityRaw) ? densityRaw : "normal";
+  const fontSize = ["small", "normal", "large"].includes(fontSizeRaw) ? fontSizeRaw : "normal";
+  const highContrast = !!settings.highContrast;
+  const reduceMotion = !!settings.reduceMotion;
+  return {
+    theme,
+    density,
+    fontSize,
+    highContrast,
+    reduceMotion,
+  };
 }
 
 function cloneExerciseForTemplate(exercise) {
@@ -1358,6 +1374,10 @@ const historyStore = typeof window !== "undefined" ? window.entrenoHistory : nul
 
 /* Ajustes */
 const themeSelect = document.getElementById("themeSelect");
+const densitySelect = document.getElementById("densitySelect");
+const fontSizeSelect = document.getElementById("fontSizeSelect");
+const contrastToggle = document.getElementById("contrastToggle");
+const reduceMotionToggle = document.getElementById("reduceMotionToggle");
 const exportDataBtn = document.getElementById("exportDataBtn");
 const importDataInput = document.getElementById("importDataInput");
 
@@ -1373,8 +1393,30 @@ function applyThemeSettings() {
   const settings = normalizeSettings(state.settings);
   state.settings = settings;
   document.body.classList.remove("theme-neon", "theme-solar", "theme-aurora");
+  document.body.classList.remove(
+    "density-compact",
+    "density-normal",
+    "density-spacious",
+    "font-small",
+    "font-normal",
+    "font-large",
+    "high-contrast",
+    "reduce-motion"
+  );
   document.body.classList.add(`theme-${settings.theme}`);
+  document.body.classList.add(`density-${settings.density}`);
+  document.body.classList.add(`font-${settings.fontSize}`);
+  if (settings.highContrast) {
+    document.body.classList.add("high-contrast");
+  }
+  if (settings.reduceMotion) {
+    document.body.classList.add("reduce-motion");
+  }
   if (themeSelect) themeSelect.value = settings.theme;
+  if (densitySelect) densitySelect.value = settings.density;
+  if (fontSizeSelect) fontSizeSelect.value = settings.fontSize;
+  if (contrastToggle) contrastToggle.checked = settings.highContrast;
+  if (reduceMotionToggle) reduceMotionToggle.checked = settings.reduceMotion;
 }
 
 function updateRestTimerDisplay() {
@@ -1626,6 +1668,38 @@ if (restResetBtn) restResetBtn.addEventListener("click", stopRestTimer);
 if (themeSelect) {
   themeSelect.addEventListener("change", () => {
     state.settings.theme = themeSelect.value;
+    applyThemeSettings();
+    save();
+  });
+}
+
+if (densitySelect) {
+  densitySelect.addEventListener("change", () => {
+    state.settings.density = densitySelect.value;
+    applyThemeSettings();
+    save();
+  });
+}
+
+if (fontSizeSelect) {
+  fontSizeSelect.addEventListener("change", () => {
+    state.settings.fontSize = fontSizeSelect.value;
+    applyThemeSettings();
+    save();
+  });
+}
+
+if (contrastToggle) {
+  contrastToggle.addEventListener("change", () => {
+    state.settings.highContrast = contrastToggle.checked;
+    applyThemeSettings();
+    save();
+  });
+}
+
+if (reduceMotionToggle) {
+  reduceMotionToggle.addEventListener("change", () => {
+    state.settings.reduceMotion = reduceMotionToggle.checked;
     applyThemeSettings();
     save();
   });
