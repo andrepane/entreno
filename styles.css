@@ -575,7 +575,7 @@ button.success:hover{background:#276749}
 button.small{padding:6px 10px; font-size:.85rem; border-radius:10px}
 button.tiny{padding:4px 8px; font-size:.75rem; border-radius:999px}
 button.link{background:transparent; color:var(--accent); border:none; padding:0}
-button.ghost.danger{border-color:rgba(255,107,107,0.65); color:var(--danger);}
+button.ghost.danger{border-color:rgba(255,107,107,0.65); color:#b91c1c;}
 button.ghost.danger:hover{background:rgba(255,107,107,0.12);}
 button.ghost.danger:focus-visible{outline-color:rgba(255,107,107,0.75); box-shadow:0 0 0 4px rgba(255,107,107,0.15);}
 
