@@ -1152,8 +1152,7 @@ const weekCalendar = document.getElementById("weekCalendar");
 const weekCalendarCount = document.getElementById("weekCalendarCount");
 const focusModeToggle = document.getElementById("focusModeToggle");
 const quickCompleteAllBtn = document.getElementById("quickCompleteAll");
-const quickRepeatLastBtn = document.getElementById("quickRepeatLast");
-const quickAddSetBtn = document.getElementById("quickAddSet");
+const quickMarkAllNotDoneBtn = document.getElementById("quickMarkAllNotDone");
 const restTimerValue = document.getElementById("restTimerValue");
 const restStartBtn = document.getElementById("restStartBtn");
 const restPauseBtn = document.getElementById("restPauseBtn");
@@ -1607,51 +1606,33 @@ if (quickCompleteAllBtn) {
   quickCompleteAllBtn.addEventListener("click", () => {
     const list = getDayExercises(state.selectedDate);
     if (!list.length) return;
+    const allDone = list.every((exercise) => getExerciseStatus(exercise) === EXERCISE_STATUS.DONE);
+    const nextStatus = allDone ? EXERCISE_STATUS.PENDING : EXERCISE_STATUS.DONE;
     list.forEach((exercise) => {
-      setExerciseStatus(exercise, EXERCISE_STATUS.DONE);
+      setExerciseStatus(exercise, nextStatus);
     });
     save();
-    syncHistoryForDay(state.selectedDate, { showToast: true });
+    syncHistoryForDay(state.selectedDate, { showToast: nextStatus === EXERCISE_STATUS.DONE });
     renderDay(state.selectedDate);
     renderMiniCalendar();
     callSeguimiento("refresh");
   });
 }
 
-if (quickRepeatLastBtn) {
-  quickRepeatLastBtn.addEventListener("click", () => {
+if (quickMarkAllNotDoneBtn) {
+  quickMarkAllNotDoneBtn.addEventListener("click", () => {
     const list = getDayExercises(state.selectedDate);
-    const last = list[list.length - 1];
-    if (!last) {
-      alert("No hay ejercicios para repetir.");
-      return;
-    }
-    const clone = cloneExerciseForTemplate(last);
-    if (!clone) return;
-    state.workouts[state.selectedDate] = [...list, clone];
+    if (!list.length) return;
+    const allNotDone = list.every((exercise) => getExerciseStatus(exercise) === EXERCISE_STATUS.NOT_DONE);
+    const nextStatus = allNotDone ? EXERCISE_STATUS.PENDING : EXERCISE_STATUS.NOT_DONE;
+    list.forEach((exercise) => {
+      setExerciseStatus(exercise, nextStatus);
+    });
     save();
+    syncHistoryForDay(state.selectedDate, { showToast: false });
     renderDay(state.selectedDate);
     renderMiniCalendar();
-  });
-}
-
-if (quickAddSetBtn) {
-  quickAddSetBtn.addEventListener("click", () => {
-    const list = getDayExercises(state.selectedDate);
-    const last = list[list.length - 1];
-    if (!last) {
-      alert("No hay ejercicios para añadir series.");
-      return;
-    }
-    last.sets = Math.max(1, Number(last.sets) || 1) + 1;
-    if (last.failure) {
-      const doneList = Array.isArray(last.done) ? last.done : [];
-      doneList.push(null);
-      last.done = doneList;
-    }
-    save();
-    renderDay(state.selectedDate);
-    renderMiniCalendar();
+    callSeguimiento("refresh");
   });
 }
 
