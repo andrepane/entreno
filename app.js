@@ -283,7 +283,6 @@ let state = {
   templates: [],
   settings: {
     theme: "neon",
-    notifications: { frequency: "off", time: "20:30" },
   },
   lastModifiedAt: null,
 };
@@ -697,10 +696,7 @@ function normalizeSettings(rawSettings){
   } else if (themeRaw === "dark" || themeRaw === "auto") {
     theme = "neon";
   }
-  const notifications = isPlainObject(settings.notifications) ? settings.notifications : {};
-  const frequency = ["off", "daily", "training"].includes(notifications.frequency) ? notifications.frequency : "off";
-  const time = typeof notifications.time === "string" ? notifications.time : "20:30";
-  return { theme, notifications: { frequency, time } };
+  return { theme };
 }
 
 function cloneExerciseForTemplate(exercise) {
@@ -1147,9 +1143,6 @@ const restStartBtn = document.getElementById("restStartBtn");
 const restPauseBtn = document.getElementById("restPauseBtn");
 const restResetBtn = document.getElementById("restResetBtn");
 const restPresetButtons = Array.from(document.querySelectorAll("[data-rest]"));
-const notificationPrompt = document.getElementById("notificationPrompt");
-const notificationPromptText = document.getElementById("notificationPromptText");
-const notificationPromptBtn = document.getElementById("notificationPromptBtn");
 let suppressDayMetaEvents = false;
 let suppressWeekTypeEvents = false;
 
@@ -1177,136 +1170,6 @@ function hasIconDecorator() {
     globalThis.CaliGymIcons &&
     typeof globalThis.CaliGymIcons.decorate === "function"
   );
-}
-
-const REMINDER_STORAGE_KEY = "entreno.reminder.nextday.v1";
-const REMINDER_HOUR = 10;
-const REMINDER_MINUTE = 0;
-let reminderTimeout = null;
-
-function getNextReminderTime(now = new Date()) {
-  const target = new Date(now);
-  target.setHours(REMINDER_HOUR, REMINDER_MINUTE, 0, 0);
-  if (now >= target) {
-    target.setDate(target.getDate() + 1);
-  }
-  return target;
-}
-
-function sendReminderNotification(targetISO) {
-  const title = "Planifica el entreno de mañana";
-  const body = `Aún no tienes ejercicios para ${toHuman(targetISO)}.`;
-  const options = {
-    body,
-    icon: "./icons/icon-192.png",
-    badge: "./icons/icon-192.png",
-    tag: "next-day-reminder",
-    renotify: false,
-  };
-
-  if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-    navigator.serviceWorker.ready
-      .then((registration) => {
-        if (registration && typeof registration.showNotification === "function") {
-          return registration.showNotification(title, options);
-        }
-        return null;
-      })
-      .catch(() => {
-        try {
-          new Notification(title, options);
-        } catch (error) {
-          console.warn("No se pudo enviar la notificación", error);
-        }
-      });
-    return;
-  }
-
-  try {
-    new Notification(title, options);
-  } catch (error) {
-    console.warn("No se pudo enviar la notificación", error);
-  }
-}
-
-function checkNextDayReminder() {
-  if (!("Notification" in window)) return;
-  if (Notification.permission !== "granted") return;
-
-  const now = new Date();
-  const targetDate = new Date(now);
-  targetDate.setDate(targetDate.getDate() + 1);
-  const targetISO = fmt(targetDate);
-  const workouts = getDayWorkouts(targetISO);
-  if (workouts.length > 0) {
-    localStorage.removeItem(REMINDER_STORAGE_KEY);
-    return;
-  }
-
-  const lastNotified = localStorage.getItem(REMINDER_STORAGE_KEY);
-  if (lastNotified === targetISO) return;
-
-  sendReminderNotification(targetISO);
-  localStorage.setItem(REMINDER_STORAGE_KEY, targetISO);
-}
-
-function scheduleNextDayReminder() {
-  if (!("Notification" in window)) return;
-  if (reminderTimeout) {
-    clearTimeout(reminderTimeout);
-  }
-  const nextTime = getNextReminderTime();
-  const delay = Math.max(0, nextTime.getTime() - Date.now());
-  reminderTimeout = window.setTimeout(() => {
-    checkNextDayReminder();
-    scheduleNextDayReminder();
-  }, delay);
-}
-
-function updateNotificationPrompt() {
-  if (!notificationPrompt) return;
-  if (!("Notification" in window)) {
-    notificationPrompt.classList.add("hidden");
-    return;
-  }
-  if (Notification.permission === "granted") {
-    notificationPrompt.classList.add("hidden");
-    return;
-  }
-
-  notificationPrompt.classList.remove("hidden");
-  if (Notification.permission === "denied") {
-    if (notificationPromptText) {
-      notificationPromptText.textContent =
-        "Has bloqueado las notificaciones. Actívalas en Ajustes/Safari para recibir recordatorios.";
-    }
-    if (notificationPromptBtn) {
-      notificationPromptBtn.disabled = true;
-      notificationPromptBtn.textContent = "Bloqueado";
-    }
-    return;
-  }
-
-  if (notificationPromptText) {
-    notificationPromptText.textContent =
-      "Recibirás un aviso para planificar el entreno del día siguiente. En iOS debe hacerse desde un toque.";
-  }
-  if (notificationPromptBtn) {
-    notificationPromptBtn.disabled = false;
-    notificationPromptBtn.textContent = "Activar";
-  }
-}
-
-function requestReminderPermission() {
-  if (!("Notification" in window)) return;
-  Notification.requestPermission()
-    .then(() => {
-      updateNotificationPrompt();
-      if (Notification.permission === "granted") {
-        checkNextDayReminder();
-      }
-    })
-    .catch(() => null);
 }
 
 function decorateIcons(target, icon, options) {
@@ -1497,9 +1360,6 @@ const historyStore = typeof window !== "undefined" ? window.entrenoHistory : nul
 const themeSelect = document.getElementById("themeSelect");
 const exportDataBtn = document.getElementById("exportDataBtn");
 const importDataInput = document.getElementById("importDataInput");
-const notificationFrequency = document.getElementById("notificationFrequency");
-const notificationTime = document.getElementById("notificationTime");
-const notificationSaveBtn = document.getElementById("notificationSaveBtn");
 
 const restTimerState = {
   duration: 90,
@@ -1515,8 +1375,6 @@ function applyThemeSettings() {
   document.body.classList.remove("theme-neon", "theme-solar", "theme-aurora");
   document.body.classList.add(`theme-${settings.theme}`);
   if (themeSelect) themeSelect.value = settings.theme;
-  if (notificationFrequency) notificationFrequency.value = settings.notifications.frequency;
-  if (notificationTime) notificationTime.value = settings.notifications.time;
 }
 
 function updateRestTimerDisplay() {
@@ -1827,18 +1685,6 @@ if (importDataInput) {
     } finally {
       importDataInput.value = "";
     }
-  });
-}
-
-if (notificationSaveBtn) {
-  notificationSaveBtn.addEventListener("click", () => {
-    if (!state.settings) state.settings = normalizeSettings({});
-    state.settings.notifications = {
-      frequency: notificationFrequency ? notificationFrequency.value : "off",
-      time: notificationTime ? notificationTime.value : "20:30",
-    };
-    save();
-    alert("Recordatorio guardado. Recuerda permitir notificaciones en el navegador.");
   });
 }
 
@@ -5507,16 +5353,5 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker
       .register('./service-worker.js')
       .catch((err) => console.warn('Error registrando el service worker', err));
-  });
-}
-
-window.addEventListener("load", () => {
-  updateNotificationPrompt();
-  scheduleNextDayReminder();
-});
-
-if (notificationPromptBtn) {
-  notificationPromptBtn.addEventListener("click", () => {
-    requestReminderPermission();
   });
 }
