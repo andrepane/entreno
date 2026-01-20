@@ -73,7 +73,7 @@ const CATEGORY_LABELS = {
   movilidad: "Movilidad",
   otro: "Otro",
 };
-const EQUIPMENT_KEYS = ["ninguno", "barra", "mancuernas", "anillas", "banda", "maquina"];
+const EQUIPMENT_KEYS = ["ninguno", "barra", "mancuernas", "anillas", "banda", "maquina", "polea", "paralelas"];
 const EQUIPMENT_LABELS = {
   ninguno: "Sin equipo",
   barra: "Barra",
@@ -81,7 +81,10 @@ const EQUIPMENT_LABELS = {
   anillas: "Anillas",
   banda: "Bandas",
   maquina: "Máquina",
+  polea: "Polea",
+  paralelas: "Paralelas",
 };
+const THEME_KEYS = ["neon", "solar", "aurora"];
 const LEVEL_KEYS = ["principiante", "intermedio", "avanzado"];
 const LEVEL_LABELS = {
   principiante: "Principiante",
@@ -279,8 +282,7 @@ let state = {
   plannedExercises: [],
   templates: [],
   settings: {
-    theme: "dark",
-    accent: "green",
+    theme: "neon",
     notifications: { frequency: "off", time: "20:30" },
   },
   lastModifiedAt: null,
@@ -686,12 +688,19 @@ function normalizeTemplates(rawList){
 
 function normalizeSettings(rawSettings){
   const settings = isPlainObject(rawSettings) ? rawSettings : {};
-  const theme = ["dark", "light", "auto"].includes(settings.theme) ? settings.theme : "dark";
-  const accent = ["green", "blue", "purple", "orange", "pink"].includes(settings.accent) ? settings.accent : "green";
+  const themeRaw = typeof settings.theme === "string" ? settings.theme.toLowerCase() : "";
+  let theme = "neon";
+  if (THEME_KEYS.includes(themeRaw)) {
+    theme = themeRaw;
+  } else if (themeRaw === "light") {
+    theme = "solar";
+  } else if (themeRaw === "dark" || themeRaw === "auto") {
+    theme = "neon";
+  }
   const notifications = isPlainObject(settings.notifications) ? settings.notifications : {};
   const frequency = ["off", "daily", "training"].includes(notifications.frequency) ? notifications.frequency : "off";
   const time = typeof notifications.time === "string" ? notifications.time : "20:30";
-  return { theme, accent, notifications: { frequency, time } };
+  return { theme, notifications: { frequency, time } };
 }
 
 function cloneExerciseForTemplate(exercise) {
@@ -1486,7 +1495,6 @@ const historyStore = typeof window !== "undefined" ? window.entrenoHistory : nul
 
 /* Ajustes */
 const themeSelect = document.getElementById("themeSelect");
-const accentSelect = document.getElementById("accentSelect");
 const exportDataBtn = document.getElementById("exportDataBtn");
 const importDataInput = document.getElementById("importDataInput");
 const notificationFrequency = document.getElementById("notificationFrequency");
@@ -1504,28 +1512,11 @@ const restTimerState = {
 function applyThemeSettings() {
   const settings = normalizeSettings(state.settings);
   state.settings = settings;
-  const prefersDark = prefersDarkMedia ? prefersDarkMedia.matches : true;
-  const isLight = settings.theme === "light" || (settings.theme === "auto" && !prefersDark);
-  document.body.classList.toggle("theme-light", isLight);
-  document.body.classList.remove("accent-blue", "accent-purple", "accent-orange", "accent-pink");
-  if (settings.accent && settings.accent !== "green") {
-    document.body.classList.add(`accent-${settings.accent}`);
-  }
+  document.body.classList.remove("theme-neon", "theme-solar", "theme-aurora");
+  document.body.classList.add(`theme-${settings.theme}`);
   if (themeSelect) themeSelect.value = settings.theme;
-  if (accentSelect) accentSelect.value = settings.accent;
   if (notificationFrequency) notificationFrequency.value = settings.notifications.frequency;
   if (notificationTime) notificationTime.value = settings.notifications.time;
-}
-
-const prefersDarkMedia = typeof window !== "undefined" && window.matchMedia
-  ? window.matchMedia("(prefers-color-scheme: dark)")
-  : null;
-if (prefersDarkMedia) {
-  prefersDarkMedia.addEventListener("change", () => {
-    if (state.settings && state.settings.theme === "auto") {
-      applyThemeSettings();
-    }
-  });
 }
 
 function updateRestTimerDisplay() {
@@ -1777,14 +1768,6 @@ if (restResetBtn) restResetBtn.addEventListener("click", stopRestTimer);
 if (themeSelect) {
   themeSelect.addEventListener("change", () => {
     state.settings.theme = themeSelect.value;
-    applyThemeSettings();
-    save();
-  });
-}
-
-if (accentSelect) {
-  accentSelect.addEventListener("change", () => {
-    state.settings.accent = accentSelect.value;
     applyThemeSettings();
     save();
   });
