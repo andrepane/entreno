@@ -287,6 +287,7 @@ let state = {
     fontSize: "normal",
     highContrast: false,
     reduceMotion: false,
+    autoPruneOldIcons: false,
   },
   lastModifiedAt: null,
 };
@@ -308,6 +309,31 @@ let emomIntervalId = null;
 let emomSaveTimeout = null;
 
 const isPlainObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+
+const ICON_PRUNE_LIMIT_DAYS = (() => {
+  const value =
+    globalThis.iconPrune && Number.isFinite(globalThis.iconPrune.ICON_PRUNE_LIMIT_DAYS)
+      ? globalThis.iconPrune.ICON_PRUNE_LIMIT_DAYS
+      : 14;
+  return value > 0 ? value : 14;
+})();
+
+function isDayOlderThanIconPruneLimit(dayISO, referenceDate = new Date()) {
+  if (globalThis.iconPrune && typeof globalThis.iconPrune.isDayOlderThanIconPruneLimit === "function") {
+    return globalThis.iconPrune.isDayOlderThanIconPruneLimit(dayISO, referenceDate, ICON_PRUNE_LIMIT_DAYS);
+  }
+  if (!dayISO) return false;
+  const dayDate = fromISO(dayISO);
+  const reference = new Date(referenceDate);
+  reference.setHours(0, 0, 0, 0);
+  const diffDays = Math.floor((reference - dayDate) / (24 * 60 * 60 * 1000));
+  return diffDays > ICON_PRUNE_LIMIT_DAYS;
+}
+
+function shouldIgnoreLibraryIconsForDay(dayISO) {
+  if (!state.settings.autoPruneOldIcons) return false;
+  return isDayOlderThanIconPruneLimit(dayISO);
+}
 
 function normalizeCategory(value){
   const key = (value || "").toString().toLowerCase();
@@ -706,12 +732,14 @@ function normalizeSettings(rawSettings){
   const fontSize = ["small", "normal", "large"].includes(fontSizeRaw) ? fontSizeRaw : "normal";
   const highContrast = !!settings.highContrast;
   const reduceMotion = !!settings.reduceMotion;
+  const autoPruneOldIcons = !!settings.autoPruneOldIcons;
   return {
     theme,
     density,
     fontSize,
     highContrast,
     reduceMotion,
+    autoPruneOldIcons,
   };
 }
 
@@ -1095,12 +1123,33 @@ function initFirebaseSync() {
   subscribeToRemoteState();
 }
 
+function pruneOldWorkoutIcons(referenceDate = new Date()) {
+  if (!state.settings.autoPruneOldIcons) return false;
+  let changed = false;
+  Object.entries(state.workouts || {}).forEach(([dayISO, exercises]) => {
+    if (!Array.isArray(exercises)) return;
+    if (!isDayOlderThanIconPruneLimit(dayISO, referenceDate)) return;
+    exercises.forEach((exercise) => {
+      if (!isPlainObject(exercise)) return;
+      if (exercise.iconType || exercise.emoji || exercise.imageDataUrl || exercise.iconName) {
+        exercise.iconType = "";
+        exercise.emoji = "";
+        exercise.imageDataUrl = "";
+        exercise.iconName = "";
+        changed = true;
+      }
+    });
+  });
+  return changed;
+}
+
 function save({ skipRemote = false, updateTimestamp = true } = {}) {
   state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
   state.weekTypes = normalizeWeekTypes(state.weekTypes);
   state.plannedExercises = buildPlannedFromWorkouts();
   state.templates = normalizeTemplates(state.templates);
   state.settings = normalizeSettings(state.settings);
+  pruneOldWorkoutIcons();
   if (updateTimestamp) {
     state.lastModifiedAt = new Date().toISOString();
   }
@@ -1377,6 +1426,7 @@ const densitySelect = document.getElementById("densitySelect");
 const fontSizeSelect = document.getElementById("fontSizeSelect");
 const contrastToggle = document.getElementById("contrastToggle");
 const reduceMotionToggle = document.getElementById("reduceMotionToggle");
+const autoPruneOldIconsToggle = document.getElementById("autoPruneOldIcons");
 const exportDataBtn = document.getElementById("exportDataBtn");
 const importDataInput = document.getElementById("importDataInput");
 
@@ -1416,6 +1466,7 @@ function applyThemeSettings() {
   if (fontSizeSelect) fontSizeSelect.value = settings.fontSize;
   if (contrastToggle) contrastToggle.checked = settings.highContrast;
   if (reduceMotionToggle) reduceMotionToggle.checked = settings.reduceMotion;
+  if (autoPruneOldIconsToggle) autoPruneOldIconsToggle.checked = settings.autoPruneOldIcons;
 }
 
 function updateRestTimerDisplay() {
@@ -1522,6 +1573,7 @@ state.libraryExercises = normalizedLibraryExercises;
 state.plannedExercises = normalizedPlannedExercises.length ? normalizedPlannedExercises : buildPlannedFromWorkouts();
 state.templates = normalizedTemplates;
 state.settings = normalizedSettings;
+const prunedOldIcons = pruneOldWorkoutIcons();
 
 function getCalendarSnapshot(){
   const snapshot = {};
@@ -1561,6 +1613,7 @@ if (
   originalPlannedJSON !== JSON.stringify(state.plannedExercises) ||
   originalTemplatesJSON !== normalizedTemplatesJSON ||
   originalSettingsJSON !== normalizedSettingsJSON ||
+  prunedOldIcons ||
   resetToToday
 ) {
   const deferRemoteSync = firebaseDocRef && !firebaseReady;
@@ -1683,6 +1736,18 @@ if (reduceMotionToggle) {
     state.settings.reduceMotion = reduceMotionToggle.checked;
     applyThemeSettings();
     save();
+  });
+}
+
+if (autoPruneOldIconsToggle) {
+  autoPruneOldIconsToggle.addEventListener("change", () => {
+    state.settings.autoPruneOldIcons = autoPruneOldIconsToggle.checked;
+    const pruned = pruneOldWorkoutIcons();
+    save();
+    if (pruned) {
+      renderDay(state.selectedDate);
+      renderMiniCalendar();
+    }
   });
 }
 
@@ -2405,10 +2470,11 @@ function arraysShallowEqual(a, b) {
 function updateExercisesFromLibrary(libraryExercise) {
   if (!libraryExercise || !libraryExercise.id) return [];
   const affectedDays = new Set();
-  const icon = resolveExerciseIcon(libraryExercise);
   const tags = Array.isArray(libraryExercise.tags) ? libraryExercise.tags.slice() : [];
   Object.entries(state.workouts || {}).forEach(([dayISO, exercises]) => {
     if (!Array.isArray(exercises)) return;
+    const ignoreIcons = shouldIgnoreLibraryIconsForDay(dayISO);
+    const icon = ignoreIcons ? null : resolveExerciseIcon(libraryExercise);
     exercises.forEach((exercise) => {
       if (!isPlainObject(exercise) || exercise.libraryId !== libraryExercise.id) return;
       let changed = false;
@@ -2420,21 +2486,23 @@ function updateExercisesFromLibrary(libraryExercise) {
         exercise.category = libraryExercise.category;
         changed = true;
       }
-      if (exercise.iconType !== icon.iconType) {
-        exercise.iconType = icon.iconType;
-        changed = true;
-      }
-      if (exercise.emoji !== icon.emoji) {
-        exercise.emoji = icon.emoji;
-        changed = true;
-      }
-      if (exercise.imageDataUrl !== icon.imageDataUrl) {
-        exercise.imageDataUrl = icon.imageDataUrl;
-        changed = true;
-      }
-      if (exercise.iconName !== icon.iconName) {
-        exercise.iconName = icon.iconName;
-        changed = true;
+      if (!ignoreIcons && icon) {
+        if (exercise.iconType !== icon.iconType) {
+          exercise.iconType = icon.iconType;
+          changed = true;
+        }
+        if (exercise.emoji !== icon.emoji) {
+          exercise.emoji = icon.emoji;
+          changed = true;
+        }
+        if (exercise.imageDataUrl !== icon.imageDataUrl) {
+          exercise.imageDataUrl = icon.imageDataUrl;
+          changed = true;
+        }
+        if (exercise.iconName !== icon.iconName) {
+          exercise.iconName = icon.iconName;
+          changed = true;
+        }
       }
       if (!arraysShallowEqual(exercise.tags, tags)) {
         exercise.tags = tags.slice();
@@ -2493,7 +2561,9 @@ function findLibraryExercise(id){
   return list.find((item) => item.id === id) || null;
 }
 
-function resolveExerciseIcon(source){
+function resolveExerciseIcon(source, options = {}){
+  const dayISO = typeof options.dayISO === "string" ? options.dayISO : "";
+  const ignoreLibraryIcons = shouldIgnoreLibraryIconsForDay(dayISO);
   if (!source || typeof source !== "object") {
     return { iconType: "emoji", emoji: "", imageDataUrl: "", iconName: "", name: "" };
   }
@@ -2506,10 +2576,10 @@ function resolveExerciseIcon(source){
   if (source.iconType === "emoji" && source.emoji) {
     return { iconType: "emoji", emoji: source.emoji, imageDataUrl: "", iconName: "", name: source.name || "" };
   }
-  if (source.libraryId) {
+  if (source.libraryId && !ignoreLibraryIcons) {
     const libraryExercise = findLibraryExercise(source.libraryId);
     if (libraryExercise) {
-      return resolveExerciseIcon({ ...libraryExercise, name: source.name || libraryExercise.name });
+      return resolveExerciseIcon({ ...libraryExercise, name: source.name || libraryExercise.name }, options);
     }
   }
   const emoji = typeof source.emoji === "string" ? source.emoji : "";
@@ -2528,7 +2598,7 @@ function resolveExerciseIcon(source){
 }
 
 function createMiniatureElement(source, options = {}){
-  const icon = resolveExerciseIcon(source);
+  const icon = resolveExerciseIcon(source, { dayISO: options.dayISO });
   const size = options.size || 48;
   const sourceName = source && source.name ? source.name : "";
   const alt = options.alt || sourceName || "Ejercicio";
@@ -3334,7 +3404,7 @@ function renderDay(dayISO){
     dragBtn.setAttribute("aria-label", "Reordenar ejercicio");
     dragBtn.title = "Reordenar ejercicio";
     dragBtn.innerHTML = "<span aria-hidden=\"true\">☰</span>";
-    const thumb = createMiniatureElement(ex, { size: 56, className: "exercise-thumb", alt: ex.name });
+    const thumb = createMiniatureElement(ex, { size: 56, className: "exercise-thumb", alt: ex.name, dayISO });
     const h3 = document.createElement("h3");
     h3.textContent = ex.name;
     h3.classList.add("heading-tight");
