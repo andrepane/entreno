@@ -52,11 +52,17 @@ const STORAGE_APPROX_MAX_BYTES = 5 * 1024 * 1024; // NEW: Máximo aproximado per
 const STORAGE_WARN_THRESHOLD_BYTES = 4.5 * 1024 * 1024; // NEW: Umbral para mostrar alerta visual de almacenamiento
 const STORAGE_SAVE_ERROR_MESSAGE =
   "No se pudo guardar tu entrenamiento en este dispositivo. Comprueba si el modo privado está activado o libera espacio y vuelve a intentarlo.";
+const INDEXED_DB_NAME = "entreno-db";
+const INDEXED_DB_VERSION = 1;
+const INDEXED_DB_STORE = "appState";
+const INDEXED_DB_KEY = "state";
 const FIREBASE_COLLECTION = "workouts";
 const FIREBASE_DOC_VERSION = 1;
 let storageWarningEl = null;
 let storageSaveFailed = false;
 let lastStorageUsageBytes = 0; // NEW: Seguimiento del uso estimado de localStorage en bytes
+let storageBackend = "localStorage";
+let stateDbPromise = null;
 let firebaseApp = null;
 let firebaseDb = null;
 let firebaseDocRef = null;
@@ -954,13 +960,90 @@ function showStorageWarning(message) {
   storageWarningEl.classList.remove("hidden");
 }
 
-function load() {
+function isIndexedDbSupported() {
+  return typeof indexedDB !== "undefined" && indexedDB !== null;
+}
+
+function openStateDb() {
+  if (stateDbPromise) return stateDbPromise;
+  if (!isIndexedDbSupported()) return Promise.resolve(null);
+  stateDbPromise = new Promise((resolve) => {
+    const request = indexedDB.open(INDEXED_DB_NAME, INDEXED_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(INDEXED_DB_STORE)) {
+        db.createObjectStore(INDEXED_DB_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => {
+      console.warn("No se pudo abrir IndexedDB", request.error);
+      resolve(null);
+    };
+  });
+  return stateDbPromise;
+}
+
+async function readStateFromDb() {
+  const db = await openStateDb();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    const tx = db.transaction(INDEXED_DB_STORE, "readonly");
+    const store = tx.objectStore(INDEXED_DB_STORE);
+    const request = store.get(INDEXED_DB_KEY);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => {
+      console.warn("No se pudo leer el estado desde IndexedDB", request.error);
+      resolve(null);
+    };
+  });
+}
+
+async function writeStateToDb(snapshot) {
+  const db = await openStateDb();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    const tx = db.transaction(INDEXED_DB_STORE, "readwrite");
+    const store = tx.objectStore(INDEXED_DB_STORE);
+    const request = store.put(snapshot, INDEXED_DB_KEY);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => {
+      console.warn("No se pudo guardar el estado en IndexedDB", request.error);
+      resolve(false);
+    };
+  });
+}
+
+async function load() {
+  const preferIndexedDb = isIndexedDbSupported();
+  if (preferIndexedDb) {
+    const indexedState = await readStateFromDb();
+    if (indexedState && isPlainObject(indexedState)) {
+      state = { ...state, ...indexedState };
+      storageBackend = "indexedDB";
+      return;
+    }
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (isPlainObject(parsed)) {
         state = { ...state, ...parsed };
+        if (preferIndexedDb) {
+          const migrated = await writeStateToDb(state);
+          if (migrated) {
+            storageBackend = "indexedDB";
+            try {
+              localStorage.removeItem(STORAGE_KEY);
+            } catch (removeErr) {
+              console.warn("No se pudo limpiar el estado migrado en localStorage", removeErr);
+            }
+            return;
+          }
+        }
+        storageBackend = "localStorage";
+        return;
       } else {
         console.warn("Se ignoró un estado almacenado inválido", parsed);
         try {
@@ -971,6 +1054,7 @@ function load() {
       }
     }
   } catch(e){ console.warn("Error loading storage", e); }
+  storageBackend = preferIndexedDb ? "indexedDB" : "localStorage";
 }
 // NEW: Calcula el espacio estimado utilizado en localStorage y devuelve un string humanizado
 function estimateLocalStorageUsage() {
@@ -994,6 +1078,20 @@ function estimateLocalStorageUsage() {
 }
 // NEW: Muestra o actualiza un badge visible con el uso aproximado del almacenamiento local
 function showStorageUsage() {
+  if (storageBackend === "indexedDB") {
+    lastStorageUsageBytes = 0;
+    let storageInfoEl = document.getElementById("storage-info");
+    if (!storageInfoEl) {
+      storageInfoEl = document.createElement("div");
+      storageInfoEl.id = "storage-info";
+      const hostPanel = document.getElementById("todayPanel");
+      const insertionTarget = hostPanel || document.body;
+      insertionTarget.appendChild(storageInfoEl);
+    }
+    storageInfoEl.textContent = "Datos guardados en IndexedDB";
+    storageInfoEl.classList.remove("warn");
+    return;
+  }
   const usageLabel = estimateLocalStorageUsage(); // NEW: Obtiene el texto humanizado del espacio utilizado
   let storageInfoEl = document.getElementById("storage-info"); // NEW: Localiza el nodo existente (si lo hay)
   if (!storageInfoEl) {
@@ -1143,19 +1241,23 @@ function pruneOldWorkoutIcons(referenceDate = new Date()) {
   return changed;
 }
 
-function save({ skipRemote = false, updateTimestamp = true } = {}) {
-  state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
-  state.weekTypes = normalizeWeekTypes(state.weekTypes);
-  state.plannedExercises = buildPlannedFromWorkouts();
-  state.templates = normalizeTemplates(state.templates);
-  state.settings = normalizeSettings(state.settings);
-  pruneOldWorkoutIcons();
-  if (updateTimestamp) {
-    state.lastModifiedAt = new Date().toISOString();
+async function persistState(snapshot, { skipRemote = false } = {}) {
+  if (storageBackend === "indexedDB") {
+    const saved = await writeStateToDb(snapshot);
+    if (saved) {
+      showStorageUsage();
+      storageSaveFailed = false;
+      clearStorageWarning();
+      if (!skipRemote) {
+        queueRemoteSave();
+      }
+      return;
+    }
   }
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    showStorageUsage(); // NEW: Actualiza el indicador visual tras guardar en localStorage
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    storageBackend = "localStorage";
+    showStorageUsage();
     storageSaveFailed = false;
     clearStorageWarning();
     if (!skipRemote) {
@@ -1168,6 +1270,19 @@ function save({ skipRemote = false, updateTimestamp = true } = {}) {
     }
     storageSaveFailed = true;
   }
+}
+
+function save({ skipRemote = false, updateTimestamp = true } = {}) {
+  state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
+  state.weekTypes = normalizeWeekTypes(state.weekTypes);
+  state.plannedExercises = buildPlannedFromWorkouts();
+  state.templates = normalizeTemplates(state.templates);
+  state.settings = normalizeSettings(state.settings);
+  pruneOldWorkoutIcons();
+  if (updateTimestamp) {
+    state.lastModifiedAt = new Date().toISOString();
+  }
+  void persistState(state, { skipRemote });
 }
 
 /* ========= DOM ========= */
@@ -1540,95 +1655,99 @@ function toggleFocusMode() {
 }
 
 /* ========= Inicialización ========= */
-load();
-initFirebaseSync();
-const originalWorkoutsJSON = JSON.stringify(state.workouts || {});
-const originalDayMetaJSON = JSON.stringify(state.dayMeta || {});
-const originalWeekTypesJSON = JSON.stringify(state.weekTypes || {});
-const originalFutureJSON = JSON.stringify(state.futureExercises || []);
-const originalLibraryJSON = JSON.stringify(state.libraryExercises || []);
-const originalPlannedJSON = JSON.stringify(state.plannedExercises || []);
-const originalTemplatesJSON = JSON.stringify(state.templates || []);
-const originalSettingsJSON = JSON.stringify(state.settings || {});
-const normalizedWorkouts = normalizeWorkouts(state.workouts);
-const normalizedWorkoutsJSON = JSON.stringify(normalizedWorkouts);
-const normalizedDayMeta = normalizeDayMeta(state.dayMeta);
-const normalizedDayMetaJSON = JSON.stringify(normalizedDayMeta);
-const normalizedWeekTypes = normalizeWeekTypes(state.weekTypes);
-const normalizedWeekTypesJSON = JSON.stringify(normalizedWeekTypes);
-const normalizedFutureExercises = normalizeFutureExercises(state.futureExercises);
-const normalizedFutureJSON = JSON.stringify(normalizedFutureExercises);
-const normalizedLibraryExercises = normalizeLibraryExercises(state.libraryExercises);
-const normalizedLibraryJSON = JSON.stringify(normalizedLibraryExercises);
-const normalizedPlannedExercises = normalizePlannedExercises(state.plannedExercises);
-const normalizedTemplates = normalizeTemplates(state.templates);
-const normalizedTemplatesJSON = JSON.stringify(normalizedTemplates);
-const normalizedSettings = normalizeSettings(state.settings);
-const normalizedSettingsJSON = JSON.stringify(normalizedSettings);
-state.workouts = normalizedWorkouts;
-state.dayMeta = normalizedDayMeta;
-state.weekTypes = normalizedWeekTypes;
-state.futureExercises = normalizedFutureExercises;
-state.libraryExercises = normalizedLibraryExercises;
-state.plannedExercises = normalizedPlannedExercises.length ? normalizedPlannedExercises : buildPlannedFromWorkouts();
-state.templates = normalizedTemplates;
-state.settings = normalizedSettings;
-const prunedOldIcons = pruneOldWorkoutIcons();
+async function bootstrap() {
+  await load();
+  initFirebaseSync();
+  const originalWorkoutsJSON = JSON.stringify(state.workouts || {});
+  const originalDayMetaJSON = JSON.stringify(state.dayMeta || {});
+  const originalWeekTypesJSON = JSON.stringify(state.weekTypes || {});
+  const originalFutureJSON = JSON.stringify(state.futureExercises || []);
+  const originalLibraryJSON = JSON.stringify(state.libraryExercises || []);
+  const originalPlannedJSON = JSON.stringify(state.plannedExercises || []);
+  const originalTemplatesJSON = JSON.stringify(state.templates || []);
+  const originalSettingsJSON = JSON.stringify(state.settings || {});
+  const normalizedWorkouts = normalizeWorkouts(state.workouts);
+  const normalizedWorkoutsJSON = JSON.stringify(normalizedWorkouts);
+  const normalizedDayMeta = normalizeDayMeta(state.dayMeta);
+  const normalizedDayMetaJSON = JSON.stringify(normalizedDayMeta);
+  const normalizedWeekTypes = normalizeWeekTypes(state.weekTypes);
+  const normalizedWeekTypesJSON = JSON.stringify(normalizedWeekTypes);
+  const normalizedFutureExercises = normalizeFutureExercises(state.futureExercises);
+  const normalizedFutureJSON = JSON.stringify(normalizedFutureExercises);
+  const normalizedLibraryExercises = normalizeLibraryExercises(state.libraryExercises);
+  const normalizedLibraryJSON = JSON.stringify(normalizedLibraryExercises);
+  const normalizedPlannedExercises = normalizePlannedExercises(state.plannedExercises);
+  const normalizedTemplates = normalizeTemplates(state.templates);
+  const normalizedTemplatesJSON = JSON.stringify(normalizedTemplates);
+  const normalizedSettings = normalizeSettings(state.settings);
+  const normalizedSettingsJSON = JSON.stringify(normalizedSettings);
+  state.workouts = normalizedWorkouts;
+  state.dayMeta = normalizedDayMeta;
+  state.weekTypes = normalizedWeekTypes;
+  state.futureExercises = normalizedFutureExercises;
+  state.libraryExercises = normalizedLibraryExercises;
+  state.plannedExercises = normalizedPlannedExercises.length ? normalizedPlannedExercises : buildPlannedFromWorkouts();
+  state.templates = normalizedTemplates;
+  state.settings = normalizedSettings;
+  const prunedOldIcons = pruneOldWorkoutIcons();
 
-function getCalendarSnapshot(){
-  const snapshot = {};
-  Object.keys(state.workouts || {}).forEach((dayISO) => {
-    const day = buildHistoryDaySnapshot(dayISO);
-    snapshot[dayISO] = day.ejercicios;
-  });
-  return snapshot;
-}
-
-if (historyStore) {
-  historyStore.rebuildFromCalendar(getCalendarSnapshot());
-}
-
-const today = new Date();
-const todayISO = fmt(today);
-const normalizedSelectedDate = fmt(fromISO(state.selectedDate));
-const resetToToday = normalizedSelectedDate !== todayISO;
-state.selectedDate = todayISO;
-mcRefDate = new Date(today.getFullYear(), today.getMonth(), 1);
-selectedDateInput.value = state.selectedDate;
-formDate.value = state.selectedDate;
-if (templateApplyDate) templateApplyDate.value = state.selectedDate;
-formCategory.value = normalizeCategory(formCategory.value);
-renderAll();
-showStorageUsage(); // NEW: Muestra el uso estimado de almacenamiento al iniciar la app
-applyThemeSettings();
-setRestTimer(restTimerState.duration);
-Promise.resolve().then(ensureExerciseIconsLoaded);
-attachLibraryEventListeners();
-if (
-  originalWorkoutsJSON !== normalizedWorkoutsJSON ||
-  originalDayMetaJSON !== normalizedDayMetaJSON ||
-  originalWeekTypesJSON !== normalizedWeekTypesJSON ||
-  originalFutureJSON !== normalizedFutureJSON ||
-  originalLibraryJSON !== normalizedLibraryJSON ||
-  originalPlannedJSON !== JSON.stringify(state.plannedExercises) ||
-  originalTemplatesJSON !== normalizedTemplatesJSON ||
-  originalSettingsJSON !== normalizedSettingsJSON ||
-  prunedOldIcons ||
-  resetToToday
-) {
-  const deferRemoteSync = firebaseDocRef && !firebaseReady;
-  save(deferRemoteSync ? { skipRemote: true, updateTimestamp: false } : undefined);
-}
-
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") {
-    flushRemoteSave();
+  function getCalendarSnapshot(){
+    const snapshot = {};
+    Object.keys(state.workouts || {}).forEach((dayISO) => {
+      const day = buildHistoryDaySnapshot(dayISO);
+      snapshot[dayISO] = day.ejercicios;
+    });
+    return snapshot;
   }
-});
 
-window.addEventListener("pagehide", () => {
-  flushRemoteSave();
-});
+  if (historyStore) {
+    historyStore.rebuildFromCalendar(getCalendarSnapshot());
+  }
+
+  const today = new Date();
+  const todayISO = fmt(today);
+  const normalizedSelectedDate = fmt(fromISO(state.selectedDate));
+  const resetToToday = normalizedSelectedDate !== todayISO;
+  state.selectedDate = todayISO;
+  mcRefDate = new Date(today.getFullYear(), today.getMonth(), 1);
+  selectedDateInput.value = state.selectedDate;
+  formDate.value = state.selectedDate;
+  if (templateApplyDate) templateApplyDate.value = state.selectedDate;
+  formCategory.value = normalizeCategory(formCategory.value);
+  renderAll();
+  showStorageUsage(); // NEW: Muestra el uso estimado de almacenamiento al iniciar la app
+  applyThemeSettings();
+  setRestTimer(restTimerState.duration);
+  Promise.resolve().then(ensureExerciseIconsLoaded);
+  attachLibraryEventListeners();
+  if (
+    originalWorkoutsJSON !== normalizedWorkoutsJSON ||
+    originalDayMetaJSON !== normalizedDayMetaJSON ||
+    originalWeekTypesJSON !== normalizedWeekTypesJSON ||
+    originalFutureJSON !== normalizedFutureJSON ||
+    originalLibraryJSON !== normalizedLibraryJSON ||
+    originalPlannedJSON !== JSON.stringify(state.plannedExercises) ||
+    originalTemplatesJSON !== normalizedTemplatesJSON ||
+    originalSettingsJSON !== normalizedSettingsJSON ||
+    prunedOldIcons ||
+    resetToToday
+  ) {
+    const deferRemoteSync = firebaseDocRef && !firebaseReady;
+    save(deferRemoteSync ? { skipRemote: true, updateTimestamp: false } : undefined);
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      flushRemoteSave();
+    }
+  });
+
+  window.addEventListener("pagehide", () => {
+    flushRemoteSave();
+  });
+}
+
+bootstrap();
 
 tabs.forEach(btn=>{
   btn.addEventListener("click", ()=>{
