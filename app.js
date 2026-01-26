@@ -50,6 +50,7 @@ const toHuman = (iso) => {
 const STORAGE_KEY = "workouts.v1";
 const STORAGE_APPROX_MAX_BYTES = 5 * 1024 * 1024; // NEW: Máximo aproximado permitido en localStorage
 const STORAGE_WARN_THRESHOLD_BYTES = 4.5 * 1024 * 1024; // NEW: Umbral para mostrar alerta visual de almacenamiento
+const ICON_RETENTION_DAYS = 14; // NEW: Días de iconos visibles en entrenos pasados
 const STORAGE_SAVE_ERROR_MESSAGE =
   "No se pudo guardar tu entrenamiento en este dispositivo. Comprueba si el modo privado está activado o libera espacio y vuelve a intentarlo.";
 const FIREBASE_COLLECTION = "workouts";
@@ -287,6 +288,7 @@ let state = {
     fontSize: "normal",
     highContrast: false,
     reduceMotion: false,
+    autoPruneOldIcons: true,
   },
   lastModifiedAt: null,
 };
@@ -706,13 +708,41 @@ function normalizeSettings(rawSettings){
   const fontSize = ["small", "normal", "large"].includes(fontSizeRaw) ? fontSizeRaw : "normal";
   const highContrast = !!settings.highContrast;
   const reduceMotion = !!settings.reduceMotion;
+  const autoPruneOldIcons =
+    settings.autoPruneOldIcons === undefined ? true : !!settings.autoPruneOldIcons;
   return {
     theme,
     density,
     fontSize,
     highContrast,
     reduceMotion,
+    autoPruneOldIcons,
   };
+}
+
+function pruneOldWorkoutIcons() {
+  if (!state.settings || !state.settings.autoPruneOldIcons) return false;
+  if (!isPlainObject(state.workouts)) return false;
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - ICON_RETENTION_DAYS);
+  let changed = false;
+  Object.entries(state.workouts).forEach(([dayISO, exercises]) => {
+    const dayDate = fromISO(dayISO);
+    if (dayDate >= cutoff) return;
+    if (!Array.isArray(exercises)) return;
+    exercises.forEach((exercise) => {
+      if (!isPlainObject(exercise)) return;
+      if (exercise.iconType || exercise.emoji || exercise.imageDataUrl || exercise.iconName) {
+        exercise.iconType = "";
+        exercise.emoji = "";
+        exercise.imageDataUrl = "";
+        exercise.iconName = "";
+        changed = true;
+      }
+    });
+  });
+  return changed;
 }
 
 function cloneExerciseForTemplate(exercise) {
@@ -1011,6 +1041,7 @@ function applyRemoteState(remoteState) {
   state.plannedExercises = state.plannedExercises.length ? state.plannedExercises : buildPlannedFromWorkouts();
   state.templates = normalizeTemplates(state.templates);
   state.settings = normalizeSettings(state.settings);
+  pruneOldWorkoutIcons();
 
   const selected = fmt(fromISO(state.selectedDate));
   state.selectedDate = selected;
@@ -1101,6 +1132,7 @@ function save({ skipRemote = false, updateTimestamp = true } = {}) {
   state.plannedExercises = buildPlannedFromWorkouts();
   state.templates = normalizeTemplates(state.templates);
   state.settings = normalizeSettings(state.settings);
+  pruneOldWorkoutIcons();
   if (updateTimestamp) {
     state.lastModifiedAt = new Date().toISOString();
   }
@@ -1377,6 +1409,7 @@ const densitySelect = document.getElementById("densitySelect");
 const fontSizeSelect = document.getElementById("fontSizeSelect");
 const contrastToggle = document.getElementById("contrastToggle");
 const reduceMotionToggle = document.getElementById("reduceMotionToggle");
+const autoPruneIconsToggle = document.getElementById("autoPruneIconsToggle");
 const exportDataBtn = document.getElementById("exportDataBtn");
 const importDataInput = document.getElementById("importDataInput");
 
@@ -1416,6 +1449,7 @@ function applyThemeSettings() {
   if (fontSizeSelect) fontSizeSelect.value = settings.fontSize;
   if (contrastToggle) contrastToggle.checked = settings.highContrast;
   if (reduceMotionToggle) reduceMotionToggle.checked = settings.reduceMotion;
+  if (autoPruneIconsToggle) autoPruneIconsToggle.checked = settings.autoPruneOldIcons;
 }
 
 function updateRestTimerDisplay() {
@@ -1522,6 +1556,7 @@ state.libraryExercises = normalizedLibraryExercises;
 state.plannedExercises = normalizedPlannedExercises.length ? normalizedPlannedExercises : buildPlannedFromWorkouts();
 state.templates = normalizedTemplates;
 state.settings = normalizedSettings;
+const prunedOldIcons = pruneOldWorkoutIcons();
 
 function getCalendarSnapshot(){
   const snapshot = {};
@@ -1561,6 +1596,7 @@ if (
   originalPlannedJSON !== JSON.stringify(state.plannedExercises) ||
   originalTemplatesJSON !== normalizedTemplatesJSON ||
   originalSettingsJSON !== normalizedSettingsJSON ||
+  prunedOldIcons ||
   resetToToday
 ) {
   const deferRemoteSync = firebaseDocRef && !firebaseReady;
@@ -1683,6 +1719,19 @@ if (reduceMotionToggle) {
     state.settings.reduceMotion = reduceMotionToggle.checked;
     applyThemeSettings();
     save();
+  });
+}
+
+if (autoPruneIconsToggle) {
+  autoPruneIconsToggle.addEventListener("change", () => {
+    state.settings.autoPruneOldIcons = autoPruneIconsToggle.checked;
+    const pruned = pruneOldWorkoutIcons();
+    save();
+    if (pruned) {
+      renderDay(state.selectedDate);
+      renderMiniCalendar();
+      callSeguimiento("refresh");
+    }
   });
 }
 
