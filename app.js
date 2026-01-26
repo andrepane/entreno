@@ -50,8 +50,11 @@ const toHuman = (iso) => {
 const STORAGE_KEY = "workouts.v1";
 const STORAGE_APPROX_MAX_BYTES = 5 * 1024 * 1024; // NEW: Máximo aproximado permitido en localStorage
 const STORAGE_WARN_THRESHOLD_BYTES = 4.5 * 1024 * 1024; // NEW: Umbral para mostrar alerta visual de almacenamiento
+const STORAGE_PRUNE_KEEP_DAYS = 180; // NEW: Días recientes a preservar antes de recortar entrenos antiguos
 const STORAGE_SAVE_ERROR_MESSAGE =
   "No se pudo guardar tu entrenamiento en este dispositivo. Comprueba si el modo privado está activado o libera espacio y vuelve a intentarlo.";
+const STORAGE_PRUNE_MESSAGE =
+  "Se limpiaron entrenos antiguos para liberar espacio. Si necesitas conservarlos, exporta tus datos.";
 const FIREBASE_COLLECTION = "workouts";
 const FIREBASE_DOC_VERSION = 1;
 let storageWarningEl = null;
@@ -954,6 +957,87 @@ function showStorageWarning(message) {
   storageWarningEl.classList.remove("hidden");
 }
 
+function estimateStateSizeBytes(nextState) {
+  try {
+    return JSON.stringify(nextState).length * 2;
+  } catch (err) {
+    console.warn("No se pudo estimar el tamaño del estado", err);
+    return 0;
+  }
+}
+
+function pruneWeekTypesToWorkouts() {
+  if (!state.weekTypes || !isPlainObject(state.weekTypes)) return;
+  const workoutDays = Object.keys(state.workouts || {});
+  if (!workoutDays.length) {
+    state.weekTypes = {};
+    return;
+  }
+  const keepWeeks = new Set(workoutDays.map((dayISO) => getWeekStartISO(dayISO)));
+  Object.keys(state.weekTypes).forEach((weekISO) => {
+    if (!keepWeeks.has(weekISO)) {
+      delete state.weekTypes[weekISO];
+    }
+  });
+}
+
+function pruneWorkoutsForStorageLimit({
+  maxBytes = STORAGE_APPROX_MAX_BYTES,
+  keepDays = STORAGE_PRUNE_KEEP_DAYS,
+  enforceLimit = true,
+} = {}) {
+  const workouts = state.workouts || {};
+  const allDays = Object.keys(workouts).sort();
+  let estimatedSize = estimateStateSizeBytes(state);
+  if (!allDays.length || estimatedSize <= maxBytes) {
+    return { prunedDays: 0, estimatedSize };
+  }
+
+  const removedDays = [];
+  const removeDay = (dayISO) => {
+    if (workouts && workouts[dayISO]) {
+      delete workouts[dayISO];
+    }
+    if (state.dayMeta && state.dayMeta[dayISO]) {
+      delete state.dayMeta[dayISO];
+    }
+    removedDays.push(dayISO);
+  };
+
+  if (Number.isFinite(keepDays) && keepDays > 0) {
+    const reference = new Date();
+    const cutoff = new Date(reference);
+    cutoff.setDate(reference.getDate() - keepDays);
+    const cutoffISO = fmt(cutoff);
+    for (const dayISO of allDays) {
+      if (dayISO < cutoffISO) {
+        removeDay(dayISO);
+        estimatedSize = estimateStateSizeBytes(state);
+        if (estimatedSize <= maxBytes) {
+          break;
+        }
+      }
+    }
+  }
+
+  if (enforceLimit && estimatedSize > maxBytes) {
+    const remainingDays = Object.keys(workouts).sort();
+    for (const dayISO of remainingDays) {
+      removeDay(dayISO);
+      estimatedSize = estimateStateSizeBytes(state);
+      if (estimatedSize <= maxBytes) {
+        break;
+      }
+    }
+  }
+
+  if (removedDays.length) {
+    pruneWeekTypesToWorkouts();
+  }
+
+  return { prunedDays: removedDays.length, estimatedSize };
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -1150,6 +1234,8 @@ function save({ skipRemote = false, updateTimestamp = true } = {}) {
   state.templates = normalizeTemplates(state.templates);
   state.settings = normalizeSettings(state.settings);
   pruneOldWorkoutIcons();
+  const pruned = pruneWorkoutsForStorageLimit({ enforceLimit: true });
+  const didPrune = pruned.prunedDays > 0;
   if (updateTimestamp) {
     state.lastModifiedAt = new Date().toISOString();
   }
@@ -1157,12 +1243,31 @@ function save({ skipRemote = false, updateTimestamp = true } = {}) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     showStorageUsage(); // NEW: Actualiza el indicador visual tras guardar en localStorage
     storageSaveFailed = false;
-    clearStorageWarning();
+    if (didPrune) {
+      showStorageWarning(STORAGE_PRUNE_MESSAGE);
+    } else {
+      clearStorageWarning();
+    }
     if (!skipRemote) {
       queueRemoteSave();
     }
   } catch (err) {
     console.warn("No se pudo guardar el estado de entreno", err);
+    const retryPruned = pruneWorkoutsForStorageLimit({ enforceLimit: true, keepDays: 0 });
+    if (retryPruned.prunedDays) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        showStorageUsage();
+        storageSaveFailed = false;
+        showStorageWarning(STORAGE_PRUNE_MESSAGE);
+        if (!skipRemote) {
+          queueRemoteSave();
+        }
+        return;
+      } catch (retryErr) {
+        console.warn("No se pudo guardar el estado tras limpiar datos", retryErr);
+      }
+    }
     if (!storageSaveFailed) {
       showStorageWarning(STORAGE_SAVE_ERROR_MESSAGE);
     }
