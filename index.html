@@ -24,6 +24,11 @@
       <button id="prevDayBtn" aria-label="Día anterior">◀</button>
       <input type="date" id="selectedDate" />
       <button id="nextDayBtn" aria-label="Día siguiente">▶</button>
+      <div class="day-shortcuts" role="group" aria-label="Atajos de día">
+        <button id="shortcutYesterday" class="ghost small" type="button">Ayer</button>
+        <button id="shortcutToday" class="ghost small" type="button">Hoy</button>
+        <button id="shortcutTomorrow" class="ghost small" type="button">Mañana</button>
+      </div>
     </div>
     <nav class="tabs" role="tablist" aria-label="Secciones">
       <button class="tab active" data-tab="entreno" role="tab" aria-selected="true">Entreno</button>
@@ -42,7 +47,7 @@
         <div class="copy-day">
           <button id="copyDayToggleBtn" class="ghost">Copiar este día…</button>
           <button id="dayMultiToggleBtn" class="ghost">Seleccionar ejercicios…</button>
-          <div id="copyDayBox" class="copy-box hidden">
+          <div id="copyDayBox" class="copy-box" aria-hidden="true">
             <label for="copyTargetDate">Copiar a:</label>
             <input type="date" id="copyTargetDate" />
             <button id="copyDayBtn" class="primary">Copiar</button>
@@ -50,7 +55,7 @@
           </div>
         </div>
 
-        <section id="dayMultiBox" class="selection-card hidden" aria-live="polite">
+        <section id="dayMultiBox" class="selection-card" aria-live="polite" aria-hidden="true">
           <header class="selection-card-header">
             <h3 class="heading-tight">Añadir ejercicios a varios días</h3>
             <p id="dayMultiSummary" class="muted">Selecciona ejercicios del listado para comenzar.</p>

@@ -125,6 +125,8 @@ const EXERCISE_STATUS_LABELS = {
   [EXERCISE_STATUS.NOT_DONE]: "No hecho",
 };
 
+const exerciseFlashStatus = new Map();
+
 const EXERCISE_STATUS_ALIASES = new Map([
   ["done", EXERCISE_STATUS.DONE],
   ["hecho", EXERCISE_STATUS.DONE],
@@ -1289,6 +1291,9 @@ const tabPanels = {
 
 const prevDayBtn = document.getElementById("prevDayBtn");
 const nextDayBtn = document.getElementById("nextDayBtn");
+const shortcutYesterday = document.getElementById("shortcutYesterday");
+const shortcutToday = document.getElementById("shortcutToday");
+const shortcutTomorrow = document.getElementById("shortcutTomorrow");
 
 /* Añadir */
 const addForm = document.getElementById("addForm");
@@ -1906,15 +1911,26 @@ if (globalNotesForm) {
 
 prevDayBtn.addEventListener("click", ()=> shiftSelectedDay(-1));
 nextDayBtn.addEventListener("click", ()=> shiftSelectedDay(1));
+if (shortcutYesterday) {
+  shortcutYesterday.addEventListener("click", () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    applySelectedDate(d);
+  });
+}
+if (shortcutToday) {
+  shortcutToday.addEventListener("click", () => applySelectedDate(new Date()));
+}
+if (shortcutTomorrow) {
+  shortcutTomorrow.addEventListener("click", () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    applySelectedDate(d);
+  });
+}
 selectedDateInput.addEventListener("change", (e)=>{
   const picked = fromISO(e.target.value || fmt(new Date()));
-  state.selectedDate = fmt(picked);
-  selectedDateInput.value = state.selectedDate;
-  formDate.value = state.selectedDate;
-  if (templateApplyDate) templateApplyDate.value = state.selectedDate;
-  mcRefDate = new Date(picked.getFullYear(), picked.getMonth(), 1);
-  save(); renderAll();
-  highlightMiniCalSelected();
+  applySelectedDate(picked);
 });
 
 /* ==== Lógica Toggle de tipo de objetivo ==== */
@@ -1978,6 +1994,13 @@ function setFormStep(index){
     const percent = Math.min(100, Math.max(0, (current / totalSteps) * 100));
     if (formProgressBarFill){
       formProgressBarFill.style.width = `${percent}%`;
+      formProgressBarFill.classList.remove("is-animating");
+      requestAnimationFrame(() => {
+        formProgressBarFill.classList.add("is-animating");
+      });
+      setTimeout(() => {
+        formProgressBarFill.classList.remove("is-animating");
+      }, 400);
     }
   } else if (formProgressBarFill){
     formProgressBarFill.style.width = totalSteps === 0 ? "100%" : "0%";
@@ -3547,12 +3570,63 @@ function getDayExercises(dayISO){
 
 function updateExerciseStatus(exercise, status, dayISO, options = {}) {
   const normalized = setExerciseStatus(exercise, status);
+  if (exercise && exercise.id) {
+    exerciseFlashStatus.set(exercise.id, normalized);
+  }
   save();
   const shouldToast = hasValue(options.showToast) ? options.showToast : normalized === EXERCISE_STATUS.DONE;
   syncHistoryForDay(dayISO, { showToast: shouldToast });
   renderDay(dayISO);
   renderMiniCalendar();
   callSeguimiento("refresh");
+}
+
+function getLastExerciseEntry(exercise, dayISO) {
+  const targetName = (exercise && exercise.name ? exercise.name : "").trim().toLowerCase();
+  if (!targetName) return null;
+  const days = Object.keys(state.workouts || {})
+    .filter((iso) => iso < dayISO)
+    .sort()
+    .reverse();
+  for (const iso of days) {
+    const list = getDayWorkouts(iso).filter(isPlainObject);
+    const match = list.find((item) => (item.name || "").trim().toLowerCase() === targetName);
+    if (match) {
+      return { dayISO: iso, exercise: match };
+    }
+  }
+  return null;
+}
+
+function buildLastTimeSummary(exercise, dayISO) {
+  const last = getLastExerciseEntry(exercise, dayISO);
+  if (!last) return "";
+  const lastEx = last.exercise;
+  const goalType = getExerciseGoalType(lastEx);
+  const parts = [];
+  if (goalType !== "cardio" && goalType !== "emom" && lastEx.sets) {
+    parts.push(`${lastEx.sets} series`);
+  }
+  if (goalType === "reps" && !lastEx.failure) {
+    const repsLabel = lastEx.reps && lastEx.reps > 0 ? lastEx.reps : "—";
+    parts.push(`${repsLabel} reps`);
+  } else if (goalType === "isometrico" && !lastEx.failure) {
+    const secsLabel = lastEx.seconds && lastEx.seconds > 0 ? lastEx.seconds : "—";
+    parts.push(`${secsLabel} seg`);
+  } else if (goalType === "emom") {
+    const minutes = lastEx.emomMinutes && lastEx.emomMinutes > 0 ? lastEx.emomMinutes : "—";
+    const reps = lastEx.emomReps && lastEx.emomReps > 0 ? lastEx.emomReps : "—";
+    parts.push(`${minutes}' · ${reps} reps`);
+  } else if (goalType === "cardio") {
+    const minutesLabel = lastEx.cardioMinutes && lastEx.cardioMinutes > 0 ? lastEx.cardioMinutes : "—";
+    parts.push(`${minutesLabel} min`);
+  }
+  if (hasValue(lastEx.weightKg)) {
+    parts.push(`${lastEx.weightKg} kg`);
+  }
+  const dateLabel = fromISO(last.dayISO).toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
+  const summary = parts.filter(Boolean).join(" · ");
+  return summary ? `Última vez: ${summary} · ${dateLabel}` : `Última vez: ${dateLabel}`;
 }
 
 function renderDay(dayISO){
@@ -3583,6 +3657,17 @@ function renderDay(dayISO){
     li.dataset.status = currentStatus;
     if (currentStatus === EXERCISE_STATUS.DONE) li.classList.add("completed");
     if (currentStatus === EXERCISE_STATUS.NOT_DONE) li.classList.add("not-done");
+    const flashStatus = exerciseFlashStatus.get(ex.id);
+    if (flashStatus) {
+      li.classList.add(`flash-${flashStatus}`);
+      requestAnimationFrame(() => {
+        li.classList.add("flash-active");
+      });
+      setTimeout(() => {
+        li.classList.remove(`flash-${flashStatus}`, "flash-active");
+        exerciseFlashStatus.delete(ex.id);
+      }, 650);
+    }
     li.dataset.id = ex.id;
 
     const categoryName = CATEGORY_LABELS[ex.category] || CATEGORY_LABELS[CATEGORY_KEYS[0]];
@@ -3686,6 +3771,13 @@ function renderDay(dayISO){
     const meta = document.createElement("div");
     meta.className = "meta";
     meta.innerHTML = metaText(ex);
+    const lastSummary = buildLastTimeSummary(ex, dayISO);
+    let lastEl = null;
+    if (lastSummary) {
+      lastEl = document.createElement("div");
+      lastEl.className = "exercise-last";
+      lastEl.textContent = lastSummary;
+    }
 
     let setsBox = null;
     const recoveryStrip = buildRecoveryStrip(ex);
@@ -3805,6 +3897,7 @@ function renderDay(dayISO){
     });
 
     li.append(categoryTag, title, meta);
+    if (lastEl) li.append(lastEl);
     const emomControls = buildEmomControls(ex, dayISO);
     if (emomControls) li.append(emomControls);
     if (recoveryStrip) li.append(recoveryStrip);
@@ -3839,6 +3932,12 @@ function renderSelectionChips(container, targets, onRemove){
   });
 }
 
+function setPanelVisibility(panel, visible) {
+  if (!panel) return;
+  panel.classList.toggle("is-visible", visible);
+  panel.setAttribute("aria-hidden", visible ? "false" : "true");
+}
+
 function updateDayMultiUI(){
   if (dayMultiSummary) {
     if (!dayMultiSelect.active) {
@@ -3870,7 +3969,7 @@ function updateDayMultiUI(){
     }
   }
   if (dayMultiBox) {
-    dayMultiBox.classList.toggle("hidden", !dayMultiSelect.active);
+    setPanelVisibility(dayMultiBox, dayMultiSelect.active);
   }
   if (dayMultiToggleBtn) {
     dayMultiToggleBtn.textContent = dayMultiSelect.active ? "Salir de selección" : "Seleccionar ejercicios…";
@@ -3899,7 +3998,7 @@ function setDayMultiActive(active){
     if (dayMultiDateInput) dayMultiDateInput.value = state.selectedDate;
   }
   if (next && copyDayBox) {
-    copyDayBox.classList.add("hidden");
+    setPanelVisibility(copyDayBox, false);
   }
   renderDay(state.selectedDate);
   updateDayMultiUI();
@@ -5018,8 +5117,9 @@ function metaText(ex){
     parts.push(`<span><strong>Series:</strong> ${ex.sets}</span>`);
   }
 
-  const statusLabel = EXERCISE_STATUS_LABELS[getExerciseStatus(ex)] || EXERCISE_STATUS_LABELS[EXERCISE_STATUS.PENDING];
-  parts.push(`<span><strong>Estado:</strong> ${statusLabel}</span>`);
+  const statusKey = getExerciseStatus(ex);
+  const statusLabel = EXERCISE_STATUS_LABELS[statusKey] || EXERCISE_STATUS_LABELS[EXERCISE_STATUS.PENDING];
+  parts.push(`<span class="status-pill status-${statusKey}"><strong>Estado:</strong> ${statusLabel}</span>`);
 
   if (goalType === "reps") {
     if (!ex.failure) {
@@ -5535,11 +5635,14 @@ updateLibraryMultiUI();
 
 /* ========= Copiar día ========= */
 copyDayToggleBtn.addEventListener("click", ()=>{
-  copyDayBox.classList.toggle("hidden");
-  copyTargetDate.value = state.selectedDate;
+  const nextVisible = !copyDayBox.classList.contains("is-visible");
+  setPanelVisibility(copyDayBox, nextVisible);
+  if (nextVisible) {
+    copyTargetDate.value = state.selectedDate;
+  }
 });
 cancelCopyBtn.addEventListener("click", ()=>{
-  copyDayBox.classList.add("hidden");
+  setPanelVisibility(copyDayBox, false);
 });
 copyDayBtn.addEventListener("click", ()=>{
   const src = state.selectedDate;
@@ -5555,22 +5658,27 @@ copyDayBtn.addEventListener("click", ()=>{
   save();
   syncHistoryForDay(dstISO, { showToast: false });
   alert("Día copiado.");
-  copyDayBox.classList.add("hidden");
+  setPanelVisibility(copyDayBox, false);
   renderMiniCalendar();
   callSeguimiento("refresh");
 });
 
 /* ========= Cambiar de día (prev/next) ========= */
-function shiftSelectedDay(delta){
-  const d = fromISO(state.selectedDate);
-  d.setDate(d.getDate()+delta);
-  state.selectedDate = fmt(d);
+function applySelectedDate(picked) {
+  const date = picked instanceof Date ? picked : fromISO(picked);
+  state.selectedDate = fmt(date);
   selectedDateInput.value = state.selectedDate;
   formDate.value = state.selectedDate;
   if (templateApplyDate) templateApplyDate.value = state.selectedDate;
-  mcRefDate = new Date(d.getFullYear(), d.getMonth(), 1);
+  mcRefDate = new Date(date.getFullYear(), date.getMonth(), 1);
   save(); renderAll();
   highlightMiniCalSelected();
+}
+
+function shiftSelectedDay(delta){
+  const d = fromISO(state.selectedDate);
+  d.setDate(d.getDate()+delta);
+  applySelectedDate(d);
 }
 
 /* ========= Tabs helper ========= */
