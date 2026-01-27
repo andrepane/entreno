@@ -2469,16 +2469,32 @@ function renderGlobalNotes(){
     const textarea = document.createElement("textarea");
     textarea.value = note.text || "";
     textarea.rows = 2;
-    textarea.addEventListener("input", () => {
-      note.text = textarea.value;
-    });
-    textarea.addEventListener("blur", () => {
+    textarea.readOnly = true;
+
+    let isEditing = false;
+    const editBtn = button("Editar", "ghost small");
+    editBtn.type = "button";
+    const setEditing = (nextState) => {
+      isEditing = nextState;
+      textarea.readOnly = !nextState;
+      editBtn.textContent = nextState ? "Guardar" : "Editar";
+      if (nextState) {
+        textarea.focus();
+        textarea.selectionStart = textarea.value.length;
+      }
+    };
+    editBtn.addEventListener("click", () => {
+      if (!isEditing) {
+        setEditing(true);
+        return;
+      }
       const nextText = textarea.value.trim();
       if (!nextText) {
         deleteGlobalNote(note.id);
         return;
       }
       updateGlobalNote(note.id, { text: nextText });
+      setEditing(false);
     });
 
     const meta = document.createElement("div");
@@ -2489,6 +2505,7 @@ function renderGlobalNotes(){
     const actions = document.createElement("div");
     actions.className = "global-notes-item-actions";
     if (isArchived) {
+      actions.append(editBtn);
       const restoreBtn = button("Reabrir", "ghost small");
       restoreBtn.type = "button";
       restoreBtn.addEventListener("click", () => updateGlobalNote(note.id, { done: false }));
@@ -2497,6 +2514,7 @@ function renderGlobalNotes(){
       deleteBtn.addEventListener("click", () => deleteGlobalNote(note.id));
       actions.append(restoreBtn, deleteBtn);
     } else {
+      actions.append(editBtn);
       const doneBtn = button("Hecha", "ghost small");
       doneBtn.type = "button";
       doneBtn.addEventListener("click", () => updateGlobalNote(note.id, { done: true }));
