@@ -837,6 +837,41 @@
     </div>
   </div>
 
+  <button id="globalNotesToggle" class="global-notes-toggle" type="button" aria-label="Abrir recordatorios">
+    <span class="global-notes-icon" aria-hidden="true">🔔</span>
+    <span id="globalNotesBadge" class="global-notes-badge" aria-hidden="true"></span>
+  </button>
+
+  <div id="globalNotesModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="globalNotesTitle">
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2 id="globalNotesTitle">Recordatorios</h2>
+        <button type="button" class="ghost" data-close-modal="globalNotesModal" aria-label="Cerrar">✕</button>
+      </header>
+      <div class="modal-body global-notes-body">
+        <form id="globalNotesForm" class="global-notes-form">
+          <label class="field">
+            <span>Nueva nota</span>
+            <textarea id="globalNotesInput" rows="2" placeholder="Añade un recordatorio general"></textarea>
+          </label>
+          <div class="global-notes-actions">
+            <button type="submit" class="primary small">Añadir</button>
+          </div>
+        </form>
+        <section class="global-notes-section">
+          <h3 class="heading-tight">Pendientes</h3>
+          <ol id="globalNotesList" class="global-notes-list"></ol>
+          <p id="globalNotesEmpty" class="muted">Sin notas pendientes.</p>
+        </section>
+        <section class="global-notes-section">
+          <h3 class="heading-tight">Archivadas</h3>
+          <ol id="globalNotesArchive" class="global-notes-list muted"></ol>
+          <p id="globalNotesArchiveEmpty" class="muted">No hay notas archivadas.</p>
+        </section>
+      </div>
+    </div>
+  </div>
+
   <footer class="app-footer">
     <small>Datos guardados en tu navegador.</small>
   </footer>
