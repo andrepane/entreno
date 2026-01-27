@@ -281,6 +281,7 @@ let state = {
   libraryExercises: [],
   plannedExercises: [],
   templates: [],
+  globalNotes: [],
   settings: {
     theme: "neon",
     density: "normal",
@@ -715,6 +716,40 @@ function normalizeTemplates(rawList){
   return normalized;
 }
 
+function normalizeGlobalNotes(rawList){
+  if (!Array.isArray(rawList)) return [];
+  const normalized = [];
+  const seen = new Set();
+  rawList.forEach((entry) => {
+    if (typeof entry === "string") {
+      const text = entry.trim();
+      if (!text) return;
+      normalized.push({
+        id: randomUUID(),
+        text,
+        done: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    if (!isPlainObject(entry)) return;
+    const id = typeof entry.id === "string" && entry.id ? entry.id : randomUUID();
+    if (seen.has(id)) return;
+    const text = typeof entry.text === "string" ? entry.text.trim() : "";
+    if (!text) return;
+    normalized.push({
+      id,
+      text,
+      done: !!entry.done,
+      createdAt: typeof entry.createdAt === "string" ? entry.createdAt : new Date().toISOString(),
+      updatedAt: typeof entry.updatedAt === "string" ? entry.updatedAt : new Date().toISOString(),
+    });
+    seen.add(id);
+  });
+  return normalized;
+}
+
 function normalizeSettings(rawSettings){
   const settings = isPlainObject(rawSettings) ? rawSettings : {};
   const themeRaw = typeof settings.theme === "string" ? settings.theme.toLowerCase() : "";
@@ -1038,6 +1073,7 @@ function applyRemoteState(remoteState) {
   state.plannedExercises = normalizePlannedExercises(state.plannedExercises);
   state.plannedExercises = state.plannedExercises.length ? state.plannedExercises : buildPlannedFromWorkouts();
   state.templates = normalizeTemplates(state.templates);
+  state.globalNotes = normalizeGlobalNotes(state.globalNotes);
   state.settings = normalizeSettings(state.settings);
 
   const selected = fmt(fromISO(state.selectedDate));
@@ -1379,6 +1415,16 @@ const goalConfigEmomMinutes = document.getElementById("goalConfigEmomMinutes");
 const goalConfigEmomReps = document.getElementById("goalConfigEmomReps");
 const goalConfigCardioMinutes = document.getElementById("goalConfigCardioMinutes");
 const weightSelectInputs = [formWeight, libraryMultiWeightInput, goalConfigWeight].filter(Boolean);
+
+const globalNotesToggle = document.getElementById("globalNotesToggle");
+const globalNotesBadge = document.getElementById("globalNotesBadge");
+const globalNotesModal = document.getElementById("globalNotesModal");
+const globalNotesForm = document.getElementById("globalNotesForm");
+const globalNotesInput = document.getElementById("globalNotesInput");
+const globalNotesList = document.getElementById("globalNotesList");
+const globalNotesEmpty = document.getElementById("globalNotesEmpty");
+const globalNotesArchive = document.getElementById("globalNotesArchive");
+const globalNotesArchiveEmpty = document.getElementById("globalNotesArchiveEmpty");
 weightSelectInputs.forEach((select) => {
   buildWeightOptions(select);
   setWeightSelectValue(select, select.value);
@@ -1549,6 +1595,7 @@ const originalFutureJSON = JSON.stringify(state.futureExercises || []);
 const originalLibraryJSON = JSON.stringify(state.libraryExercises || []);
 const originalPlannedJSON = JSON.stringify(state.plannedExercises || []);
 const originalTemplatesJSON = JSON.stringify(state.templates || []);
+const originalGlobalNotesJSON = JSON.stringify(state.globalNotes || []);
 const originalSettingsJSON = JSON.stringify(state.settings || {});
 const normalizedWorkouts = normalizeWorkouts(state.workouts);
 const normalizedWorkoutsJSON = JSON.stringify(normalizedWorkouts);
@@ -1563,6 +1610,8 @@ const normalizedLibraryJSON = JSON.stringify(normalizedLibraryExercises);
 const normalizedPlannedExercises = normalizePlannedExercises(state.plannedExercises);
 const normalizedTemplates = normalizeTemplates(state.templates);
 const normalizedTemplatesJSON = JSON.stringify(normalizedTemplates);
+const normalizedGlobalNotes = normalizeGlobalNotes(state.globalNotes);
+const normalizedGlobalNotesJSON = JSON.stringify(normalizedGlobalNotes);
 const normalizedSettings = normalizeSettings(state.settings);
 const normalizedSettingsJSON = JSON.stringify(normalizedSettings);
 state.workouts = normalizedWorkouts;
@@ -1572,6 +1621,7 @@ state.futureExercises = normalizedFutureExercises;
 state.libraryExercises = normalizedLibraryExercises;
 state.plannedExercises = normalizedPlannedExercises.length ? normalizedPlannedExercises : buildPlannedFromWorkouts();
 state.templates = normalizedTemplates;
+state.globalNotes = normalizedGlobalNotes;
 state.settings = normalizedSettings;
 const prunedOldIcons = pruneOldWorkoutIcons();
 
@@ -1612,6 +1662,7 @@ if (
   originalLibraryJSON !== normalizedLibraryJSON ||
   originalPlannedJSON !== JSON.stringify(state.plannedExercises) ||
   originalTemplatesJSON !== normalizedTemplatesJSON ||
+  originalGlobalNotesJSON !== normalizedGlobalNotesJSON ||
   originalSettingsJSON !== normalizedSettingsJSON ||
   prunedOldIcons ||
   resetToToday
@@ -1790,6 +1841,7 @@ if (importDataInput) {
       state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
       state.plannedExercises = normalizePlannedExercises(state.plannedExercises);
       state.templates = normalizeTemplates(state.templates);
+      state.globalNotes = normalizeGlobalNotes(state.globalNotes);
       state.settings = normalizeSettings(state.settings);
       state.selectedDate = fmt(fromISO(state.selectedDate));
       if (selectedDateInput) selectedDateInput.value = state.selectedDate;
@@ -1825,6 +1877,32 @@ document.addEventListener("keydown", (event) => {
     }
   }
 });
+
+if (globalNotesToggle) {
+  globalNotesToggle.addEventListener("click", () => {
+    renderGlobalNotes();
+    openModal(globalNotesModal);
+    if (globalNotesInput) {
+      globalNotesInput.focus();
+    }
+  });
+}
+
+if (globalNotesForm) {
+  globalNotesForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!globalNotesInput) return;
+    const text = (globalNotesInput.value || "").trim();
+    if (!text) return;
+    const notes = Array.isArray(state.globalNotes) ? state.globalNotes : [];
+    const now = new Date().toISOString();
+    notes.unshift({ id: randomUUID(), text, done: false, createdAt: now, updatedAt: now });
+    state.globalNotes = notes;
+    globalNotesInput.value = "";
+    save();
+    renderGlobalNotes();
+  });
+}
 
 prevDayBtn.addEventListener("click", ()=> shiftSelectedDay(-1));
 nextDayBtn.addEventListener("click", ()=> shiftSelectedDay(1));
@@ -2336,7 +2414,107 @@ function renderAll(){
   renderTemplates();
   renderLibrary();
   renderLibrarySelector();
+  renderGlobalNotes();
   callSeguimiento("refresh");
+}
+
+function updateGlobalNotesBadge(){
+  if (!globalNotesBadge) return;
+  const notes = Array.isArray(state.globalNotes) ? state.globalNotes : [];
+  const pending = notes.filter((note) => !note.done);
+  globalNotesBadge.classList.toggle("is-visible", pending.length > 0);
+}
+
+function formatGlobalNoteDate(value){
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
+}
+
+function updateGlobalNote(noteId, patch){
+  if (!noteId) return;
+  const notes = Array.isArray(state.globalNotes) ? state.globalNotes : [];
+  const note = notes.find((item) => item.id === noteId);
+  if (!note) return;
+  Object.assign(note, patch);
+  note.updatedAt = new Date().toISOString();
+  save();
+  renderGlobalNotes();
+}
+
+function deleteGlobalNote(noteId){
+  if (!noteId) return;
+  const notes = Array.isArray(state.globalNotes) ? state.globalNotes : [];
+  state.globalNotes = notes.filter((note) => note.id !== noteId);
+  save();
+  renderGlobalNotes();
+}
+
+function renderGlobalNotes(){
+  updateGlobalNotesBadge();
+  if (!globalNotesList || !globalNotesArchive || !globalNotesEmpty || !globalNotesArchiveEmpty) return;
+  globalNotesList.innerHTML = "";
+  globalNotesArchive.innerHTML = "";
+  const notes = Array.isArray(state.globalNotes) ? state.globalNotes : [];
+  const sorted = [...notes].sort((a, b) => getTimestampMillis(b.updatedAt) - getTimestampMillis(a.updatedAt));
+  const pending = sorted.filter((note) => !note.done);
+  const archived = sorted.filter((note) => note.done);
+
+  const buildItem = (note, isArchived) => {
+    const li = document.createElement("li");
+    li.className = "global-notes-item";
+    li.dataset.id = note.id;
+
+    const textarea = document.createElement("textarea");
+    textarea.value = note.text || "";
+    textarea.rows = 2;
+    textarea.addEventListener("input", () => {
+      note.text = textarea.value;
+    });
+    textarea.addEventListener("blur", () => {
+      const nextText = textarea.value.trim();
+      if (!nextText) {
+        deleteGlobalNote(note.id);
+        return;
+      }
+      updateGlobalNote(note.id, { text: nextText });
+    });
+
+    const meta = document.createElement("div");
+    meta.className = "global-notes-meta";
+    const dateLabel = formatGlobalNoteDate(note.updatedAt || note.createdAt);
+    meta.textContent = dateLabel ? `Actualizada: ${dateLabel}` : "";
+
+    const actions = document.createElement("div");
+    actions.className = "global-notes-item-actions";
+    if (isArchived) {
+      const restoreBtn = button("Reabrir", "ghost small");
+      restoreBtn.type = "button";
+      restoreBtn.addEventListener("click", () => updateGlobalNote(note.id, { done: false }));
+      const deleteBtn = button("Eliminar", "ghost danger small");
+      deleteBtn.type = "button";
+      deleteBtn.addEventListener("click", () => deleteGlobalNote(note.id));
+      actions.append(restoreBtn, deleteBtn);
+    } else {
+      const doneBtn = button("Hecha", "ghost small");
+      doneBtn.type = "button";
+      doneBtn.addEventListener("click", () => updateGlobalNote(note.id, { done: true }));
+      const deleteBtn = button("Eliminar", "ghost danger small");
+      deleteBtn.type = "button";
+      deleteBtn.addEventListener("click", () => deleteGlobalNote(note.id));
+      actions.append(doneBtn, deleteBtn);
+    }
+
+    li.append(textarea, meta, actions);
+    return li;
+  };
+
+  pending.forEach((note) => globalNotesList.append(buildItem(note, false)));
+  archived.forEach((note) => globalNotesArchive.append(buildItem(note, true)));
+
+  globalNotesEmpty.style.display = pending.length ? "none" : "block";
+  globalNotesArchiveEmpty.style.display = archived.length ? "none" : "block";
 }
 
 function renderFutureExercises(){
