@@ -519,6 +519,28 @@
     <!-- Sección SEGUIMIENTO -->
     <section id="tab-seguimiento" class="tab-panel hidden" role="tabpanel">
       <div class="seguimiento-header">
+        <div class="history-controls" aria-label="Filtros de seguimiento">
+          <label class="field" for="historySearchInput">
+            <span>Buscar</span>
+            <input
+              id="historySearchInput"
+              class="history-search"
+              type="search"
+              placeholder="Buscar ejercicio"
+              autocomplete="off"
+            />
+          </label>
+          <label class="field" for="historySortSelect">
+            <span>Orden</span>
+            <select id="historySortSelect">
+              <option value="last-desc">Más reciente</option>
+              <option value="last-asc">Más antiguo</option>
+              <option value="name-asc">Nombre A-Z</option>
+              <option value="name-desc">Nombre Z-A</option>
+              <option value="count-desc">Más registros</option>
+            </select>
+          </label>
+        </div>
         <button id="historyRebuildBtn" class="ghost" aria-label="Reconstruir historial">Reconstruir historial</button>
       </div>
 

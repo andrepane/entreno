@@ -9,6 +9,8 @@
 
   const state = {
     selectedExercise: null,
+    searchQuery: "",
+    sortMode: "last-desc",
   };
 
   const elements = {};
@@ -107,6 +109,8 @@
     elements.summaryList = $("historySummaryList");
     elements.summaryNote = $("historySummaryNote");
     elements.rebuildBtn = $("historyRebuildBtn");
+    elements.searchInput = $("historySearchInput");
+    elements.sortSelect = $("historySortSelect");
     elements.toast = $("historyToast");
     elements.warnings = $("historyWarnings");
 
@@ -114,6 +118,20 @@
 
     if (elements.rebuildBtn) {
       elements.rebuildBtn.addEventListener("click", handleRebuild);
+    }
+    if (elements.searchInput) {
+      elements.searchInput.addEventListener("input", (event) => {
+        state.searchQuery = event.target.value;
+        renderExercises();
+        renderDetail();
+      });
+    }
+    if (elements.sortSelect) {
+      elements.sortSelect.addEventListener("change", (event) => {
+        state.sortMode = event.target.value;
+        renderExercises();
+        renderDetail();
+      });
     }
 
     unsubscribe = historyStore.subscribe(() => {
@@ -144,13 +162,47 @@
 
   function getFilteredExercises() {
     const map = historyStore.listExercises();
-    return Array.from(map.entries()).map(([name, info]) => ({ name, info }));
+    const query = state.searchQuery.trim().toLowerCase();
+    return Array.from(map.entries())
+      .map(([name, info]) => ({ name, info }))
+      .filter(({ name }) => {
+        if (!query) return true;
+        const normalized = normalizeExerciseName(name);
+        const formatted = formatExerciseName(name).toLowerCase();
+        return normalized.includes(query) || formatted.includes(query);
+      });
   }
 
-  function renderExercises() {
-    if (!elements.exerciseList) return;
-    const items = getFilteredExercises();
-    items.sort((a, b) => {
+  function getTotalCount(info) {
+    if (!info || !info.countPorTipo) return 0;
+    return Object.values(info.countPorTipo).reduce((acc, val) => acc + (val || 0), 0);
+  }
+
+  function sortExercises(items) {
+    const mode = state.sortMode;
+    return items.sort((a, b) => {
+      if (mode === "name-asc") {
+        return a.name.localeCompare(b.name);
+      }
+      if (mode === "name-desc") {
+        return b.name.localeCompare(a.name);
+      }
+      if (mode === "last-asc") {
+        const dateA = a.info.lastDate || "";
+        const dateB = b.info.lastDate || "";
+        if (dateA !== dateB) {
+          return dateA < dateB ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name);
+      }
+      if (mode === "count-desc") {
+        const countA = getTotalCount(a.info);
+        const countB = getTotalCount(b.info);
+        if (countA !== countB) {
+          return countB - countA;
+        }
+        return a.name.localeCompare(b.name);
+      }
       const dateA = a.info.lastDate || "";
       const dateB = b.info.lastDate || "";
       if (dateA !== dateB) {
@@ -158,16 +210,28 @@
       }
       return a.name.localeCompare(b.name);
     });
+  }
+
+  function renderExercises() {
+    if (!elements.exerciseList) return;
+    const items = sortExercises(getFilteredExercises());
 
     elements.exerciseList.innerHTML = "";
     if (!items.length) {
       if (elements.exerciseEmpty) {
+        elements.exerciseEmpty.textContent = state.searchQuery
+          ? "No hay ejercicios que coincidan con la búsqueda."
+          : "Sin registros todavía. Añade entrenos para comenzar.";
         elements.exerciseEmpty.classList.remove("hidden");
       }
       return;
     }
     if (elements.exerciseEmpty) {
       elements.exerciseEmpty.classList.add("hidden");
+    }
+
+    if (!items.some(({ name }) => name === state.selectedExercise)) {
+      state.selectedExercise = items[0]?.name || null;
     }
 
     items.forEach(({ name }) => {
