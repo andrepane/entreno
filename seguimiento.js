@@ -108,6 +108,14 @@
     elements.detailTitle = $("historyDetailTitle");
     elements.summaryList = $("historySummaryList");
     elements.summaryNote = $("historySummaryNote");
+    elements.highlightLast = $("historyHighlightLast");
+    elements.highlightLastMeta = $("historyHighlightLastMeta");
+    elements.highlightDelta = $("historyHighlightDelta");
+    elements.highlightDeltaMeta = $("historyHighlightDeltaMeta");
+    elements.highlightBest = $("historyHighlightBest");
+    elements.highlightBestMeta = $("historyHighlightBestMeta");
+    elements.highlightFrequency = $("historyHighlightFrequency");
+    elements.highlightFrequencyMeta = $("historyHighlightFrequencyMeta");
     elements.rebuildBtn = $("historyRebuildBtn");
     elements.searchInput = $("historySearchInput");
     elements.sortSelect = $("historySortSelect");
@@ -317,6 +325,46 @@
     return list.reduce((acc, val) => acc + val, 0);
   }
 
+  function formatDelta(value, unit) {
+    if (!Number.isFinite(value)) return "-";
+    const sign = value > 0 ? "+" : value < 0 ? "−" : "";
+    const numeric = Math.abs(value);
+    const formatted = Number.isInteger(numeric) ? numeric : numeric.toFixed(1);
+    return `${sign}${formatted} ${unit}`.trim();
+  }
+
+  function formatRepsCount(value) {
+    if (!Number.isFinite(value) || value <= 0) return "sin reps";
+    return `${Number.isInteger(value) ? value : value.toFixed(1)} reps`;
+  }
+
+  function getBestSession(sessions) {
+    if (!sessions.length) return null;
+    return sessions.reduce(
+      (best, session) => {
+        const repsTotal = sumReps(session.reps);
+        if (!best) return { session, repsTotal };
+        if (session.weight > best.session.weight) return { session, repsTotal };
+        if (session.weight === best.session.weight && repsTotal > best.repsTotal) {
+          return { session, repsTotal };
+        }
+        return best;
+      },
+      null
+    );
+  }
+
+  function getRecentFrequency(sessions, days = 30) {
+    if (!sessions.length) return 0;
+    const now = new Date();
+    const cutoff = new Date(now.getTime());
+    cutoff.setDate(cutoff.getDate() - days);
+    return sessions.filter((session) => {
+      const date = new Date(session.dateISO);
+      return !Number.isNaN(date.getTime()) && date >= cutoff;
+    }).length;
+  }
+
   function buildQuickComment(sessions) {
     if (sessions.length < 2) return "";
     const [latest, previous] = sessions;
@@ -369,6 +417,80 @@
     return sessions;
   }
 
+  function updateHighlights(sessions) {
+    if (
+      !elements.highlightLast ||
+      !elements.highlightDelta ||
+      !elements.highlightBest ||
+      !elements.highlightFrequency
+    ) {
+      return;
+    }
+
+    const clearText = (el) => {
+      if (!el) return;
+      el.textContent = "";
+      el.classList.remove("good", "alert");
+    };
+
+    [elements.highlightLast, elements.highlightDelta, elements.highlightBest, elements.highlightFrequency].forEach(
+      (el) => {
+        if (el) el.classList.remove("good", "alert");
+      }
+    );
+
+    if (!sessions.length) {
+      elements.highlightLast.textContent = "Sin sesiones";
+      elements.highlightDelta.textContent = "-";
+      elements.highlightBest.textContent = "-";
+      elements.highlightFrequency.textContent = "0 sesiones";
+      clearText(elements.highlightLastMeta);
+      clearText(elements.highlightDeltaMeta);
+      clearText(elements.highlightBestMeta);
+      clearText(elements.highlightFrequencyMeta);
+      return;
+    }
+
+    const [latest, previous] = sessions;
+    const latestReps = sumReps(latest.reps);
+    const latestWeight = latest.weight || 0;
+    const latestWeightLabel = formatWeight(latestWeight);
+    elements.highlightLast.textContent = `${latestWeightLabel} · ${formatRepsCount(latestReps)}`;
+    if (elements.highlightLastMeta) {
+      elements.highlightLastMeta.textContent = `Fecha: ${formatDate(latest.dateISO)}`;
+    }
+
+    const weightDiff = previous ? (latestWeight || 0) - (previous.weight || 0) : 0;
+    const repsDiff = previous ? latestReps - sumReps(previous.reps) : 0;
+    elements.highlightDelta.textContent = previous
+      ? `${formatDelta(weightDiff, "kg")} · ${formatDelta(repsDiff, "reps")}`
+      : "Sin sesión previa";
+    if (elements.highlightDeltaMeta) {
+      elements.highlightDeltaMeta.textContent = previous
+        ? "Comparado con la sesión anterior"
+        : "Añade más sesiones para ver tendencia";
+    }
+    if (previous && (weightDiff > 0 || repsDiff > 0)) {
+      elements.highlightDelta.classList.add("good");
+    } else if (previous && (weightDiff < 0 || repsDiff < 0)) {
+      elements.highlightDelta.classList.add("alert");
+    }
+
+    const best = getBestSession(sessions);
+    if (best && elements.highlightBestMeta) {
+      const bestWeight = best.session.weight || 0;
+      const bestReps = best.repsTotal;
+      elements.highlightBest.textContent = `${formatWeight(bestWeight)} · ${formatRepsCount(bestReps)}`;
+      elements.highlightBestMeta.textContent = `Fecha: ${formatDate(best.session.dateISO)}`;
+    }
+
+    const recentCount = getRecentFrequency(sessions, 30);
+    elements.highlightFrequency.textContent = `${recentCount} sesiones`;
+    if (elements.highlightFrequencyMeta) {
+      elements.highlightFrequencyMeta.textContent = "Últimos 30 días";
+    }
+  }
+
   function renderDetail() {
     if (!elements.detail || !elements.summaryList) return;
     if (!state.selectedExercise) {
@@ -383,6 +505,7 @@
       if (elements.summaryNote) {
         elements.summaryNote.textContent = "";
       }
+      updateHighlights([]);
       return;
     }
 
@@ -401,6 +524,7 @@
 
     const sessions = getExerciseSessions(state.selectedExercise);
     elements.summaryList.innerHTML = "";
+    updateHighlights(sessions);
 
     if (!sessions.length) {
       const empty = document.createElement("li");
