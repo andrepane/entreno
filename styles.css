@@ -56,6 +56,18 @@ body{
   padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
+html.ios-pwa,
+html.ios-pwa body{
+  width:var(--app-width, 100%);
+  height:var(--app-height, 100%);
+}
+
+html.ios-pwa input,
+html.ios-pwa select,
+html.ios-pwa textarea{
+  font-size:16px;
+}
+
 body.density-compact{
   --density-card-padding:10px;
   --density-control-padding:6px 8px;
