@@ -26,6 +26,47 @@ const randomUUID = (() => {
     });
 })();
 
+const setupIOSPwaViewport = () => {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return;
+  const isIOSDevice =
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isStandalone =
+    (typeof window.matchMedia === "function" &&
+      window.matchMedia("(display-mode: standalone)").matches) ||
+    navigator.standalone === true;
+  if (!isIOSDevice || !isStandalone) return;
+
+  const root = document.documentElement;
+  root.classList.add("ios-pwa");
+
+  let lockedWidth = window.innerWidth;
+  let lockedHeight = window.innerHeight;
+
+  const applySize = () => {
+    root.style.setProperty("--app-width", `${lockedWidth}px`);
+    root.style.setProperty("--app-height", `${lockedHeight}px`);
+  };
+
+  const updateSize = () => {
+    const nextWidth = window.innerWidth;
+    const nextHeight = window.innerHeight;
+    const widthChanged = Math.abs(nextWidth - lockedWidth) > 10;
+    const heightGrew = nextHeight > lockedHeight + 10;
+    if (widthChanged || heightGrew) {
+      lockedWidth = nextWidth;
+      lockedHeight = nextHeight;
+      applySize();
+    }
+  };
+
+  applySize();
+  window.addEventListener("resize", updateSize);
+  window.addEventListener("orientationchange", updateSize);
+};
+
+setupIOSPwaViewport();
+
 /* ========= Utilidades de fecha ========= */
 const fmt = (d) => {
   const year = d.getFullYear();
