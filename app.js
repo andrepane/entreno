@@ -5140,6 +5140,7 @@ if (typeof window !== "undefined") {
     syncHistoryForDay,
     getDayMeta,
     setDayMeta,
+    getWeekType,
   });
   window.entrenoLibrary = Object.assign(window.entrenoLibrary || {}, {
     getLibrary,
