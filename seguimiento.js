@@ -44,6 +44,12 @@
     return provider();
   }
 
+  function getWeekType(dayISO) {
+    const provider = global.entrenoApp && global.entrenoApp.getWeekType;
+    if (typeof provider !== "function") return "normal";
+    return provider(dayISO) || "normal";
+  }
+
   function getInitials(name) {
     if (!name) return "";
     return name
@@ -318,8 +324,9 @@
   }
 
   function buildQuickComment(sessions) {
-    if (sessions.length < 2) return "";
-    const [latest, previous] = sessions;
+    const comparable = sessions.filter((session) => !session.isDeload);
+    if (comparable.length < 2) return "";
+    const [latest, previous] = comparable;
     const weightDiff = (latest.weight || 0) - (previous.weight || 0);
     const repsDiff = sumReps(latest.reps) - sumReps(previous.reps);
 
@@ -361,7 +368,8 @@
         if (!reps.length) return;
         const weight = Number(exercise.weightKg) || 0;
         const note = typeof exercise.note === "string" ? exercise.note.trim() : "";
-        sessions.push({ dateISO, weight, reps, note });
+        const weekType = getWeekType(dateISO);
+        sessions.push({ dateISO, weight, reps, note, weekType, isDeload: weekType === "descarga" });
       });
     });
 
@@ -416,6 +424,9 @@
     sessions.forEach((session) => {
       const item = document.createElement("li");
       item.className = "history-summary-item";
+      if (session.isDeload) {
+        item.classList.add("history-summary-item-deload");
+      }
 
       const title = document.createElement("div");
       title.className = "history-summary-title";
@@ -429,6 +440,13 @@
       dateEl.textContent = formatDate(session.dateISO);
       dateEl.className = "history-summary-date";
       meta.append(dateEl);
+
+      if (session.isDeload) {
+        const deloadTag = document.createElement("span");
+        deloadTag.className = "history-summary-deload";
+        deloadTag.textContent = "Semana de descarga";
+        meta.append(deloadTag);
+      }
 
       if (session.note) {
         const noteEl = document.createElement("span");
