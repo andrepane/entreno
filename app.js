@@ -1734,11 +1734,32 @@ window.addEventListener("pagehide", () => {
 
 function setMenuOpen(open) {
   if (!sideMenu || !sideMenuOverlay) return;
+  if (!open) {
+    const activeElement = document.activeElement;
+    if (activeElement && sideMenu.contains(activeElement)) {
+      if (menuToggle) {
+        menuToggle.focus();
+      } else {
+        document.body.focus();
+      }
+    }
+  }
   document.body.classList.toggle("menu-open", open);
   sideMenu.setAttribute("aria-hidden", open ? "false" : "true");
+  if (open) {
+    sideMenu.removeAttribute("inert");
+  } else {
+    sideMenu.setAttribute("inert", "");
+  }
   sideMenuOverlay.hidden = !open;
   if (menuToggle) {
     menuToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  if (open) {
+    const firstItem = sideMenu.querySelector(".side-menu-item");
+    if (firstItem) {
+      firstItem.focus();
+    }
   }
 }
 
@@ -1759,6 +1780,11 @@ function activateTab(tab) {
   }
   sideMenuItems.forEach((item) => {
     item.classList.toggle("active", item.dataset.tab === tab);
+    if (item.dataset.tab === tab) {
+      item.setAttribute("aria-current", "page");
+    } else {
+      item.removeAttribute("aria-current");
+    }
   });
   for (const key in tabPanels) {
     const panel = tabPanels[key];
@@ -1798,7 +1824,17 @@ if (initialTab) {
   const initialTabKey = initialTab.dataset.tab;
   sideMenuItems.forEach((item) => {
     item.classList.toggle("active", item.dataset.tab === initialTabKey);
+    if (item.dataset.tab === initialTabKey) {
+      item.setAttribute("aria-current", "page");
+    } else {
+      item.removeAttribute("aria-current");
+    }
   });
+} else if (sideMenuItems.length) {
+  const defaultTab = sideMenuItems[0].dataset.tab;
+  if (defaultTab) {
+    activateTab(defaultTab);
+  }
 }
 
 if (focusModeToggle) {
@@ -5788,6 +5824,14 @@ function switchToTab(name){
   }
   document.querySelectorAll(".tab").forEach((tab)=>{
     tab.setAttribute("aria-selected", tab.dataset.tab === name ? "true" : "false");
+  });
+  sideMenuItems.forEach((item) => {
+    item.classList.toggle("active", item.dataset.tab === name);
+    if (item.dataset.tab === name) {
+      item.setAttribute("aria-current", "page");
+    } else {
+      item.removeAttribute("aria-current");
+    }
   });
   for (const key in tabPanels) {
     const panel = tabPanels[key];
