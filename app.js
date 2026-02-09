@@ -4082,7 +4082,8 @@ function updateDayMultiUI(){
   }
   if (dayMultiApplyBtn) {
     const canApply = dayMultiSelect.active && dayMultiSelect.selected.size > 0 && dayMultiSelect.targets.length > 0;
-    dayMultiApplyBtn.disabled = !canApply;
+    dayMultiApplyBtn.classList.toggle("is-disabled", !canApply);
+    dayMultiApplyBtn.setAttribute("aria-disabled", canApply ? "false" : "true");
     dayMultiApplyBtn.textContent = dayMultiSelect.targets.length > 1
       ? `Copiar a ${dayMultiSelect.targets.length} días`
       : "Copiar ejercicios";
@@ -5717,10 +5718,16 @@ if (dayMultiToggleBtn) {
   dayMultiToggleBtn.addEventListener("click", () => setDayMultiActive(!dayMultiSelect.active));
 }
 if (dayMultiCancelBtn) {
-  dayMultiCancelBtn.addEventListener("click", () => setDayMultiActive(false));
+  dayMultiCancelBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    setDayMultiActive(false);
+  });
 }
 if (dayMultiAddDateBtn) {
-  dayMultiAddDateBtn.addEventListener("click", handleDayMultiAddDate);
+  dayMultiAddDateBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    handleDayMultiAddDate();
+  });
 }
 if (dayMultiDateInput) {
   dayMultiDateInput.addEventListener("keydown", (event) => {
@@ -5731,7 +5738,11 @@ if (dayMultiDateInput) {
   });
 }
 if (dayMultiApplyBtn) {
-  dayMultiApplyBtn.addEventListener("click", applyDayMultiSelection);
+  dayMultiApplyBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (dayMultiApplyBtn.classList.contains("is-disabled")) return;
+    applyDayMultiSelection();
+  });
 }
 
 if (libraryMultiToggleBtn) {
@@ -5772,10 +5783,12 @@ copyDayToggleBtn.addEventListener("click", ()=>{
     copyTargetDate.value = state.selectedDate;
   }
 });
-cancelCopyBtn.addEventListener("click", ()=>{
+cancelCopyBtn.addEventListener("click", (event)=>{
+  event.preventDefault();
   setPanelVisibility(copyDayBox, false);
 });
-copyDayBtn.addEventListener("click", ()=>{
+copyDayBtn.addEventListener("click", (event)=>{
+  event.preventDefault();
   const src = state.selectedDate;
   const dst = copyTargetDate.value;
   if (!dst){ alert("Selecciona una fecha destino."); return; }

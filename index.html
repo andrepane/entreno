@@ -60,13 +60,13 @@
       <div class="day-summary">
         <h2 id="dayTitle">Ejercicios de <span data-bind="humanDate"></span></h2>
         <div class="copy-day">
-          <button id="copyDayToggleBtn" class="ghost">Copiar este día…</button>
-          <button id="dayMultiToggleBtn" class="ghost">Seleccionar ejercicios…</button>
+          <button id="copyDayToggleBtn" class="ghost day-action-btn">Copiar este día…</button>
+          <button id="dayMultiToggleBtn" class="ghost day-action-btn">Seleccionar ejercicios…</button>
           <div id="copyDayBox" class="copy-box" aria-hidden="true">
             <label for="copyTargetDate">Copiar a:</label>
             <input type="date" id="copyTargetDate" />
-            <button id="copyDayBtn" class="primary">Copiar</button>
-            <button id="cancelCopyBtn" class="ghost">Cancelar</button>
+            <a href="#" id="copyDayBtn" class="action-link">Copiar</a>
+            <a href="#" id="cancelCopyBtn" class="action-link is-muted">Cancelar</a>
           </div>
         </div>
 
@@ -80,12 +80,12 @@
               <span>Nuevo día</span>
               <input type="date" id="dayMultiDate" />
             </label>
-            <button type="button" id="dayMultiAddDate" class="ghost small">Añadir día</button>
+            <a href="#" id="dayMultiAddDate" class="action-link small">Añadir día</a>
           </div>
           <div id="dayMultiChips" class="chip-group"></div>
           <div class="selection-actions">
-            <button type="button" id="dayMultiApply" class="primary" disabled>Copiar ejercicios</button>
-            <button type="button" id="dayMultiCancel" class="ghost">Cancelar</button>
+            <a href="#" id="dayMultiApply" class="action-link">Copiar ejercicios</a>
+            <a href="#" id="dayMultiCancel" class="action-link is-muted">Cancelar</a>
           </div>
         </section>
       </div>
