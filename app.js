@@ -1322,6 +1322,11 @@ function decorateIcons(target, icon, options) {
 }
 
 const tabs = document.querySelectorAll(".tab");
+const menuToggle = document.getElementById("menuToggle");
+const sideMenu = document.getElementById("sideMenu");
+const sideMenuOverlay = document.getElementById("sideMenuOverlay");
+const sideMenuClose = document.getElementById("sideMenuClose");
+const sideMenuItems = document.querySelectorAll(".side-menu-item");
 const tabPanels = {
   entreno: document.getElementById("tab-entreno"),
   nuevo: document.getElementById("tab-nuevo"),
@@ -1727,26 +1732,74 @@ window.addEventListener("pagehide", () => {
   flushRemoteSave();
 });
 
-tabs.forEach(btn=>{
-  btn.addEventListener("click", ()=>{
-    const activeTabBtn = document.querySelector(".tab.active");
-    if (activeTabBtn) {
-      activeTabBtn.classList.remove("active");
-    }
-    const selectedTabBtn = document.querySelector('.tab[aria-selected="true"]');
-    if (selectedTabBtn) {
-      selectedTabBtn.setAttribute("aria-selected", "false");
-    }
-    btn.classList.add("active");
-    btn.setAttribute("aria-selected", "true");
-    const tab = btn.dataset.tab;
-    for (const key in tabPanels) {
-      const panel = tabPanels[key];
-      if (!panel) continue;
-      panel.classList.toggle("hidden", key !== tab);
-    }
+function setMenuOpen(open) {
+  if (!sideMenu || !sideMenuOverlay) return;
+  document.body.classList.toggle("menu-open", open);
+  sideMenu.setAttribute("aria-hidden", open ? "false" : "true");
+  sideMenuOverlay.hidden = !open;
+  if (menuToggle) {
+    menuToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+}
+
+function activateTab(tab) {
+  if (!tabPanels[tab]) return;
+  const activeTabBtn = document.querySelector(".tab.active");
+  if (activeTabBtn) {
+    activeTabBtn.classList.remove("active");
+  }
+  const selectedTabBtn = document.querySelector('.tab[aria-selected="true"]');
+  if (selectedTabBtn) {
+    selectedTabBtn.setAttribute("aria-selected", "false");
+  }
+  const matchingTabBtn = document.querySelector(`.tab[data-tab="${tab}"]`);
+  if (matchingTabBtn) {
+    matchingTabBtn.classList.add("active");
+    matchingTabBtn.setAttribute("aria-selected", "true");
+  }
+  sideMenuItems.forEach((item) => {
+    item.classList.toggle("active", item.dataset.tab === tab);
+  });
+  for (const key in tabPanels) {
+    const panel = tabPanels[key];
+    if (!panel) continue;
+    panel.classList.toggle("hidden", key !== tab);
+  }
+  setMenuOpen(false);
+}
+
+tabs.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    activateTab(btn.dataset.tab);
   });
 });
+
+sideMenuItems.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    activateTab(btn.dataset.tab);
+  });
+});
+
+if (menuToggle) {
+  menuToggle.addEventListener("click", () => {
+    const isOpen = document.body.classList.contains("menu-open");
+    setMenuOpen(!isOpen);
+  });
+}
+if (sideMenuOverlay) {
+  sideMenuOverlay.addEventListener("click", () => setMenuOpen(false));
+}
+if (sideMenuClose) {
+  sideMenuClose.addEventListener("click", () => setMenuOpen(false));
+}
+
+const initialTab = document.querySelector(".tab.active");
+if (initialTab) {
+  const initialTabKey = initialTab.dataset.tab;
+  sideMenuItems.forEach((item) => {
+    item.classList.toggle("active", item.dataset.tab === initialTabKey);
+  });
+}
 
 if (focusModeToggle) {
   focusModeToggle.addEventListener("click", toggleFocusMode);
