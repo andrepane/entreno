@@ -18,28 +18,39 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="app-header">
-    <h1>CaliGym</h1>
-    <div class="day-controls">
-      <button id="prevDayBtn" aria-label="Día anterior">◀</button>
-      <input type="date" id="selectedDate" />
-      <button id="nextDayBtn" aria-label="Día siguiente">▶</button>
-      <div class="day-shortcuts" role="group" aria-label="Atajos de día">
-        <button id="shortcutYesterday" class="ghost small" type="button">Ayer</button>
-        <button id="shortcutToday" class="ghost small" type="button">Hoy</button>
-        <button id="shortcutTomorrow" class="ghost small" type="button">Mañana</button>
+  <div class="app-shell">
+    <aside id="sidebar" class="sidebar" aria-label="Menú lateral">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Secciones</span>
       </div>
-    </div>
-    <nav class="tabs" role="tablist" aria-label="Secciones">
-      <button class="tab active" data-tab="entreno" role="tab" aria-selected="true">Entreno</button>
-      <button class="tab" data-tab="nuevo" role="tab" aria-selected="false">Añadir</button>
-      <button class="tab" data-tab="libreria" role="tab" aria-selected="false">Librería</button>
-      <button class="tab" data-tab="seguimiento" role="tab" aria-selected="false">Seguimiento</button>
-      <button class="tab" data-tab="ajustes" role="tab" aria-selected="false">Ajustes</button>
-    </nav>
-  </header>
+      <nav class="tabs" role="tablist" aria-label="Secciones">
+        <button class="tab active" data-tab="entreno" role="tab" aria-selected="true">Entreno</button>
+        <button class="tab" data-tab="nuevo" role="tab" aria-selected="false">Añadir</button>
+        <button class="tab" data-tab="libreria" role="tab" aria-selected="false">Librería</button>
+        <button class="tab" data-tab="seguimiento" role="tab" aria-selected="false">Seguimiento</button>
+        <button class="tab" data-tab="ajustes" role="tab" aria-selected="false">Ajustes</button>
+      </nav>
+    </aside>
 
-  <main>
+    <div class="app-content">
+      <header class="app-header">
+        <div class="header-top">
+          <button id="sidebarToggle" class="ghost small" type="button" aria-controls="sidebar" aria-expanded="true">Ocultar menú</button>
+          <h1>CaliGym</h1>
+        </div>
+        <div class="day-controls">
+          <button id="prevDayBtn" aria-label="Día anterior">◀</button>
+          <input type="date" id="selectedDate" />
+          <button id="nextDayBtn" aria-label="Día siguiente">▶</button>
+          <div class="day-shortcuts" role="group" aria-label="Atajos de día">
+            <button id="shortcutYesterday" class="ghost small" type="button">Ayer</button>
+            <button id="shortcutToday" class="ghost small" type="button">Hoy</button>
+            <button id="shortcutTomorrow" class="ghost small" type="button">Mañana</button>
+          </div>
+        </div>
+      </header>
+
+      <main>
     <!-- Sección ENTRENO -->
     <section id="tab-entreno" class="tab-panel" role="tabpanel">
       <div class="day-summary">
@@ -623,7 +634,9 @@
       </section>
 
     </section>
-  </main>
+      </main>
+    </div>
+  </div>
 
   <!-- Mini calendario -->
   <aside class="mini-cal" aria-label="Calendario">

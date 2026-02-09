@@ -1329,6 +1329,7 @@ const tabPanels = {
   seguimiento: document.getElementById("tab-seguimiento"),
   ajustes: document.getElementById("tab-ajustes")
 };
+const sidebarToggleBtn = document.getElementById("sidebarToggle");
 
 const prevDayBtn = document.getElementById("prevDayBtn");
 const nextDayBtn = document.getElementById("nextDayBtn");
@@ -1747,6 +1748,15 @@ tabs.forEach(btn=>{
     }
   });
 });
+
+if (sidebarToggleBtn) {
+  sidebarToggleBtn.addEventListener("click", () => {
+    document.body.classList.toggle("sidebar-collapsed");
+    const isCollapsed = document.body.classList.contains("sidebar-collapsed");
+    sidebarToggleBtn.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+    sidebarToggleBtn.textContent = isCollapsed ? "Mostrar menú" : "Ocultar menú";
+  });
+}
 
 if (focusModeToggle) {
   focusModeToggle.addEventListener("click", toggleFocusMode);
