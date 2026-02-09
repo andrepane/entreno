@@ -425,9 +425,10 @@ main{flex:1 1 auto; padding:clamp(14px, 5vw, 28px)}
 .history-chart-overlay{position:absolute; inset:12px; pointer-events:none; border-radius:12px; --marker-position:100%;}
 .history-chart-highlight{position:absolute; top:0; bottom:0; left:var(--marker-position); right:0; background:linear-gradient(90deg, var(--accent-fade) 0%, var(--accent-whisper) 100%);}
 
-.training-hub{display:flex; flex-direction:column; gap:16px; margin-bottom:16px;}
-.training-hub-header{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
-.training-actions{display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));}
+.training-hub{display:flex; flex-direction:column; gap:8px; margin-bottom:12px;}
+.training-hub-compact{padding:10px 12px;}
+.training-actions{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+.training-actions-compact{justify-content:flex-start;}
 .training-actions .compact{padding:4px 8px; font-size:.75rem; border-radius:8px;}
 
 .template-section{display:flex; flex-direction:column; gap:12px; margin-top:16px;}
