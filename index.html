@@ -19,7 +19,14 @@
 </head>
 <body>
   <header class="app-header">
-    <h1>CaliGym</h1>
+    <div class="app-header-top">
+      <button id="menuToggle" class="menu-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="sideMenu">
+        <span class="menu-toggle-bar"></span>
+        <span class="menu-toggle-bar"></span>
+        <span class="menu-toggle-bar"></span>
+      </button>
+      <h1>CaliGym</h1>
+    </div>
     <div class="day-controls">
       <button id="prevDayBtn" aria-label="Día anterior">◀</button>
       <input type="date" id="selectedDate" />
@@ -38,6 +45,21 @@
       <button class="tab" data-tab="ajustes" role="tab" aria-selected="false">Ajustes</button>
     </nav>
   </header>
+
+  <div id="sideMenuOverlay" class="side-menu-overlay" hidden></div>
+  <aside id="sideMenu" class="side-menu" aria-hidden="true">
+    <div class="side-menu-header">
+      <span class="side-menu-title">Navegación</span>
+      <button id="sideMenuClose" class="ghost small" type="button">Cerrar</button>
+    </div>
+    <nav class="side-menu-nav" aria-label="Secciones principales">
+      <button class="side-menu-item" data-tab="entreno" type="button">Entreno</button>
+      <button class="side-menu-item" data-tab="nuevo" type="button">Añadir</button>
+      <button class="side-menu-item" data-tab="libreria" type="button">Librería</button>
+      <button class="side-menu-item" data-tab="seguimiento" type="button">Seguimiento</button>
+      <button class="side-menu-item" data-tab="ajustes" type="button">Ajustes</button>
+    </nav>
+  </aside>
 
   <main>
     <!-- Sección ENTRENO -->

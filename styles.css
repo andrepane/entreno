@@ -139,7 +139,110 @@ main,
   border-bottom:1px solid var(--header-border);
   padding:clamp(12px, 4vw, 20px);
 }
-.app-header h1{margin:0 0 6px 0; font-size:1.25rem; letter-spacing: .5px}
+.app-header-top{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-bottom:6px;
+}
+.app-header h1{margin:0; font-size:1.25rem; letter-spacing: .5px}
+
+.menu-toggle{
+  width:44px;
+  height:44px;
+  border-radius:14px;
+  border:1px solid var(--border);
+  background:var(--panel);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  padding:0;
+}
+.menu-toggle-bar{
+  width:20px;
+  height:2px;
+  border-radius:999px;
+  background:var(--text);
+  display:block;
+  transition:transform .2s ease, opacity .2s ease;
+}
+
+.side-menu-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.45);
+  opacity:0;
+  visibility:hidden;
+  transition:opacity .25s ease;
+  z-index:4;
+}
+.side-menu{
+  position:fixed;
+  top:0;
+  left:0;
+  height:100%;
+  width:min(78vw, 320px);
+  background:linear-gradient(180deg, rgba(18,22,30,0.96), rgba(12,15,20,0.96));
+  border-right:1px solid var(--border);
+  box-shadow:var(--shadow);
+  transform:translateX(-100%);
+  transition:transform .25s ease;
+  z-index:5;
+  padding:calc(env(safe-area-inset-top) + 18px) 18px 18px calc(env(safe-area-inset-left) + 18px);
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+}
+.side-menu-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+.side-menu-title{
+  font-weight:600;
+  letter-spacing:.3px;
+}
+.side-menu-nav{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.side-menu-item{
+  text-align:left;
+  padding:12px 14px;
+  border-radius:14px;
+  border:1px solid var(--border);
+  background:var(--surface-2);
+  color:var(--text);
+  font-weight:600;
+}
+.side-menu-item.active{
+  border-color:var(--accent);
+  box-shadow:inset 0 0 0 1px var(--accent-ghost);
+  background:var(--surface-3);
+}
+
+body.menu-open{
+  overflow:hidden;
+}
+body.menu-open .side-menu{
+  transform:translateX(0);
+}
+body.menu-open .side-menu-overlay{
+  opacity:1;
+  visibility:visible;
+}
+body.menu-open .menu-toggle-bar:nth-child(1){
+  transform:translateY(7px) rotate(45deg);
+}
+body.menu-open .menu-toggle-bar:nth-child(2){
+  opacity:0;
+}
+body.menu-open .menu-toggle-bar:nth-child(3){
+  transform:translateY(-7px) rotate(-45deg);
+}
 
 .day-controls{
   display:flex; gap:8px; align-items:center; justify-content:center;
