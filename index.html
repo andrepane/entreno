@@ -910,13 +910,31 @@
     <small>Datos guardados en tu navegador.</small>
   </footer>
 
+  <div id="uiDialogModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="uiDialogTitle" aria-describedby="uiDialogMessage">
+    <div class="modal-content ui-dialog-content">
+      <header class="modal-header">
+        <h2 id="uiDialogTitle">Confirmación</h2>
+      </header>
+      <div class="modal-body">
+        <p id="uiDialogMessage" class="muted"></p>
+        <label id="uiDialogInputWrap" class="field hidden">
+          <span class="sr-only">Valor</span>
+          <input id="uiDialogInput" type="text" autocomplete="off" />
+        </label>
+        <div class="modal-actions">
+          <button id="uiDialogCancel" type="button" class="ghost">Cancelar</button>
+          <button id="uiDialogConfirm" type="button" class="primary">Aceptar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="false"></div>
+
   <script src="ui-icons.js" defer></script>
   <script src="icon-prune.js" defer></script>
   <script src="history.js" defer></script>
   <script src="seguimiento.js" defer></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js" defer></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js" defer></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js" defer></script>
   <script src="firebase-config.js" defer></script>
   <script src="app.js" defer></script>
 </body>
