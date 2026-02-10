@@ -6165,10 +6165,55 @@ mcNext.addEventListener("click", ()=>{
 });
 
 /* ========= PWA ========= */
+const swUpdateBanner = document.getElementById('swUpdateBanner');
+const swUpdateBtn = document.getElementById('swUpdateBtn');
+let waitingServiceWorker = null;
+let refreshingFromUpdate = false;
+
+function setUpdateBannerVisible(visible) {
+  if (!swUpdateBanner) return;
+  swUpdateBanner.classList.toggle('hidden', !visible);
+}
+
+function trackWaitingServiceWorker(worker) {
+  if (!worker) return;
+  waitingServiceWorker = worker;
+  setUpdateBannerVisible(true);
+}
+
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('./service-worker.js')
-      .catch((err) => console.warn('Error registrando el service worker', err));
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('./service-worker.js');
+
+      if (registration.waiting) {
+        trackWaitingServiceWorker(registration.waiting);
+      }
+
+      registration.addEventListener('updatefound', () => {
+        const installing = registration.installing;
+        if (!installing) return;
+        installing.addEventListener('statechange', () => {
+          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+            trackWaitingServiceWorker(registration.waiting || installing);
+          }
+        });
+      });
+
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshingFromUpdate) return;
+        refreshingFromUpdate = true;
+        window.location.reload();
+      });
+    } catch (err) {
+      console.warn('Error registrando el service worker', err);
+    }
+  });
+}
+
+if (swUpdateBtn) {
+  swUpdateBtn.addEventListener('click', () => {
+    if (!waitingServiceWorker) return;
+    waitingServiceWorker.postMessage({ type: 'SKIP_WAITING' });
   });
 }

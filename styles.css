@@ -582,6 +582,23 @@ body.focus-mode main{padding-top:24px;}
 
 .toast{position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--surface-1); color:var(--text); padding:10px 18px; border-radius:999px; border:1px solid var(--border); box-shadow:0 12px 32px rgba(0,0,0,.4); opacity:0; pointer-events:none; transition:opacity .3s ease, transform .3s ease; z-index:20;}
 .toast.visible{opacity:1; transform:translateX(-50%) translateY(-6px);}
+
+.sw-update-banner{
+  position:sticky;
+  top:0;
+  z-index:7;
+  width:min(960px, 100%);
+  margin:8px auto 0;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid var(--accent-soft);
+  background:var(--surface-3);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
 .toast-region{position:fixed; right:16px; bottom:16px; z-index:60; display:flex; flex-direction:column; gap:10px; max-width:min(420px, calc(100vw - 24px));}
 .toast-inline{display:flex; align-items:center; gap:12px; background:var(--surface-1); border:1px solid var(--border); border-left:4px solid var(--primary); border-radius:12px; padding:10px 12px; box-shadow:var(--shadow); opacity:0; transform:translateY(8px); transition:opacity .2s ease, transform .2s ease;}
 .toast-inline.is-visible{opacity:1; transform:translateY(0);}
