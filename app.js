@@ -197,6 +197,145 @@ const EXERCISE_STATUS_ALIASES = new Map([
 ]);
 
 const FIREBASE_DOC_ID = "shared";
+const UI_TOAST_DURATION = 4000;
+const UI_DELETE_UNDO_DURATION = 6000;
+
+const toastRegion = document.getElementById("toastRegion");
+const uiDialogModal = document.getElementById("uiDialogModal");
+const uiDialogTitle = document.getElementById("uiDialogTitle");
+const uiDialogMessage = document.getElementById("uiDialogMessage");
+const uiDialogInputWrap = document.getElementById("uiDialogInputWrap");
+const uiDialogInput = document.getElementById("uiDialogInput");
+const uiDialogCancel = document.getElementById("uiDialogCancel");
+const uiDialogConfirm = document.getElementById("uiDialogConfirm");
+let uiDialogResolver = null;
+let uiDialogMode = "alert";
+
+function showToast(message, { type = "info", duration = UI_TOAST_DURATION, actionLabel = "", onAction = null } = {}) {
+  if (!toastRegion || !message) return;
+  const toast = document.createElement("div");
+  toast.className = `toast-inline toast-${type}`;
+  const text = document.createElement("span");
+  text.textContent = message;
+  toast.append(text);
+  if (actionLabel && typeof onAction === "function") {
+    const actionBtn = document.createElement("button");
+    actionBtn.type = "button";
+    actionBtn.className = "toast-action";
+    actionBtn.textContent = actionLabel;
+    actionBtn.addEventListener("click", () => {
+      onAction();
+      toast.remove();
+    });
+    toast.append(actionBtn);
+  }
+  toastRegion.append(toast);
+  window.setTimeout(() => {
+    toast.classList.add("is-visible");
+  }, 20);
+  window.setTimeout(() => {
+    toast.classList.remove("is-visible");
+    window.setTimeout(() => toast.remove(), 200);
+  }, duration);
+}
+
+function resolveUiDialog(result) {
+  if (!uiDialogResolver) return;
+  const resolver = uiDialogResolver;
+  uiDialogResolver = null;
+  closeModal(uiDialogModal);
+  resolver(result);
+}
+
+function openUiDialog({ title = "", message = "", mode = "alert", confirmText = "Aceptar", cancelText = "Cancelar", defaultValue = "" } = {}) {
+  if (!uiDialogModal || !uiDialogConfirm || !uiDialogCancel) {
+    return Promise.resolve(mode === "confirm" ? false : mode === "prompt" ? null : undefined);
+  }
+  if (uiDialogResolver) {
+    resolveUiDialog(mode === "confirm" ? false : mode === "prompt" ? null : undefined);
+  }
+  uiDialogTitle.textContent = title || "Confirmación";
+  uiDialogMode = mode;
+  uiDialogMessage.textContent = message || "";
+  uiDialogConfirm.textContent = confirmText;
+  uiDialogCancel.textContent = cancelText;
+  uiDialogCancel.classList.toggle("hidden", mode === "alert");
+  const usesInput = mode === "prompt";
+  uiDialogInputWrap.classList.toggle("hidden", !usesInput);
+  if (usesInput) {
+    uiDialogInput.value = defaultValue || "";
+  }
+  openModal(uiDialogModal);
+  if (usesInput) {
+    uiDialogInput.focus();
+    uiDialogInput.select();
+  } else {
+    uiDialogConfirm.focus();
+  }
+  return new Promise((resolve) => {
+    uiDialogResolver = resolve;
+  });
+}
+
+async function uiAlert(message, { type = "info", title = "Aviso" } = {}) {
+  showToast(message, { type });
+  await openUiDialog({ mode: "alert", title, message, confirmText: "Aceptar" });
+}
+
+async function uiConfirm(message, { title = "Confirmar", confirmText = "Aceptar", cancelText = "Cancelar" } = {}) {
+  return openUiDialog({ mode: "confirm", title, message, confirmText, cancelText });
+}
+
+async function uiPrompt(message, defaultValue = "", { title = "Introduce un valor", confirmText = "Guardar", cancelText = "Cancelar" } = {}) {
+  return openUiDialog({ mode: "prompt", title, message, defaultValue, confirmText, cancelText });
+}
+
+function showDeleteUndoToast(message, undoCallback) {
+  showToast(message, {
+    type: "info",
+    duration: UI_DELETE_UNDO_DURATION,
+    actionLabel: "Deshacer",
+    onAction: () => {
+      if (typeof undoCallback === "function") undoCallback();
+      showToast("Cambio deshecho.", { type: "success" });
+    },
+  });
+}
+
+if (uiDialogConfirm) {
+  uiDialogConfirm.addEventListener("click", () => {
+    if (!uiDialogResolver) return;
+    if (!uiDialogInputWrap.classList.contains("hidden")) {
+      resolveUiDialog(uiDialogInput.value);
+      return;
+    }
+    const modeIsAlert = uiDialogCancel.classList.contains("hidden");
+    resolveUiDialog(modeIsAlert ? true : true);
+  });
+}
+
+if (uiDialogCancel) {
+  uiDialogCancel.addEventListener("click", () => {
+    if (uiDialogMode === "prompt") {
+      resolveUiDialog(null);
+      return;
+    }
+    resolveUiDialog(false);
+  });
+}
+
+if (uiDialogInput) {
+  uiDialogInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      resolveUiDialog(uiDialogInput.value);
+    }
+  });
+}
+
+window.entrenoUI = Object.assign(window.entrenoUI || {}, {
+  showToast,
+});
 
 function hasValue(value) {
   return value !== undefined && value !== null;
@@ -1124,7 +1263,9 @@ function applyRemoteState(remoteState) {
   if (selectedDateInput) selectedDateInput.value = state.selectedDate;
   if (formDate) formDate.value = state.selectedDate;
 
-  renderAll();
+  renderCurrentDaySection();
+  renderLibrarySection();
+  renderHistorySection();
   applyThemeSettings();
   save({ skipRemote: true, updateTimestamp: false });
 }
@@ -1193,13 +1334,52 @@ function subscribeToRemoteState() {
 
 function initFirebaseSync() {
   const config = getFirebaseConfig();
-  if (!config || typeof firebase === "undefined") {
+  if (!config) {
     return;
   }
-  firebaseApp = firebase.initializeApp(config);
-  firebaseDb = firebase.firestore();
-  firebaseDocRef = firebaseDb.collection(FIREBASE_COLLECTION).doc(FIREBASE_DOC_ID);
-  subscribeToRemoteState();
+  const start = () => {
+    if (typeof firebase === "undefined") return;
+    firebaseApp = firebase.initializeApp(config);
+    firebaseDb = firebase.firestore();
+    firebaseDocRef = firebaseDb.collection(FIREBASE_COLLECTION).doc(FIREBASE_DOC_ID);
+    subscribeToRemoteState();
+  };
+  if (typeof firebase !== "undefined") {
+    start();
+    return;
+  }
+  const ensureScript = (src) =>
+    new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[data-firebase-src="${src}"]`);
+      if (existing) {
+        if (existing.dataset.loaded === "true") {
+          resolve();
+          return;
+        }
+        existing.addEventListener("load", resolve, { once: true });
+        existing.addEventListener("error", reject, { once: true });
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = src;
+      script.defer = true;
+      script.dataset.firebaseSrc = src;
+      script.addEventListener("load", () => {
+        script.dataset.loaded = "true";
+        resolve();
+      }, { once: true });
+      script.addEventListener("error", reject, { once: true });
+      document.head.append(script);
+    });
+
+  Promise.all([
+    ensureScript("https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"),
+    ensureScript("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"),
+  ])
+    .then(start)
+    .catch((err) => {
+      console.warn("No se pudo cargar Firebase", err);
+    });
 }
 
 function pruneOldWorkoutIcons(referenceDate = new Date()) {
@@ -1699,7 +1879,9 @@ selectedDateInput.value = state.selectedDate;
 formDate.value = state.selectedDate;
 if (templateApplyDate) templateApplyDate.value = state.selectedDate;
 formCategory.value = normalizeCategory(formCategory.value);
-renderAll();
+renderCurrentDaySection();
+renderLibrarySection();
+renderHistorySection();
 showStorageUsage(); // NEW: Muestra el uso estimado de almacenamiento al iniciar la app
 applyThemeSettings();
 setRestTimer(restTimerState.duration);
@@ -1965,7 +2147,7 @@ if (importDataInput) {
       const parsed = JSON.parse(text);
       const incoming = isPlainObject(parsed.state) ? parsed.state : parsed;
       if (!isPlainObject(incoming)) {
-        alert("Archivo inválido.");
+        showToast("Archivo inválido.", { type: "error" });
         return;
       }
       state = { ...state, ...incoming };
@@ -1983,12 +2165,14 @@ if (importDataInput) {
       if (formDate) formDate.value = state.selectedDate;
       if (templateApplyDate) templateApplyDate.value = state.selectedDate;
       save();
-      renderAll();
+      renderCurrentDaySection();
+      renderLibrarySection();
+      renderHistorySection();
       applyThemeSettings();
-      alert("Datos importados correctamente.");
+      showToast("Datos importados correctamente.", { type: "success" });
     } catch (err) {
       console.error("Error importando datos", err);
-      alert("No se pudo importar el archivo.");
+      showToast("No se pudo importar el archivo.", { type: "error" });
     } finally {
       importDataInput.value = "";
     }
@@ -2005,6 +2189,11 @@ document.querySelectorAll("[data-close-modal]").forEach((btn) => {
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    if (uiDialogResolver && uiDialogModal && !uiDialogModal.classList.contains("hidden")) {
+      event.preventDefault();
+      resolveUiDialog(uiDialogMode === "prompt" ? null : false);
+      return;
+    }
     const openModalEl = document.querySelector(".modal:not(.hidden)");
     if (openModalEl) {
       event.preventDefault();
@@ -2359,7 +2548,7 @@ addForm.addEventListener("submit", (e)=>{
     iconName: "",
   };
 
-  if (!ex.name) { alert("Pon un nombre al ejercicio."); return; }
+  if (!ex.name) { showToast("Pon un nombre al ejercicio.", { type: "error" }); return; }
 
   if (addFormSelectedLibrary) {
     ex.libraryId = addFormSelectedLibrary.id;
@@ -2504,23 +2693,27 @@ if (futureList) {
 }
 
 if (saveTemplateBtn) {
-  saveTemplateBtn.addEventListener("click", () => {
+  saveTemplateBtn.addEventListener("click", async () => {
     const exercises = getDayExercises(state.selectedDate);
     if (!exercises.length) {
-      alert("Añade ejercicios antes de guardar una plantilla.");
+      showToast("Añade ejercicios antes de guardar una plantilla.", { type: "error" });
       return;
     }
-    const name = prompt("Nombre de la plantilla:", `Rutina ${toHuman(state.selectedDate)}`);
+    const name = await uiPrompt("Nombre de la plantilla:", `Rutina ${toHuman(state.selectedDate)}`, {
+      title: "Guardar plantilla",
+      confirmText: "Guardar",
+    });
     if (!name || !name.trim()) return;
     const template = buildTemplateFromDay(state.selectedDate, name.trim());
     state.templates = Array.isArray(state.templates) ? [template, ...state.templates] : [template];
     save();
     renderTemplates();
+    showToast("Plantilla guardada.", { type: "success" });
   });
 }
 
 if (templateList) {
-  templateList.addEventListener("click", (event) => {
+  templateList.addEventListener("click", async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     const action = target.dataset.action;
@@ -2539,35 +2732,49 @@ if (templateList) {
       state.selectedDate = dayISO;
       selectedDateInput.value = dayISO;
       formDate.value = dayISO;
-      renderAll();
+      renderCurrentDaySection();
+      renderHistorySection();
       switchToTab("entreno");
     }
     if (action === "rename-template") {
-      const nextName = prompt("Nuevo nombre de plantilla:", template.name);
+      const nextName = await uiPrompt("Nuevo nombre de plantilla:", template.name, { title: "Renombrar plantilla" });
       if (!nextName) return;
       template.name = nextName.trim() || template.name;
       save();
       renderTemplates();
+      showToast("Plantilla renombrada.", { type: "success" });
     }
     if (action === "delete-template") {
-      const ok = confirm("¿Eliminar esta plantilla?");
+      const ok = await uiConfirm("¿Eliminar esta plantilla?", { confirmText: "Eliminar" });
       if (!ok) return;
+      const removed = template;
       state.templates = templates.filter((item) => item.id !== id);
       save();
       renderTemplates();
+      showDeleteUndoToast("Plantilla eliminada.", () => {
+        state.templates = [removed, ...(Array.isArray(state.templates) ? state.templates : [])];
+        save();
+        renderTemplates();
+      });
     }
   });
 }
 
 /* ========= Render ========= */
-function renderAll(){
+function renderCurrentDaySection() {
   renderDay(state.selectedDate);
   renderMiniCalendar();
   renderFutureExercises();
   renderTemplates();
+  renderGlobalNotes();
+}
+
+function renderLibrarySection() {
   renderLibrary();
   renderLibrarySelector();
-  renderGlobalNotes();
+}
+
+function renderHistorySection() {
   callSeguimiento("refresh");
 }
 
@@ -3032,6 +3239,7 @@ function renderLibrary(){
     return;
   }
   items.sort((a, b) => a.name.localeCompare(b.name));
+  const fragment = document.createDocumentFragment();
   items.forEach((item) => {
     const card = document.createElement("article");
     card.className = "library-card";
@@ -3111,10 +3319,16 @@ function renderLibrary(){
       deleteBtn.setAttribute("aria-label", deleteLabel);
       deleteBtn.title = deleteLabel;
     }
-    deleteBtn.addEventListener("click", () => {
-      const ok = confirm(`¿Eliminar "${item.name}" de la librería?`);
+    deleteBtn.addEventListener("click", async () => {
+      const ok = await uiConfirm(`¿Eliminar "${item.name}" de la librería?`, { confirmText: "Eliminar" });
       if (!ok) return;
+      const snapshot = findLibraryExercise(item.id);
+      if (!snapshot) return;
       removeFromLibrary(item.id);
+      showDeleteUndoToast(`"${item.name}" eliminado de la librería.`, () => {
+        addToLibrary(snapshot);
+        renderLibrarySection();
+      });
     });
     actions.append(useBtn, editBtn, deleteBtn);
 
@@ -3139,8 +3353,9 @@ function renderLibrary(){
     }
 
     card.append(header, body, actions);
-    libraryListEl.append(card);
+    fragment.append(card);
   });
+  libraryListEl.append(fragment);
   updateLibraryMultiUI();
 }
 
@@ -3395,7 +3610,7 @@ function closeLibraryForm(){
 function serializeLibraryForm(){
   const name = getTrimmedValue(libraryFormName);
   if (!name) {
-    alert("Añade un nombre al ejercicio de la librería.");
+    showToast("Añade un nombre al ejercicio de la librería.", { type: "error" });
     return null;
   }
   const category = normalizeCategory(getInputValue(libraryFormCategory));
@@ -3406,7 +3621,7 @@ function serializeLibraryForm(){
   if (iconType === "asset") {
     iconName = (getInputValue(libraryFormIcon) || currentLibraryIconName || "").trim();
     if (!iconName) {
-      alert("Elige un icono de la galería para este ejercicio.");
+      showToast("Elige un icono de la galería para este ejercicio.", { type: "error" });
       return null;
     }
   } else {
@@ -3575,7 +3790,7 @@ function serializeGoalConfig(){
   if (weightInput) {
     const weightNumber = Number(weightInput);
     if (!Number.isFinite(weightNumber)) {
-      alert("Introduce un valor numérico para el lastre.");
+      showToast("Introduce un valor numérico para el lastre.", { type: "error" });
       return null;
     }
     payload.weight = weightNumber;
@@ -3584,7 +3799,7 @@ function serializeGoalConfig(){
     const series = Number(getInputValue(goalConfigRepsSeries) || 0);
     const reps = Number(getInputValue(goalConfigRepsValue) || 0);
     if (!series || !reps) {
-      alert("Indica series y repeticiones.");
+      showToast("Indica series y repeticiones.", { type: "error" });
       return null;
     }
     payload.series = series;
@@ -3594,7 +3809,7 @@ function serializeGoalConfig(){
     const series = Number(getInputValue(goalConfigIsoSeries) || 0);
     const segundos = Number(getInputValue(goalConfigIsoSeconds) || 0);
     if (!series || !segundos) {
-      alert("Indica series y segundos.");
+      showToast("Indica series y segundos.", { type: "error" });
       return null;
     }
     payload.series = series;
@@ -3603,7 +3818,7 @@ function serializeGoalConfig(){
   } else if (goalType === "fallo") {
     const series = Number(getInputValue(goalConfigFailSeries) || 0);
     if (!series) {
-      alert("Indica cuántas series harás al fallo.");
+      showToast("Indica cuántas series harás al fallo.", { type: "error" });
       return null;
     }
     payload.series = series;
@@ -3612,7 +3827,7 @@ function serializeGoalConfig(){
     const minutos = Number(getInputValue(goalConfigEmomMinutes) || 0);
     const repsPorMin = Number(getInputValue(goalConfigEmomReps) || 0);
     if (!minutos || !repsPorMin) {
-      alert("Indica minutos y reps por minuto del EMOM.");
+      showToast("Indica minutos y reps por minuto del EMOM.", { type: "error" });
       return null;
     }
     payload.minutos = minutos;
@@ -3621,7 +3836,7 @@ function serializeGoalConfig(){
   } else if (goalType === "cardio") {
     const minutos = Number(getInputValue(goalConfigCardioMinutes) || 0);
     if (!minutos) {
-      alert("Indica los minutos de cardio.");
+      showToast("Indica los minutos de cardio.", { type: "error" });
       return null;
     }
     payload.minutos = minutos;
@@ -4021,9 +4236,25 @@ function renderDay(dayISO){
       editBox.classList.toggle("hidden");
     });
 
-    delBtn.addEventListener("click", () => {
-      if (!confirm("¿Eliminar este ejercicio?")) return;
+    delBtn.addEventListener("click", async () => {
+      const ok = await uiConfirm("¿Eliminar este ejercicio?", { confirmText: "Eliminar" });
+      if (!ok) return;
+      const list = getDayWorkouts(dayISO);
+      const index = list.findIndex((item) => item.id === ex.id);
+      const snapshot = index >= 0 ? JSON.parse(JSON.stringify(list[index])) : null;
       removeExercise(dayISO, ex.id);
+      if (!snapshot) return;
+      showDeleteUndoToast("Ejercicio eliminado.", () => {
+        const current = getDayWorkouts(dayISO);
+        const safeIndex = Math.max(0, Math.min(index, current.length));
+        current.splice(safeIndex, 0, snapshot);
+        state.workouts[dayISO] = current;
+        save();
+        syncHistoryForDay(dayISO, { showToast: false });
+        renderDay(dayISO);
+        renderMiniCalendar();
+        renderHistorySection();
+      });
     });
 
     li.append(categoryTag, title, meta);
@@ -4149,16 +4380,16 @@ function applyDayMultiSelection(){
   if (!dayMultiSelect.active) return;
   const selectedIds = Array.from(dayMultiSelect.selected);
   if (!selectedIds.length) {
-    alert("Selecciona al menos un ejercicio del día.");
+    showToast("Selecciona al menos un ejercicio del día.", { type: "error" });
     return;
   }
   if (!dayMultiSelect.targets.length) {
-    alert("Añade al menos un día destino.");
+    showToast("Añade al menos un día destino.", { type: "error" });
     return;
   }
   const sourceExercises = getDayWorkouts(state.selectedDate).filter((ex) => selectedIds.includes(ex.id));
   if (!sourceExercises.length) {
-    alert("No se encontraron los ejercicios seleccionados.");
+    showToast("No se encontraron los ejercicios seleccionados.", { type: "error" });
     return;
   }
   const updates = new Map();
@@ -4172,7 +4403,7 @@ function applyDayMultiSelection(){
     });
   });
   if (!updates.size) {
-    alert("No se pudieron preparar los ejercicios seleccionados.");
+    showToast("No se pudieron preparar los ejercicios seleccionados.", { type: "error" });
     return;
   }
   updates.forEach((list, iso) => {
@@ -4187,7 +4418,7 @@ function applyDayMultiSelection(){
   renderMiniCalendar();
   callSeguimiento("refresh");
   const totalDays = updates.size;
-  alert(totalDays === 1 ? "Ejercicios copiados en el día seleccionado." : `Ejercicios copiados en ${totalDays} días.`);
+  showToast(totalDays === 1 ? "Ejercicios copiados en el día seleccionado." : `Ejercicios copiados en ${totalDays} días.`, { type: "success" });
   setDayMultiActive(false);
 }
 
@@ -4291,7 +4522,7 @@ function serializeLibraryMultiConfig(){
   if (weightRaw) {
     const weightNumber = Number(weightRaw);
     if (!Number.isFinite(weightNumber)) {
-      alert("Introduce un valor numérico para el lastre.");
+      showToast("Introduce un valor numérico para el lastre.", { type: "error" });
       return null;
     }
     payload.weight = weightNumber;
@@ -4300,7 +4531,7 @@ function serializeLibraryMultiConfig(){
     const series = Number(getInputValue(libraryMultiSeriesInput) || 0);
     const reps = Number(getInputValue(libraryMultiRepsInput) || 0);
     if (!series || !reps) {
-      alert("Indica series y repeticiones para el objetivo.");
+      showToast("Indica series y repeticiones para el objetivo.", { type: "error" });
       return null;
     }
     payload.series = series;
@@ -4310,7 +4541,7 @@ function serializeLibraryMultiConfig(){
     const series = Number(getInputValue(libraryMultiIsoSeriesInput) || 0);
     const seconds = Number(getInputValue(libraryMultiIsoSecondsInput) || 0);
     if (!series || !seconds) {
-      alert("Indica series y segundos para el isométrico.");
+      showToast("Indica series y segundos para el isométrico.", { type: "error" });
       return null;
     }
     payload.series = series;
@@ -4319,7 +4550,7 @@ function serializeLibraryMultiConfig(){
   } else if (goalType === "fallo") {
     const series = Number(getInputValue(libraryMultiFailSeriesInput) || 0);
     if (!series) {
-      alert("Indica cuántas series harás al fallo.");
+      showToast("Indica cuántas series harás al fallo.", { type: "error" });
       return null;
     }
     payload.series = series;
@@ -4328,7 +4559,7 @@ function serializeLibraryMultiConfig(){
     const minutes = Number(getInputValue(libraryMultiEmomMinutesInput) || 0);
     const repsPerMin = Number(getInputValue(libraryMultiEmomRepsInput) || 0);
     if (!minutes || !repsPerMin) {
-      alert("Indica minutos y repeticiones por minuto para el EMOM.");
+      showToast("Indica minutos y repeticiones por minuto para el EMOM.", { type: "error" });
       return null;
     }
     payload.minutos = minutes;
@@ -4337,7 +4568,7 @@ function serializeLibraryMultiConfig(){
   } else if (goalType === "cardio") {
     const minutes = Number(getInputValue(libraryMultiCardioMinutesInput) || 0);
     if (!minutes) {
-      alert("Indica los minutos de cardio.");
+      showToast("Indica los minutos de cardio.", { type: "error" });
       return null;
     }
     payload.minutos = minutes;
@@ -4350,18 +4581,18 @@ function applyLibraryMultiSelection(){
   if (!libraryMultiSelect.active) return;
   const selectedIds = Array.from(libraryMultiSelect.selected);
   if (!selectedIds.length) {
-    alert("Selecciona al menos un ejercicio de la librería.");
+    showToast("Selecciona al menos un ejercicio de la librería.", { type: "error" });
     return;
   }
   if (!libraryMultiSelect.targets.length) {
-    alert("Añade al menos un día destino.");
+    showToast("Añade al menos un día destino.", { type: "error" });
     return;
   }
   const config = serializeLibraryMultiConfig();
   if (!config) return;
   const libraryItems = getLibrary().filter((item) => selectedIds.includes(item.id));
   if (!libraryItems.length) {
-    alert("Los ejercicios seleccionados ya no están disponibles.");
+    showToast("Los ejercicios seleccionados ya no están disponibles.", { type: "error" });
     return;
   }
   const updates = new Map();
@@ -4376,7 +4607,7 @@ function applyLibraryMultiSelection(){
     });
   });
   if (!updates.size) {
-    alert("No se pudieron preparar los ejercicios seleccionados.");
+    showToast("No se pudieron preparar los ejercicios seleccionados.", { type: "error" });
     return;
   }
   updates.forEach((list, iso) => {
@@ -4391,7 +4622,7 @@ function applyLibraryMultiSelection(){
   renderMiniCalendar();
   callSeguimiento("refresh");
   const totalDays = updates.size;
-  alert(totalDays === 1 ? "Ejercicios añadidos al día seleccionado." : `Ejercicios añadidos en ${totalDays} días.`);
+  showToast(totalDays === 1 ? "Ejercicios añadidos al día seleccionado." : `Ejercicios añadidos en ${totalDays} días.`, { type: "success" });
   setLibraryMultiActive(false);
 }
 
@@ -5639,9 +5870,25 @@ function buildEditForm(ex){
       parent.classList.add("hidden");
     }
   });
-  deleteBtn.addEventListener("click", ()=>{
-    if (!confirm("¿Eliminar este ejercicio?")) return;
+  deleteBtn.addEventListener("click", async ()=>{
+    const ok = await uiConfirm("¿Eliminar este ejercicio?", { confirmText: "Eliminar" });
+    if (!ok) return;
+    const list = getDayWorkouts(state.selectedDate);
+    const index = list.findIndex((item) => item.id === ex.id);
+    const snapshot = index >= 0 ? JSON.parse(JSON.stringify(list[index])) : null;
     removeExercise(state.selectedDate, ex.id);
+    if (!snapshot) return;
+    showDeleteUndoToast("Ejercicio eliminado.", () => {
+      const current = getDayWorkouts(state.selectedDate);
+      const safeIndex = Math.max(0, Math.min(index, current.length));
+      current.splice(safeIndex, 0, snapshot);
+      state.workouts[state.selectedDate] = current;
+      save();
+      syncHistoryForDay(state.selectedDate, { showToast: false });
+      renderDay(state.selectedDate);
+      renderMiniCalendar();
+      renderHistorySection();
+    });
   });
 
   return box;
@@ -5778,7 +6025,7 @@ cancelCopyBtn.addEventListener("click", ()=>{
 copyDayBtn.addEventListener("click", ()=>{
   const src = state.selectedDate;
   const dst = copyTargetDate.value;
-  if (!dst){ alert("Selecciona una fecha destino."); return; }
+  if (!dst){ showToast("Selecciona una fecha destino.", { type: "error" }); return; }
   const dstISO = fmt(fromISO(dst));
   const items = getDayWorkouts(src)
     .filter(isPlainObject)
@@ -5788,7 +6035,7 @@ copyDayBtn.addEventListener("click", ()=>{
   state.workouts[dstISO] = targetList.concat(items);
   save();
   syncHistoryForDay(dstISO, { showToast: false });
-  alert("Día copiado.");
+  showToast("Día copiado.", { type: "success" });
   setPanelVisibility(copyDayBox, false);
   renderMiniCalendar();
   callSeguimiento("refresh");
@@ -5802,7 +6049,8 @@ function applySelectedDate(picked) {
   formDate.value = state.selectedDate;
   if (templateApplyDate) templateApplyDate.value = state.selectedDate;
   mcRefDate = new Date(date.getFullYear(), date.getMonth(), 1);
-  save(); renderAll();
+  save(); renderCurrentDaySection();
+  renderHistorySection();
   highlightMiniCalSelected();
 }
 
@@ -5885,7 +6133,8 @@ function renderMiniCalendar(){
       selectedDateInput.value = state.selectedDate;
       formDate.value = state.selectedDate;
       mcRefDate = new Date(year, month, 1);
-      save(); renderAll();
+      save(); renderCurrentDaySection();
+      renderHistorySection();
       highlightMiniCalSelected();
       switchToTab("entreno");
     });

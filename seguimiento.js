@@ -468,7 +468,9 @@
     if (!historyStore) return;
     const calendarProvider = global.entrenoApp && global.entrenoApp.getCalendarSnapshot;
     if (typeof calendarProvider !== "function") {
-      alert("No se pudo reconstruir el historial. Calendario no disponible.");
+      if (global.entrenoUI && typeof global.entrenoUI.showToast === "function") {
+        global.entrenoUI.showToast("No se pudo reconstruir el historial. Calendario no disponible.", { type: "error" });
+      }
       return;
     }
     const calendar = calendarProvider();
@@ -480,6 +482,10 @@
   }
 
   function showToast(message) {
+    if (global.entrenoUI && typeof global.entrenoUI.showToast === "function") {
+      global.entrenoUI.showToast(message, { type: "info" });
+      return;
+    }
     if (!elements.toast) return;
     elements.toast.textContent = message;
     elements.toast.classList.add("visible");
