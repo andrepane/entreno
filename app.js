@@ -67,6 +67,147 @@ const setupIOSPwaViewport = () => {
 
 setupIOSPwaViewport();
 
+const getDebugPerfEnabled = () => {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  const queryEnabled = params.get("debugPerf") === "1";
+  if (queryEnabled) {
+    try {
+      window.localStorage.setItem("debugPerf", "1");
+    } catch (_) {
+      // ignore storage errors in private mode
+    }
+    return true;
+  }
+  try {
+    return window.localStorage.getItem("debugPerf") === "1";
+  } catch (_) {
+    return false;
+  }
+};
+
+const DEBUG_PERF_ENABLED = getDebugPerfEnabled();
+
+const perfDebug = (() => {
+  if (!DEBUG_PERF_ENABLED || typeof window === "undefined") {
+    return {
+      trackFirebaseSubscription: (_name, unsubscribe) => unsubscribe,
+    };
+  }
+
+  const state = {
+    timeoutIds: new Set(),
+    intervalIds: new Set(),
+    listeners: 0,
+    firebaseSubs: 0,
+  };
+  const listenerIds = new WeakMap();
+  const listenerRegistrations = new WeakMap();
+  let listenerSeq = 0;
+
+  const getListenerId = (listener) => {
+    if (!listener || (typeof listener !== "function" && typeof listener !== "object")) return "invalid";
+    if (!listenerIds.has(listener)) {
+      listenerSeq += 1;
+      listenerIds.set(listener, listenerSeq);
+    }
+    return listenerIds.get(listener);
+  };
+
+  const getTargetMap = (target) => {
+    let map = listenerRegistrations.get(target);
+    if (!map) {
+      map = new Map();
+      listenerRegistrations.set(target, map);
+    }
+    return map;
+  };
+
+  const setTimeoutNative = window.setTimeout.bind(window);
+  const clearTimeoutNative = window.clearTimeout.bind(window);
+  const setIntervalNative = window.setInterval.bind(window);
+  const clearIntervalNative = window.clearInterval.bind(window);
+
+  window.setTimeout = function patchedSetTimeout(handler, timeout, ...args) {
+    const wrappedHandler = (...handlerArgs) => {
+      state.timeoutIds.delete(id);
+      if (typeof handler === "function") {
+        return handler(...handlerArgs);
+      }
+      return Function(handler)();
+    };
+    const id = setTimeoutNative(wrappedHandler, timeout, ...args);
+    state.timeoutIds.add(id);
+    return id;
+  };
+  window.clearTimeout = function patchedClearTimeout(id) {
+    state.timeoutIds.delete(id);
+    return clearTimeoutNative(id);
+  };
+  window.setInterval = function patchedSetInterval(handler, timeout, ...args) {
+    const id = setIntervalNative(handler, timeout, ...args);
+    state.intervalIds.add(id);
+    return id;
+  };
+  window.clearInterval = function patchedClearInterval(id) {
+    state.intervalIds.delete(id);
+    return clearIntervalNative(id);
+  };
+
+  const addNative = EventTarget.prototype.addEventListener;
+  const removeNative = EventTarget.prototype.removeEventListener;
+  EventTarget.prototype.addEventListener = function patchedAddEventListener(type, listener, options) {
+    if (listener) {
+      const capture = typeof options === "boolean" ? options : Boolean(options && options.capture);
+      const key = `${type}::${getListenerId(listener)}::${capture}`;
+      const map = getTargetMap(this);
+      if (!map.has(key)) {
+        map.set(key, true);
+        state.listeners += 1;
+      }
+    }
+    return addNative.call(this, type, listener, options);
+  };
+  EventTarget.prototype.removeEventListener = function patchedRemoveEventListener(type, listener, options) {
+    if (listener) {
+      const capture = typeof options === "boolean" ? options : Boolean(options && options.capture);
+      const key = `${type}::${getListenerId(listener)}::${capture}`;
+      const map = getTargetMap(this);
+      if (map.has(key)) {
+        map.delete(key);
+        state.listeners = Math.max(0, state.listeners - 1);
+      }
+    }
+    return removeNative.call(this, type, listener, options);
+  };
+
+  window.setInterval(() => {
+    console.info("[debugPerf] métricas", {
+      activeTimeouts: state.timeoutIds.size,
+      activeIntervals: state.intervalIds.size,
+      activeListeners: state.listeners,
+      firebaseSubscriptions: state.firebaseSubs,
+      visibility: document.visibilityState,
+    });
+  }, 5000);
+
+  const trackFirebaseSubscription = (name, unsubscribe) => {
+    if (typeof unsubscribe !== "function") return unsubscribe;
+    state.firebaseSubs += 1;
+    console.info(`[debugPerf] Firebase subscribe: ${name}`, { active: state.firebaseSubs });
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      state.firebaseSubs = Math.max(0, state.firebaseSubs - 1);
+      console.info(`[debugPerf] Firebase unsubscribe: ${name}`, { active: state.firebaseSubs });
+      unsubscribe();
+    };
+  };
+
+  return { trackFirebaseSubscription };
+})();
+
 /* ========= Utilidades de fecha ========= */
 const fmt = (d) => {
   const year = d.getFullYear();
@@ -1304,7 +1445,7 @@ function flushRemoteSave() {
 function subscribeToRemoteState() {
   if (!firebaseDocRef) return;
   if (firebaseUnsubscribe) firebaseUnsubscribe();
-  firebaseUnsubscribe = firebaseDocRef.onSnapshot(
+  const unsubscribe = firebaseDocRef.onSnapshot(
     (doc) => {
       firebaseReady = true;
       if (!doc.exists) {
@@ -1330,6 +1471,7 @@ function subscribeToRemoteState() {
       console.warn("Error al escuchar cambios en Firebase", err);
     }
   );
+  firebaseUnsubscribe = perfDebug.trackFirebaseSubscription("workouts/shared", unsubscribe);
 }
 
 function initFirebaseSync() {
@@ -1785,7 +1927,7 @@ function startRestTimer() {
   restTimerState.running = true;
   restTimerState.endAt = Date.now() + restTimerState.remaining * 1000;
   if (restTimerState.intervalId) clearInterval(restTimerState.intervalId);
-  restTimerState.intervalId = setInterval(tickRestTimer, 500);
+  restTimerState.intervalId = setInterval(tickRestTimer, 1000);
   tickRestTimer();
 }
 
@@ -1907,7 +2049,11 @@ if (
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     flushRemoteSave();
+    syncEmomInterval();
+    return;
   }
+  tickEmomTimers();
+  syncEmomInterval();
 });
 
 window.addEventListener("pagehide", () => {
@@ -5572,20 +5718,43 @@ function tickEmomTimers(){
 }
 
 function ensureEmomInterval(){
-  if (!emomIntervalId) {
+  if (!emomIntervalId && emomInstances.size) {
     emomIntervalId = setInterval(tickEmomTimers, 1000);
+  }
+}
+
+function clearEmomInterval() {
+  if (!emomIntervalId) return;
+  clearInterval(emomIntervalId);
+  emomIntervalId = null;
+}
+
+function syncEmomInterval() {
+  if (document.visibilityState === "hidden") {
+    clearEmomInterval();
+    return;
+  }
+  const hasRunningTimers = Array.from(emomInstances.values()).some((instance) => {
+    const timer = ensureEmomTimerState(instance.ex);
+    return Boolean(timer && timer.isRunning);
+  });
+  if (hasRunningTimers) {
+    ensureEmomInterval();
+  } else {
+    clearEmomInterval();
   }
 }
 
 function registerEmomInstance(ex, dayISO, elements){
   if (!ex || !elements) return;
   emomInstances.set(ex.id, { ex, dayISO, elements });
-  ensureEmomInterval();
+  syncEmomInterval();
   updateEmomUI({ ex, dayISO, elements });
 }
 
 function clearEmomInstances(){
   emomInstances.clear();
+  clearEmomInterval();
 }
 
 function buildEmomControls(ex, dayISO){
@@ -5650,12 +5819,14 @@ function buildEmomControls(ex, dayISO){
       timer.isRunning = true;
       timer.lastTick = Date.now();
     }
+    syncEmomInterval();
     updateEmomUI({ ex, dayISO, elements: { timeEl, minuteEl, toggleBtn, resetBtn, repsCount, repsGoal } });
     save();
   });
 
   resetBtn.addEventListener("click", () => {
     resetEmomTimerState(ex);
+    syncEmomInterval();
     updateEmomUI({ ex, dayISO, elements: { timeEl, minuteEl, toggleBtn, resetBtn, repsCount, repsGoal } });
     save();
   });
