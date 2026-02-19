@@ -4066,7 +4066,7 @@ function updateExerciseStatus(exercise, status, dayISO, options = {}) {
   }
   save();
   const shouldToast = hasValue(options.showToast) ? options.showToast : normalized === EXERCISE_STATUS.DONE;
-  syncHistoryForDay(dayISO, { showToast: shouldToast });
+  syncHistoryForDay(dayISO, { showToast: shouldToast, exerciseName: exercise && exercise.name });
   renderDay(dayISO);
   renderMiniCalendar();
   callSeguimiento("refresh");
@@ -4353,7 +4353,7 @@ function renderDay(dayISO){
           doneList[i] = v;
           ex.done = doneList;
           save();
-          syncHistoryForDay(dayISO, { showToast: true });
+          syncHistoryForDay(dayISO, { showToast: true, exerciseName: ex && ex.name });
           callSeguimiento("refresh");
         });
         wrap.append(span, input);
@@ -5554,6 +5554,58 @@ function minutesToSeconds(value){
   return Math.round(numeric * 60);
 }
 
+function normalizeHistoryExerciseName(name){
+  if (!name || typeof name !== "string") return "";
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function formatDiffValue(value){
+  const abs = Math.abs(Number(value));
+  if (!Number.isFinite(abs)) return "0";
+  return Number.isInteger(abs) ? String(abs) : String(Number(abs.toFixed(2)));
+}
+
+function buildSingleTypeComment(message){
+  if (!message) return "";
+  if (message.diff == null) {
+    return message.tipo === "peso"
+      ? "🔰 Primer registro de lastre para este ejercicio."
+      : `🔰 Primer registro de ${message.tipo === "reps" ? "repeticiones" : "rendimiento"} para este ejercicio.`;
+  }
+  const formatted = formatDiffValue(message.diff);
+  if (message.tipo === "reps") {
+    if (message.diff > 0) return `🔼 +${formatted} reps respecto al último`;
+    if (message.diff < 0) return `🔽 ${formatted} reps menos respecto al último`;
+    return "➖ Mismas reps que la última vez";
+  }
+  if (message.tipo === "peso") {
+    if (message.diff > 0) return `🔼 +${formatted} kg de lastre respecto al último`;
+    if (message.diff < 0) return `🔽 ${formatted} kg menos de lastre respecto al último`;
+    return "➖ Mismo lastre que la última vez";
+  }
+  return message.text || "";
+}
+
+function buildExerciseHistoryComment(messages, exerciseName){
+  const normalizedName = normalizeHistoryExerciseName(exerciseName);
+  if (!normalizedName) return "";
+  const forExercise = messages.filter(
+    (item) => item && normalizeHistoryExerciseName(item.ejercicio) === normalizedName
+  );
+  if (!forExercise.length) return "";
+  const repsMessage = forExercise.find((item) => item.tipo === "reps") || null;
+  const weightMessage = forExercise.find((item) => item.tipo === "peso") || null;
+
+  if (repsMessage && weightMessage) {
+    return `${buildSingleTypeComment(repsMessage)} · ${buildSingleTypeComment(weightMessage)}`;
+  }
+  if (repsMessage) return buildSingleTypeComment(repsMessage);
+  if (weightMessage) return buildSingleTypeComment(weightMessage);
+
+  const fallback = forExercise.find((item) => item && item.text);
+  return fallback ? fallback.text : "";
+}
+
 function buildHistoryDaySnapshot(dayISO){
   const ejercicios = getDayWorkouts(dayISO)
     .filter(isPlainObject)
@@ -5586,6 +5638,14 @@ function syncHistoryForDay(dayISO, options = {}){
   const result = historyStore.addOrUpdateFromDay(snapshot);
   if (options.showToast === false) return;
   const messages = Array.isArray(result && result.messages) ? result.messages : [];
+  const targetExerciseName = options.exerciseName;
+  if (targetExerciseName) {
+    const targetComment = buildExerciseHistoryComment(messages, targetExerciseName);
+    if (targetComment) {
+      showHistoryToast(targetComment);
+      return;
+    }
+  }
   const priority = ["reps", "tiempo", "peso"];
   let selected = null;
   for (const type of priority) {

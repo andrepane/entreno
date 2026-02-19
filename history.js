@@ -492,24 +492,48 @@
     return { primero, ultimo, delta, pct };
   }
 
-  function buildDiffMessage(tipo, previous, current) {
+  function buildDiffData(tipo, previous, current) {
     if (!previous) {
-      return `🔰 Primer registro para este ejercicio (tipo ${TYPE_LABEL[tipo] || tipo}).`;
+      return {
+        tipo,
+        previous: null,
+        current: Number(current),
+        diff: null,
+        text: `🔰 Primer registro para este ejercicio (tipo ${TYPE_LABEL[tipo] || tipo}).`,
+      };
     }
     const diff = Number(current) - Number(previous);
     if (!Number.isFinite(diff)) {
-      return "";
+      return null;
     }
     const absDiff = Math.abs(diff);
     const unit = TYPE_UNITS[tipo] || "";
     const formatted = Number.isInteger(absDiff) ? absDiff : Number(absDiff.toFixed(2));
     if (diff > 0) {
-      return `🔼 +${formatted} ${unit} respecto al último`;
+      return {
+        tipo,
+        previous: Number(previous),
+        current: Number(current),
+        diff,
+        text: `🔼 +${formatted} ${unit} respecto al último`,
+      };
     }
     if (diff < 0) {
-      return `🔽 ${formatted} ${unit} menos respecto al último`;
+      return {
+        tipo,
+        previous: Number(previous),
+        current: Number(current),
+        diff,
+        text: `🔽 ${formatted} ${unit} menos respecto al último`,
+      };
     }
-    return "➖ Sin cambios respecto al último";
+    return {
+      tipo,
+      previous: Number(previous),
+      current: Number(current),
+      diff,
+      text: "➖ Sin cambios respecto al último",
+    };
   }
 
   function addOrUpdateFromDay(day) {
@@ -544,7 +568,7 @@
         .sort((a, b) => a.fechaISO.localeCompare(b.fechaISO))
         .pop();
 
-      const message = buildDiffMessage(newEntry.tipo, previousComparable && previousComparable.valor, newEntry.valor);
+      const message = buildDiffData(newEntry.tipo, previousComparable && previousComparable.valor, newEntry.valor);
 
       if (existingByKey.has(key)) {
         const stored = existingByKey.get(key);
@@ -563,7 +587,7 @@
       }
 
       if (message) {
-        messages.push({ tipo: newEntry.tipo, text: message });
+        messages.push({ ...message, ejercicio: newEntry.ejercicio });
       }
     });
 
