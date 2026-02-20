@@ -208,6 +208,26 @@ const perfDebug = (() => {
   return { trackFirebaseSubscription };
 })();
 
+const runWhenIdle = (callback, timeout = 800) => {
+  if (typeof callback !== "function") return;
+  if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(() => callback(), { timeout });
+    return;
+  }
+  setTimeout(callback, 0);
+};
+
+const debounce = (fn, wait = 250) => {
+  let timeoutId = null;
+  return (...args) => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      timeoutId = null;
+      fn(...args);
+    }, wait);
+  };
+};
+
 /* ========= Utilidades de fecha ========= */
 const fmt = (d) => {
   const year = d.getFullYear();
@@ -236,6 +256,8 @@ const STORAGE_SAVE_ERROR_MESSAGE =
   "No se pudo guardar tu entrenamiento en este dispositivo. Comprueba si el modo privado está activado o libera espacio y vuelve a intentarlo.";
 const FIREBASE_COLLECTION = "workouts";
 const FIREBASE_DOC_VERSION = 1;
+const ADD_FORM_DRAFT_KEY = "workouts.addFormDraft.v1";
+const LIBRARY_RENDER_PAGE_SIZE = 60;
 let storageWarningEl = null;
 let storageSaveFailed = false;
 let lastStorageUsageBytes = 0; // NEW: Seguimiento del uso estimado de localStorage en bytes
@@ -627,6 +649,14 @@ const libraryMultiSelect = {
   selected: new Set(),
   targets: [],
 };
+
+const libraryRenderState = {
+  visibleCount: LIBRARY_RENDER_PAGE_SIZE,
+  lastFilterKey: "",
+};
+
+let nonCriticalUiReady = false;
+let deferredStartupScheduled = false;
 
 const emomInstances = new Map();
 let emomIntervalId = null;
@@ -1855,6 +1885,7 @@ const restTimerState = {
   running: false,
   endAt: 0,
   intervalId: null,
+  intervalMs: null,
 };
 
 function applyThemeSettings() {
@@ -1919,6 +1950,15 @@ function tickRestTimer() {
   }
 }
 
+function syncRestTimerInterval() {
+  if (!restTimerState.running) return;
+  const everyMs = document.visibilityState === "hidden" ? 15000 : 1000;
+  if (restTimerState.intervalMs === everyMs && restTimerState.intervalId) return;
+  if (restTimerState.intervalId) clearInterval(restTimerState.intervalId);
+  restTimerState.intervalMs = everyMs;
+  restTimerState.intervalId = setInterval(tickRestTimer, everyMs);
+}
+
 function startRestTimer() {
   if (restTimerState.running) return;
   if (!restTimerState.remaining) {
@@ -1926,8 +1966,7 @@ function startRestTimer() {
   }
   restTimerState.running = true;
   restTimerState.endAt = Date.now() + restTimerState.remaining * 1000;
-  if (restTimerState.intervalId) clearInterval(restTimerState.intervalId);
-  restTimerState.intervalId = setInterval(tickRestTimer, 1000);
+  syncRestTimerInterval();
   tickRestTimer();
 }
 
@@ -1937,6 +1976,7 @@ function pauseRestTimer() {
   if (restTimerState.intervalId) {
     clearInterval(restTimerState.intervalId);
     restTimerState.intervalId = null;
+    restTimerState.intervalMs = null;
   }
   tickRestTimer();
 }
@@ -1947,6 +1987,7 @@ function stopRestTimer() {
   if (restTimerState.intervalId) {
     clearInterval(restTimerState.intervalId);
     restTimerState.intervalId = null;
+    restTimerState.intervalMs = null;
   }
   updateRestTimerDisplay();
 }
@@ -1958,9 +1999,24 @@ function toggleFocusMode() {
   }
 }
 
+function runDeferredStartupTasks() {
+  if (nonCriticalUiReady) return;
+  nonCriticalUiReady = true;
+  renderLibrarySection();
+  renderHistorySection();
+  showStorageUsage();
+  initFirebaseSync();
+  runWhenIdle(ensureExerciseIconsLoaded, 1200);
+}
+
+function scheduleDeferredStartupTasks() {
+  if (deferredStartupScheduled) return;
+  deferredStartupScheduled = true;
+  runWhenIdle(runDeferredStartupTasks, 1000);
+}
+
 /* ========= Inicialización ========= */
 load();
-initFirebaseSync();
 const originalWorkoutsJSON = JSON.stringify(state.workouts || {});
 const originalDayMetaJSON = JSON.stringify(state.dayMeta || {});
 const originalWeekTypesJSON = JSON.stringify(state.weekTypes || {});
@@ -2022,13 +2078,10 @@ formDate.value = state.selectedDate;
 if (templateApplyDate) templateApplyDate.value = state.selectedDate;
 formCategory.value = normalizeCategory(formCategory.value);
 renderCurrentDaySection();
-renderLibrarySection();
-renderHistorySection();
-showStorageUsage(); // NEW: Muestra el uso estimado de almacenamiento al iniciar la app
 applyThemeSettings();
 setRestTimer(restTimerState.duration);
-Promise.resolve().then(ensureExerciseIconsLoaded);
 attachLibraryEventListeners();
+scheduleDeferredStartupTasks();
 if (
   originalWorkoutsJSON !== normalizedWorkoutsJSON ||
   originalDayMetaJSON !== normalizedDayMetaJSON ||
@@ -2050,10 +2103,14 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     flushRemoteSave();
     syncEmomInterval();
+    syncRestTimerInterval();
     return;
   }
+  scheduleDeferredStartupTasks();
   tickEmomTimers();
   syncEmomInterval();
+  tickRestTimer();
+  syncRestTimerInterval();
 });
 
 window.addEventListener("pagehide", () => {
@@ -2513,6 +2570,50 @@ function clearAddFormLibrarySelection(){
   }
 }
 
+function saveAddFormDraft() {
+  if (typeof sessionStorage === "undefined") return;
+  const draft = {
+    name: getInputValue(formName),
+    category: getInputValue(formCategory),
+    sets: getInputValue(formSets),
+    reps: getInputValue(formReps),
+    seconds: getInputValue(formSeconds),
+    minutes: getInputValue(formCardioMinutes),
+    weight: getInputValue(formWeight),
+    note: getInputValue(formQuickNote),
+  };
+  try {
+    sessionStorage.setItem(ADD_FORM_DRAFT_KEY, JSON.stringify(draft));
+  } catch (_) {}
+}
+
+function restoreAddFormDraft() {
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    const raw = sessionStorage.getItem(ADD_FORM_DRAFT_KEY);
+    if (!raw) return;
+    const draft = JSON.parse(raw);
+    if (!isPlainObject(draft)) return;
+    if (formName && draft.name) formName.value = draft.name;
+    if (formCategory && draft.category) formCategory.value = normalizeCategory(draft.category);
+    if (formSets && draft.sets) formSets.value = draft.sets;
+    if (formReps && draft.reps) formReps.value = draft.reps;
+    if (formSeconds && draft.seconds) formSeconds.value = draft.seconds;
+    if (formCardioMinutes && draft.minutes) formCardioMinutes.value = draft.minutes;
+    if (formWeight && draft.weight) formWeight.value = draft.weight;
+    if (formQuickNote && draft.note) formQuickNote.value = draft.note;
+  } catch (_) {}
+}
+
+const scheduleAddFormDraftSave = debounce(saveAddFormDraft, 300);
+
+function clearAddFormDraft() {
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.removeItem(ADD_FORM_DRAFT_KEY);
+  } catch (_) {}
+}
+
 function setAddFormLibrarySelection(item){
   if (!item) {
     clearAddFormLibrarySelection();
@@ -2554,6 +2655,10 @@ if (formCategory){
 }
 setFormStep(0);
 updateProgressionHint();
+restoreAddFormDraft();
+[formName, formCategory, formSets, formReps, formSeconds, formCardioMinutes, formWeight, formQuickNote].forEach((field) => {
+  if (field) field.addEventListener("input", scheduleAddFormDraftSave);
+});
 
 if (openLibrarySelectorBtn){
   openLibrarySelectorBtn.addEventListener("click", () => {
@@ -2659,6 +2764,7 @@ addForm.addEventListener("reset", () => {
     setFormStep(0);
     updateProgressionHint();
     clearAddFormLibrarySelection();
+    clearAddFormDraft();
   });
 });
 
@@ -2774,6 +2880,7 @@ addForm.addEventListener("submit", (e)=>{
   }
   state.workouts[normalizedDay].push(ex);
   save();
+  clearAddFormDraft();
   syncHistoryForDay(normalizedDay, { showToast: true });
 
   // Ajustar UI
@@ -2921,6 +3028,7 @@ function renderLibrarySection() {
 }
 
 function renderHistorySection() {
+  if (!nonCriticalUiReady) return;
   callSeguimiento("refresh");
 }
 
@@ -3370,6 +3478,11 @@ function renderLibrary(){
     tags: libraryTagsFilter ? normalizeTags(libraryTagsFilter.value) : [],
   };
   const items = filterLibraryItems(getLibrary(), filters);
+  const filtersKey = JSON.stringify(filters);
+  if (libraryRenderState.lastFilterKey !== filtersKey) {
+    libraryRenderState.lastFilterKey = filtersKey;
+    libraryRenderState.visibleCount = LIBRARY_RENDER_PAGE_SIZE;
+  }
   if (libraryMultiSelect.active) {
     const availableIds = new Set(getLibrary().map((item) => item.id));
     Array.from(libraryMultiSelect.selected).forEach((id) => {
@@ -3385,8 +3498,9 @@ function renderLibrary(){
     return;
   }
   items.sort((a, b) => a.name.localeCompare(b.name));
+  const visibleItems = items.slice(0, libraryRenderState.visibleCount);
   const fragment = document.createDocumentFragment();
-  items.forEach((item) => {
+  visibleItems.forEach((item) => {
     const card = document.createElement("article");
     card.className = "library-card";
     card.dataset.id = item.id;
@@ -3502,6 +3616,16 @@ function renderLibrary(){
     fragment.append(card);
   });
   libraryListEl.append(fragment);
+  if (items.length > visibleItems.length) {
+    const loadMoreBtn = button(`Cargar ${Math.min(LIBRARY_RENDER_PAGE_SIZE, items.length - visibleItems.length)} más`, "ghost small");
+    loadMoreBtn.type = "button";
+    loadMoreBtn.classList.add("library-load-more");
+    loadMoreBtn.addEventListener("click", () => {
+      libraryRenderState.visibleCount += LIBRARY_RENDER_PAGE_SIZE;
+      renderLibrary();
+    });
+    libraryListEl.append(loadMoreBtn);
+  }
   updateLibraryMultiUI();
 }
 
