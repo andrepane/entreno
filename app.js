@@ -281,6 +281,20 @@ const GOAL_LABELS = {
   skill: "Skill",
   movilidad: "Movilidad",
 };
+const MUSCLE_GROUP_KEYS = ["pecho", "espalda", "hombro", "piernas", "core", "biceps", "triceps", "antebrazo", "gluteo", "cuerpo_completo", "otro"];
+const MUSCLE_GROUP_LABELS = {
+  pecho: "Pecho",
+  espalda: "Espalda",
+  hombro: "Hombro",
+  piernas: "Piernas",
+  core: "Core",
+  biceps: "Bíceps",
+  triceps: "Tríceps",
+  antebrazo: "Antebrazo",
+  gluteo: "Glúteo",
+  cuerpo_completo: "Cuerpo completo",
+  otro: "Otro",
+};
 const PHASE_KEYS = ["base", "intensificacion", "descarga"];
 const PHASE_LABELS = {
   base: "Base",
@@ -664,6 +678,22 @@ function normalizeCategory(value){
   return CATEGORY_KEYS.includes(key) ? key : CATEGORY_KEYS[0];
 }
 
+function normalizeMuscleGroup(value){
+  const key = (value || "").toString().trim().toLowerCase();
+  return MUSCLE_GROUP_KEYS.includes(key) ? key : "otro";
+}
+
+function inferMuscleGroup(item){
+  if (!item || typeof item !== "object") return "otro";
+  const direct = normalizeMuscleGroup(item.muscleGroup);
+  if (direct !== "otro") return direct;
+  const tags = normalizeTags(item.tags).map((tag) => tag.toLowerCase());
+  const fromTags = MUSCLE_GROUP_KEYS.find((group) => group !== "otro" && tags.includes(group));
+  if (fromTags) return fromTags;
+  if (normalizeCategory(item.category) === "piernas") return "piernas";
+  return "otro";
+}
+
 function normalizeWorkouts(rawWorkouts) {
   if (!isPlainObject(rawWorkouts)) return {};
 
@@ -988,6 +1018,7 @@ function normalizeLibraryExercises(rawList){
     const equipment = EQUIPMENT_KEYS.includes(item.equipment) ? item.equipment : "ninguno";
     const level = LEVEL_KEYS.includes(item.level) ? item.level : "principiante";
     const goal = GOAL_KEYS.includes(item.goal) ? item.goal : "fuerza";
+    const muscleGroup = inferMuscleGroup(item);
     normalized.push({
       id,
       name,
@@ -1001,6 +1032,7 @@ function normalizeLibraryExercises(rawList){
       equipment,
       level,
       goal,
+      muscleGroup,
     });
     seen.add(id);
   });
@@ -1711,6 +1743,7 @@ const librarySearchInput = document.getElementById("librarySearch");
 const libraryCategoryFilter = document.getElementById("libraryCategoryFilter");
 const libraryEquipmentFilter = document.getElementById("libraryEquipmentFilter");
 const libraryLevelFilter = document.getElementById("libraryLevelFilter");
+const libraryMuscleFilter = document.getElementById("libraryMuscleFilter");
 const libraryTagsFilter = document.getElementById("libraryTagsFilter");
 const libraryMultiToggleBtn = document.getElementById("libraryMultiToggle");
 const libraryMultiBox = document.getElementById("libraryMultiBox");
@@ -1752,6 +1785,7 @@ const libraryFormNotes = document.getElementById("libraryFormNotes");
 const libraryFormEquipment = document.getElementById("libraryFormEquipment");
 const libraryFormLevel = document.getElementById("libraryFormLevel");
 const libraryFormGoal = document.getElementById("libraryFormGoal");
+const libraryFormMuscleGroup = document.getElementById("libraryFormMuscleGroup");
 const libraryFormTags = document.getElementById("libraryFormTags");
 
 const EXERCISE_ICON_BASE_PATH = "./icons/exercises";
@@ -3188,6 +3222,10 @@ function updateExercisesFromLibrary(libraryExercise) {
         exercise.category = libraryExercise.category;
         changed = true;
       }
+      if (exercise.muscleGroup !== libraryExercise.muscleGroup) {
+        exercise.muscleGroup = libraryExercise.muscleGroup;
+        changed = true;
+      }
       if (!ignoreIcons && icon) {
         if (exercise.iconType !== icon.iconType) {
           exercise.iconType = icon.iconType;
@@ -3341,14 +3379,16 @@ function filterLibraryItems(items, filters){
   const category = (filters.category || "all").toLowerCase();
   const equipment = (filters.equipment || "all").toLowerCase();
   const level = (filters.level || "all").toLowerCase();
+  const muscleGroup = (filters.muscleGroup || "all").toLowerCase();
   const tags = normalizeTags(filters.tags || []);
   return items.filter((item) => {
     if (!item) return false;
     if (category !== "all" && item.category !== category) return false;
     if (equipment !== "all" && item.equipment !== equipment) return false;
     if (level !== "all" && item.level !== level) return false;
+    if (muscleGroup !== "all" && item.muscleGroup !== muscleGroup) return false;
     if (search) {
-      const haystack = `${item.name} ${Array.isArray(item.tags) ? item.tags.join(" ") : ""}`.toLowerCase();
+      const haystack = `${item.name} ${Array.isArray(item.tags) ? item.tags.join(" ") : ""} ${MUSCLE_GROUP_LABELS[item.muscleGroup] || item.muscleGroup || ""}`.toLowerCase();
       if (!haystack.includes(search)) return false;
     }
     if (tags.length) {
@@ -3367,6 +3407,7 @@ function renderLibrary(){
     category: getInputValue(libraryCategoryFilter) || "all",
     equipment: getInputValue(libraryEquipmentFilter) || "all",
     level: getInputValue(libraryLevelFilter) || "all",
+    muscleGroup: getInputValue(libraryMuscleFilter) || "all",
     tags: libraryTagsFilter ? normalizeTags(libraryTagsFilter.value) : [],
   };
   const items = filterLibraryItems(getLibrary(), filters);
@@ -3415,6 +3456,7 @@ function renderLibrary(){
     const meta = document.createElement("div");
     meta.className = "library-card-meta";
     const metaItems = [
+      { label: MUSCLE_GROUP_LABELS[item.muscleGroup] || item.muscleGroup },
       { label: EQUIPMENT_LABELS[item.equipment] || item.equipment },
       { label: LEVEL_LABELS[item.level] || item.level },
       { label: GOAL_LABELS[item.goal] || item.goal },
@@ -3697,6 +3739,7 @@ function resetLibraryForm(){
     libraryFormIcon.value = "";
   }
   if (libraryIconEmoji) libraryIconEmoji.checked = true;
+  if (libraryFormMuscleGroup) libraryFormMuscleGroup.value = "otro";
   updateLibraryIconRows();
 }
 
@@ -3737,6 +3780,7 @@ function openLibraryForm(item){
       if (libraryFormEquipment) libraryFormEquipment.value = item.equipment || "ninguno";
       if (libraryFormLevel) libraryFormLevel.value = item.level || "principiante";
       if (libraryFormGoal) libraryFormGoal.value = item.goal || "fuerza";
+      if (libraryFormMuscleGroup) libraryFormMuscleGroup.value = normalizeMuscleGroup(item.muscleGroup);
       if (libraryFormTags) libraryFormTags.value = Array.isArray(item.tags) ? item.tags.join(", ") : "";
     }
     updateLibraryIconRows();
@@ -3781,6 +3825,7 @@ function serializeLibraryForm(){
   const equipment = EQUIPMENT_KEYS.includes(getInputValue(libraryFormEquipment)) ? getInputValue(libraryFormEquipment) : "ninguno";
   const level = LEVEL_KEYS.includes(getInputValue(libraryFormLevel)) ? getInputValue(libraryFormLevel) : "principiante";
   const goal = GOAL_KEYS.includes(getInputValue(libraryFormGoal)) ? getInputValue(libraryFormGoal) : "fuerza";
+  const muscleGroup = normalizeMuscleGroup(getInputValue(libraryFormMuscleGroup));
   const base = {
     id: libraryFormId && libraryFormId.value ? libraryFormId.value : randomUUID(),
     name,
@@ -3794,6 +3839,7 @@ function serializeLibraryForm(){
     equipment,
     level,
     goal,
+    muscleGroup,
   };
   return base;
 }
@@ -3814,6 +3860,7 @@ function attachLibraryEventListeners(){
   if (libraryCategoryFilter) libraryCategoryFilter.addEventListener("change", renderLibrary);
   if (libraryEquipmentFilter) libraryEquipmentFilter.addEventListener("change", renderLibrary);
   if (libraryLevelFilter) libraryLevelFilter.addEventListener("change", renderLibrary);
+  if (libraryMuscleFilter) libraryMuscleFilter.addEventListener("change", renderLibrary);
   if (libraryTagsFilter) libraryTagsFilter.addEventListener("input", renderLibrary);
   if (librarySelectorSearch) librarySelectorSearch.addEventListener("input", renderLibrarySelector);
   if (librarySelectorCategory) librarySelectorCategory.addEventListener("change", renderLibrarySelector);
@@ -4010,6 +4057,7 @@ function buildExerciseFromLibrary(libraryExercise, config){
     equipment: libraryExercise.equipment,
     level: libraryExercise.level,
     goalFocus: libraryExercise.goal,
+    muscleGroup: libraryExercise.muscleGroup,
     note: config.notes != null && config.notes !== "" ? config.notes : libraryExercise.notes || "",
     sets,
     goalType,
