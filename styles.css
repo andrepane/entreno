@@ -982,6 +982,7 @@ button.icon-button.icon-with-label .icon{
 .exercise .title-main h3{margin:0; flex:1; min-width:0}
 .exercise .meta{color:var(--muted); font-size:.9rem; margin:6px 0; display:flex; flex-wrap:wrap; gap:6px}
 .exercise .meta span{background:var(--surface-2); padding:2px 8px; border-radius:8px; border:1px solid var(--border-subtle)}
+.exercise .meta .exercise-weight-highlight{background:rgba(56,189,248,0.22); border-color:rgba(125,211,252,0.72); color:#e0f2fe; font-size:1rem; font-weight:700; padding:4px 10px;}
 .exercise .meta .status-pill{border-color:transparent; background:rgba(255,255,255,0.04);}
 .exercise .meta .status-pill.status-done{background:rgba(72,208,109,0.16); color:#b6f2c7;}
 .exercise .meta .status-pill.status-not_done{background:rgba(255,107,107,0.18); color:#ffd1d1;}
