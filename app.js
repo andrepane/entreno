@@ -4319,7 +4319,6 @@ function renderDay(dayISO){
     }
 
     let setsBox = null;
-    const recoveryStrip = buildRecoveryStrip(ex);
     const noteBox = document.createElement("div");
     noteBox.className = "note-box hidden";
     const noteField = document.createElement("div");
@@ -4455,7 +4454,6 @@ function renderDay(dayISO){
     if (lastEl) li.append(lastEl);
     const emomControls = buildEmomControls(ex, dayISO);
     if (emomControls) li.append(emomControls);
-    if (recoveryStrip) li.append(recoveryStrip);
     li.append(noteBox);
     if (setsBox) li.append(setsBox);
     exerciseList.append(li);
@@ -5151,57 +5149,6 @@ function renderTodayInsights(dayISO, exercises){
   suppressDayMetaEvents = false;
 }
 
-function buildRecoveryStrip(ex){
-  const wrapper = document.createElement("div");
-  wrapper.className = "recovery-strip";
-
-  const effortBlock = document.createElement("div");
-  effortBlock.className = "recovery-effort";
-  const effortLabel = document.createElement("span");
-  effortLabel.textContent = "Esfuerzo";
-  const slider = document.createElement("input");
-  slider.type = "range";
-  slider.min = "1";
-  slider.max = "10";
-  slider.step = "1";
-  const valueLabel = document.createElement("span");
-  valueLabel.className = "recovery-value";
-  const clearBtn = button("Limpiar", "ghost micro");
-
-  function syncEffort(){
-    if (ex.perceivedEffort != null){
-      slider.value = String(ex.perceivedEffort);
-      valueLabel.textContent = ex.perceivedEffort;
-      valueLabel.classList.add("active");
-    } else {
-      slider.value = "6";
-      valueLabel.textContent = "—";
-      valueLabel.classList.remove("active");
-    }
-  }
-  syncEffort();
-
-  slider.addEventListener("input", ()=>{
-    valueLabel.textContent = slider.value;
-  });
-  slider.addEventListener("change", ()=>{
-    const numeric = Number(slider.value);
-    ex.perceivedEffort = Number.isFinite(numeric) ? numeric : null;
-    syncEffort();
-    save();
-  });
-  clearBtn.addEventListener("click", ()=>{
-    ex.perceivedEffort = null;
-    syncEffort();
-    save();
-  });
-
-  effortBlock.append(effortLabel, slider, valueLabel, clearBtn);
-
-  wrapper.append(effortBlock);
-  return wrapper;
-}
-
 function setupExerciseDrag(li, dayISO){
   const handle = li.querySelector(".drag-handle");
 
@@ -5733,10 +5680,6 @@ function metaText(ex){
     parts.push(`<span><strong>Series:</strong> ${ex.sets}</span>`);
   }
 
-  const statusKey = getExerciseStatus(ex);
-  const statusLabel = EXERCISE_STATUS_LABELS[statusKey] || EXERCISE_STATUS_LABELS[EXERCISE_STATUS.PENDING];
-  parts.push(`<span class="status-pill status-${statusKey}"><strong>Estado:</strong> ${statusLabel}</span>`);
-
   if (goalType === "reps") {
     if (!ex.failure) {
       const repsLabel = ex.reps && ex.reps > 0 ? ex.reps : "—";
@@ -5756,7 +5699,7 @@ function metaText(ex){
     parts.push(`<span><strong>Cardio:</strong> ${minutesLabel} min</span>`);
   }
 
-  if (ex.weightKg!=null) parts.push(`<span><strong>Lastre:</strong> ${ex.weightKg} kg</span>`);
+  if (ex.weightKg!=null) parts.push(`<span class="exercise-weight-highlight"><strong>Lastre:</strong> ${ex.weightKg} kg</span>`);
   return parts.join(" · ");
 }
 
