@@ -588,6 +588,11 @@
               <h2 id="historyDetailTitle"></h2>
             </header>
 
+            <div class="history-chart-actions" role="group" aria-label="Ver gráficos del ejercicio">
+              <button id="historyRepsChartBtn" class="ghost" type="button">Gráfico de repeticiones</button>
+              <button id="historyWeightChartBtn" class="ghost" type="button">Gráfico de lastre</button>
+            </div>
+
             <ul id="historySummaryList" class="history-summary-list" aria-label="Resumen de series"></ul>
             <p id="historySummaryNote" class="history-summary-quick-note muted"></p>
           </div>
@@ -595,6 +600,19 @@
       </div>
 
       <div id="historyToast" class="toast" role="alert" aria-live="assertive"></div>
+
+      <div id="historyChartModal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="historyChartModalTitle">
+        <div class="modal-content history-chart-modal-content">
+          <header class="modal-header history-chart-modal-header">
+            <h2 id="historyChartModalTitle">Gráfico de seguimiento</h2>
+            <button id="historyChartCloseBtn" class="ghost small" type="button" aria-label="Cerrar gráfico">✕</button>
+          </header>
+          <div class="modal-body history-chart-modal-body">
+            <p id="historyChartModalSubtitle" class="muted"></p>
+            <div id="historyChartContainer" class="history-modal-chart"></div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- Sección AJUSTES -->

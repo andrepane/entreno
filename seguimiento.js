@@ -17,6 +17,7 @@
 
   let unsubscribe = null;
   let toastTimer = null;
+  let chartLastTrigger = null;
 
   function $(id) {
     return document.getElementById(id);
@@ -119,6 +120,13 @@
     elements.sortSelect = $("historySortSelect");
     elements.toast = $("historyToast");
     elements.warnings = $("historyWarnings");
+    elements.repsChartBtn = $("historyRepsChartBtn");
+    elements.weightChartBtn = $("historyWeightChartBtn");
+    elements.chartModal = $("historyChartModal");
+    elements.chartModalTitle = $("historyChartModalTitle");
+    elements.chartModalSubtitle = $("historyChartModalSubtitle");
+    elements.chartContainer = $("historyChartContainer");
+    elements.chartCloseBtn = $("historyChartCloseBtn");
 
     if (!elements.exerciseList || !elements.detail || !elements.summaryList) return;
 
@@ -140,11 +148,36 @@
       });
     }
 
+    if (elements.repsChartBtn) {
+      elements.repsChartBtn.addEventListener("click", (event) => {
+        chartLastTrigger = event.currentTarget;
+        openChartModal("reps");
+      });
+    }
+    if (elements.weightChartBtn) {
+      elements.weightChartBtn.addEventListener("click", (event) => {
+        chartLastTrigger = event.currentTarget;
+        openChartModal("weight");
+      });
+    }
+    if (elements.chartCloseBtn) {
+      elements.chartCloseBtn.addEventListener("click", closeChartModal);
+    }
+    if (elements.chartModal) {
+      elements.chartModal.addEventListener("click", (event) => {
+        if (event.target === elements.chartModal) {
+          closeChartModal();
+        }
+      });
+    }
+
     unsubscribe = historyStore.subscribe(() => {
       updateWarnings();
       renderExercises();
       renderDetail();
     });
+
+    document.addEventListener("keydown", handleKeydown);
 
     updateWarnings();
     renderExercises();
@@ -152,6 +185,13 @@
       autoSelectFirst();
     }
     renderDetail();
+  }
+
+  function handleKeydown(event) {
+    if (event.key !== "Escape") return;
+    if (!elements.chartModal || elements.chartModal.classList.contains("hidden")) return;
+    event.preventDefault();
+    closeChartModal();
   }
 
   function updateWarnings() {
@@ -391,6 +431,8 @@
       if (elements.summaryNote) {
         elements.summaryNote.textContent = "";
       }
+      if (elements.repsChartBtn) elements.repsChartBtn.disabled = true;
+      if (elements.weightChartBtn) elements.weightChartBtn.disabled = true;
       return;
     }
 
@@ -410,6 +452,9 @@
     const sessions = getExerciseSessions(state.selectedExercise);
     elements.summaryList.innerHTML = "";
 
+    if (elements.repsChartBtn) elements.repsChartBtn.disabled = sessions.length === 0;
+    if (elements.weightChartBtn) elements.weightChartBtn.disabled = sessions.length === 0;
+
     if (!sessions.length) {
       const empty = document.createElement("li");
       empty.className = "history-summary-empty";
@@ -418,6 +463,8 @@
       if (elements.summaryNote) {
         elements.summaryNote.textContent = "";
       }
+      if (elements.repsChartBtn) elements.repsChartBtn.disabled = true;
+      if (elements.weightChartBtn) elements.weightChartBtn.disabled = true;
       return;
     }
 
@@ -464,6 +511,167 @@
     }
   }
 
+  function buildChartData(sessions, type) {
+    return sessions
+      .slice()
+      .reverse()
+      .map((session) => ({
+        dateISO: session.dateISO,
+        dateLabel: formatDate(session.dateISO),
+        value: type === "reps" ? sumReps(session.reps) : Number(session.weight) || 0,
+      }));
+  }
+
+  function createLineChart(points, axisLabel) {
+    if (!points.length) {
+      const empty = document.createElement("p");
+      empty.className = "history-line-empty";
+      empty.textContent = "No hay datos suficientes para este gráfico.";
+      return empty;
+    }
+
+    const width = 680;
+    const height = 300;
+    const padLeft = 44;
+    const padRight = 18;
+    const padTop = 18;
+    const padBottom = 56;
+    const innerWidth = width - padLeft - padRight;
+    const innerHeight = height - padTop - padBottom;
+    const maxValue = Math.max(...points.map((point) => point.value), 1);
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("class", "history-line-chart");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", `${axisLabel} por día`);
+
+    const xStep = points.length > 1 ? innerWidth / (points.length - 1) : 0;
+    const toX = (index) => padLeft + (points.length > 1 ? index * xStep : innerWidth / 2);
+    const toY = (value) => padTop + innerHeight - (value / maxValue) * innerHeight;
+
+    [0, 0.25, 0.5, 0.75, 1].forEach((ratio) => {
+      const y = padTop + innerHeight * ratio;
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", padLeft);
+      line.setAttribute("x2", width - padRight);
+      line.setAttribute("y1", y);
+      line.setAttribute("y2", y);
+      line.setAttribute("class", "history-line-grid");
+      svg.append(line);
+    });
+
+    const xAxis = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    xAxis.setAttribute("x1", padLeft);
+    xAxis.setAttribute("x2", width - padRight);
+    xAxis.setAttribute("y1", padTop + innerHeight);
+    xAxis.setAttribute("y2", padTop + innerHeight);
+    xAxis.setAttribute("class", "history-line-axis");
+    svg.append(xAxis);
+
+    const yAxis = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    yAxis.setAttribute("x1", padLeft);
+    yAxis.setAttribute("x2", padLeft);
+    yAxis.setAttribute("y1", padTop);
+    yAxis.setAttribute("y2", padTop + innerHeight);
+    yAxis.setAttribute("class", "history-line-axis");
+    svg.append(yAxis);
+
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const d = points
+      .map((point, index) => `${index === 0 ? "M" : "L"} ${toX(index).toFixed(2)} ${toY(point.value).toFixed(2)}`)
+      .join(" ");
+    path.setAttribute("d", d);
+    path.setAttribute("class", "history-line-path");
+    svg.append(path);
+
+    const firstIdx = 0;
+    const lastIdx = points.length - 1;
+
+    points.forEach((point, index) => {
+      const x = toX(index);
+      const y = toY(point.value);
+      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      circle.setAttribute("cx", x);
+      circle.setAttribute("cy", y);
+      circle.setAttribute("r", "5");
+      circle.setAttribute("class", "history-line-point");
+      svg.append(circle);
+
+      const value = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      value.setAttribute("x", x);
+      value.setAttribute("y", y - 10);
+      value.setAttribute("text-anchor", "middle");
+      value.setAttribute("class", "history-line-value");
+      value.textContent = Number.isInteger(point.value) ? String(point.value) : point.value.toFixed(1);
+      svg.append(value);
+
+      if (index === firstIdx || index === lastIdx || points.length <= 6) {
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", x);
+        label.setAttribute("y", height - 18);
+        label.setAttribute("text-anchor", "middle");
+        label.setAttribute("class", "history-line-label");
+        label.textContent = point.dateLabel.replace(/\sde\s/i, " ");
+        svg.append(label);
+      }
+    });
+
+    const axisYLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    axisYLabel.setAttribute("x", 10);
+    axisYLabel.setAttribute("y", 14);
+    axisYLabel.setAttribute("class", "history-line-label");
+    axisYLabel.textContent = axisLabel;
+    svg.append(axisYLabel);
+
+    const axisXLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    axisXLabel.setAttribute("x", width - padRight);
+    axisXLabel.setAttribute("y", height - 4);
+    axisXLabel.setAttribute("text-anchor", "end");
+    axisXLabel.setAttribute("class", "history-line-label");
+    axisXLabel.textContent = "Tiempo (días registrados)";
+    svg.append(axisXLabel);
+
+    return svg;
+  }
+
+  function openChartModal(type) {
+    if (!state.selectedExercise || !elements.chartModal || !elements.chartContainer) return;
+    const sessions = getExerciseSessions(state.selectedExercise);
+    const chartData = buildChartData(sessions, type);
+    const chartTypeLabel = type === "reps" ? "repeticiones" : "lastre";
+    const axisLabel = type === "reps" ? "Repeticiones totales" : "Kg de lastre";
+
+    if (elements.chartModalTitle) {
+      elements.chartModalTitle.textContent = `Evolución de ${chartTypeLabel}`;
+    }
+    if (elements.chartModalSubtitle) {
+      elements.chartModalSubtitle.textContent = `${formatExerciseName(state.selectedExercise)} · eje X: tiempo · eje Y: ${axisLabel.toLowerCase()}.`;
+    }
+
+    elements.chartContainer.innerHTML = "";
+    elements.chartContainer.append(createLineChart(chartData, axisLabel));
+
+    elements.chartModal.classList.remove("hidden");
+    elements.chartModal.setAttribute("aria-hidden", "false");
+    document.body.classList.add("modal-open");
+    if (elements.chartCloseBtn) {
+      elements.chartCloseBtn.focus();
+    }
+  }
+
+  function closeChartModal() {
+    if (!elements.chartModal) return;
+    elements.chartModal.classList.add("hidden");
+    elements.chartModal.setAttribute("aria-hidden", "true");
+    if (!document.querySelector(".modal:not(.hidden)")) {
+      document.body.classList.remove("modal-open");
+    }
+    if (chartLastTrigger && typeof chartLastTrigger.focus === "function") {
+      chartLastTrigger.focus();
+    }
+  }
+
   function handleRebuild() {
     if (!historyStore) return;
     const calendarProvider = global.entrenoApp && global.entrenoApp.getCalendarSnapshot;
@@ -498,6 +706,8 @@
   function destroy() {
     if (unsubscribe) unsubscribe();
     if (toastTimer) clearTimeout(toastTimer);
+    closeChartModal();
+    document.removeEventListener("keydown", handleKeydown);
   }
 
   document.addEventListener("DOMContentLoaded", init);
