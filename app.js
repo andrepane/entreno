@@ -3004,6 +3004,7 @@ function renderGlobalNotes(){
   const buildItem = (note, isArchived) => {
     const li = document.createElement("li");
     li.className = "global-notes-item";
+    li.classList.toggle("global-notes-item--archived", Boolean(isArchived));
     li.dataset.id = note.id;
 
     const textarea = document.createElement("textarea");
