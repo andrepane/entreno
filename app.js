@@ -5541,6 +5541,19 @@ function showHistoryToast(message){
   }
 }
 
+function addAutomaticGlobalNote(noteText){
+  const text = typeof noteText === "string" ? noteText.trim() : "";
+  if (!text) return false;
+  const notes = Array.isArray(state.globalNotes) ? state.globalNotes : [];
+  const exists = notes.some((item) => item && typeof item.text === "string" && item.text.trim() === text);
+  if (exists) return false;
+  const now = new Date().toISOString();
+  notes.unshift({ id: randomUUID(), text, done: false, createdAt: now, updatedAt: now });
+  state.globalNotes = notes;
+  save();
+  return true;
+}
+
 function minutesToSeconds(value){
   if (historyStore && typeof historyStore.minutesToSeconds === "function"){
     return historyStore.minutesToSeconds(value);
@@ -5634,11 +5647,19 @@ function syncHistoryForDay(dayISO, options = {}){
   const result = historyStore.addOrUpdateFromDay(snapshot);
   if (options.showToast === false) return;
   const messages = Array.isArray(result && result.messages) ? result.messages : [];
+  const progressionAlerts = Array.isArray(result && result.progressionAlerts) ? result.progressionAlerts : [];
+  progressionAlerts.forEach((alert) => {
+    if (alert && alert.note) addAutomaticGlobalNote(alert.note);
+  });
   const targetExerciseName = options.exerciseName;
   if (targetExerciseName) {
     const targetComment = buildExerciseHistoryComment(messages, targetExerciseName);
-    if (targetComment) {
-      showHistoryToast(targetComment);
+    const targetProgression = progressionAlerts.find(
+      (item) => item && normalizeHistoryExerciseName(item.ejercicio) === normalizeHistoryExerciseName(targetExerciseName)
+    );
+    const combinedMessage = [targetComment, targetProgression && targetProgression.text].filter(Boolean).join(" · ");
+    if (combinedMessage) {
+      showHistoryToast(combinedMessage);
       return;
     }
   }
@@ -5650,6 +5671,9 @@ function syncHistoryForDay(dayISO, options = {}){
   }
   if (!selected && messages.length) {
     selected = messages.find((item) => item && item.text) || null;
+  }
+  if (!selected && progressionAlerts.length) {
+    selected = progressionAlerts.find((item) => item && item.text) || null;
   }
   if (selected){
     showHistoryToast(selected.text);
