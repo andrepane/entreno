@@ -108,11 +108,43 @@ function testAddOrUpdateFromDayRespectsStatusField() {
   assert.strictEqual(history.getAllEntries().length, 0, 'Historial debe limpiarse cuando el estado vuelve a pendiente');
 }
 
+function testProgressionAlertsForRepsAndSameLoad() {
+  reset();
+
+  history.addEntry({
+    fechaISO: '2024-04-01',
+    ejercicio: 'Dominadas',
+    tipo: 'peso',
+    valor: 20
+  });
+
+  const day = {
+    fechaISO: '2024-04-20',
+    ejercicios: [
+      {
+        name: 'Dominadas',
+        goal: 'reps',
+        sets: 3,
+        done: [11, 12, 11],
+        weightKg: 20,
+        status: 'done'
+      }
+    ]
+  };
+
+  const result = history.addOrUpdateFromDay(day);
+  const alerts = Array.isArray(result.progressionAlerts) ? result.progressionAlerts : [];
+  assert.strictEqual(alerts.length, 2, 'Debe generar alertas por reps altas y por mismo lastre durante 2+ semanas');
+  assert.ok(alerts.some((item) => item.trigger === 'high-reps'), 'Debe detectar el criterio de más de 10 reps por serie');
+  assert.ok(alerts.some((item) => item.trigger === 'same-load'), 'Debe detectar el criterio de mismo lastre por más de 2 semanas');
+}
+
 function run() {
   testCompareWithLast();
   testMinutesToSeconds();
   testAddOrUpdateFromDayRespectsHecho();
   testAddOrUpdateFromDayRespectsStatusField();
+  testProgressionAlertsForRepsAndSameLoad();
   console.log('All history tests passed');
 }
 

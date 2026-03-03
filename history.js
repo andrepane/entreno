@@ -536,6 +536,84 @@
     };
   }
 
+  function daysBetween(startISO, endISO) {
+    const start = new Date(`${toISODate(startISO)}T00:00:00`);
+    const end = new Date(`${toISODate(endISO)}T00:00:00`);
+    const diff = end.getTime() - start.getTime();
+    if (!Number.isFinite(diff)) return 0;
+    return Math.floor(diff / 86400000);
+  }
+
+  function buildProgressionAlerts(day, entriesBefore) {
+    if (!day || !Array.isArray(day.ejercicios)) return [];
+    const alerts = [];
+    const seen = new Set();
+
+    day.ejercicios.forEach((exerciseRaw) => {
+      const ejercicio = normalizeName(exerciseRaw && (exerciseRaw.name || exerciseRaw.ejercicio));
+      if (!ejercicio || !isMarkedDone(exerciseRaw)) return;
+
+      const weight = ensureNumber(exerciseRaw.weightKg);
+      if (!weight || weight <= 0) return;
+
+      const totalSets = Math.max(1, Number(exerciseRaw.sets) || 1);
+      const doneValues = Array.isArray(exerciseRaw.done) ? exerciseRaw.done : [];
+      const setReps = doneValues
+        .slice(0, totalSets)
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+
+      if (setReps.length >= totalSets && setReps.every((value) => value > 10)) {
+        const key = `${ejercicio}__high-reps__${toISODate(day.fechaISO)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          alerts.push({
+            ejercicio,
+            trigger: "high-reps",
+            text: "📈 Todas las series superaron 10 reps. Sugerencia: sube el lastre en la próxima sesión.",
+            note: `Progresión sugerida en ${ejercicio}: todas las series por encima de 10 reps con +${weight} kg.`,
+          });
+        }
+      }
+
+      const weightEntries = entriesBefore
+        .filter(
+          (item) =>
+            item &&
+            item.ejercicio === ejercicio &&
+            item.tipo === "peso" &&
+            item.fechaISO < day.fechaISO
+        )
+        .slice()
+        .sort((a, b) => b.fechaISO.localeCompare(a.fechaISO));
+
+      if (!weightEntries.length) return;
+
+      let streakCount = 1;
+      let oldestDateInStreak = day.fechaISO;
+      for (const entry of weightEntries) {
+        if (Number(entry.valor) !== weight) break;
+        streakCount += 1;
+        oldestDateInStreak = entry.fechaISO;
+      }
+
+      if (streakCount >= 2 && daysBetween(oldestDateInStreak, day.fechaISO) >= 14) {
+        const key = `${ejercicio}__same-load__${toISODate(day.fechaISO)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          alerts.push({
+            ejercicio,
+            trigger: "same-load",
+            text: "🧱 Llevas 2+ semanas seguidas con el mismo lastre. Revisa progresión y considera subir carga.",
+            note: `Revisar progresión en ${ejercicio}: 2+ semanas seguidas con el mismo lastre (+${weight} kg).`,
+          });
+        }
+      }
+    });
+
+    return alerts;
+  }
+
   function addOrUpdateFromDay(day) {
     const normalizedDay = normalizeDay(day);
     if (!normalizedDay) {
@@ -552,6 +630,7 @@
     const entriesBefore = entries.map(cloneEntry);
     const applied = [];
     const messages = [];
+    const progressionAlerts = buildProgressionAlerts(normalizedDay, entriesBefore);
     const processedKeys = new Set();
 
     dayEntries.forEach((newEntry) => {
@@ -603,7 +682,7 @@
     save();
     notify();
 
-    return { entries: applied, removed, messages };
+    return { entries: applied, removed, messages, progressionAlerts };
   }
 
   function rebuildFromCalendar(calendarDays) {
