@@ -601,8 +601,8 @@ body.focus-mode main{padding-top:24px;}
 .link-button{background:none; border:none; color:#93c5fd; padding:0 6px; font-size:.85rem; cursor:pointer;}
 .link-button.danger{color:#fca5a5;}
 
-.toast{position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--surface-1); color:var(--text); padding:10px 18px; border-radius:999px; border:1px solid var(--border); box-shadow:0 12px 32px rgba(0,0,0,.4); opacity:0; pointer-events:none; transition:opacity .3s ease, transform .3s ease; z-index:20;}
-.toast.visible{opacity:1; transform:translateX(-50%) translateY(-6px);}
+.toast{position:fixed; left:50%; bottom:calc(20px + env(safe-area-inset-bottom, 0px)); transform:translateX(-50%) translateY(16px) scale(.96); background:linear-gradient(130deg, rgba(40,52,76,.95), rgba(20,28,42,.95)); color:var(--text); padding:11px 18px; border-radius:999px; border:1px solid rgba(150,174,220,.32); box-shadow:0 16px 36px rgba(4,7,12,.48); opacity:0; pointer-events:none; transition:opacity .32s cubic-bezier(.22,1,.36,1), transform .36s cubic-bezier(.22,1,.36,1); z-index:20; backdrop-filter:blur(8px);}
+.toast.visible{opacity:1; transform:translateX(-50%) translateY(0) scale(1);}
 
 .sw-update-banner{
   position:sticky;
@@ -620,13 +620,32 @@ body.focus-mode main{padding-top:24px;}
   gap:10px;
 }
 
-.toast-region{position:fixed; right:16px; bottom:16px; z-index:60; display:flex; flex-direction:column; gap:10px; max-width:min(420px, calc(100vw - 24px));}
-.toast-inline{display:flex; align-items:center; gap:12px; background:var(--surface-1); border:1px solid var(--border); border-left:4px solid var(--primary); border-radius:12px; padding:10px 12px; box-shadow:var(--shadow); opacity:0; transform:translateY(8px); transition:opacity .2s ease, transform .2s ease;}
-.toast-inline.is-visible{opacity:1; transform:translateY(0);}
-.toast-inline.toast-success{border-left-color:#3bd07f;}
-.toast-inline.toast-error{border-left-color:#ff6b6b;}
-.toast-inline.toast-info{border-left-color:#5ea8ff;}
-.toast-action{border:1px solid var(--border-strong); background:transparent; color:var(--text); border-radius:999px; padding:4px 10px; cursor:pointer;}
+.toast-region{position:fixed; right:max(16px, env(safe-area-inset-right, 0px)); bottom:max(16px, calc(env(safe-area-inset-bottom, 0px) + 12px)); z-index:60; display:flex; flex-direction:column; gap:10px; max-width:min(430px, calc(100vw - 24px));}
+.toast-inline{display:flex; align-items:center; justify-content:space-between; gap:12px; background:linear-gradient(145deg, rgba(42,57,84,.94), rgba(21,30,45,.94)); border:1px solid rgba(143,177,240,.28); border-radius:16px; padding:12px 14px; box-shadow:0 16px 32px rgba(4,7,12,.44); opacity:0; transform:translateY(16px) scale(.97); transition:opacity .28s cubic-bezier(.22,1,.36,1), transform .34s cubic-bezier(.22,1,.36,1), filter .28s ease; backdrop-filter:blur(11px);}
+.toast-inline.is-visible{opacity:1; transform:translateY(0) scale(1);}
+.toast-inline.is-leaving{opacity:0; transform:translateY(-6px) scale(.98); filter:saturate(.9);}
+.toast-inline.toast-success{border-color:rgba(75,220,148,.45); box-shadow:0 0 0 1px rgba(75,220,148,.16), 0 16px 32px rgba(4,7,12,.44);}
+.toast-inline.toast-error{border-color:rgba(255,120,120,.48); box-shadow:0 0 0 1px rgba(255,120,120,.16), 0 16px 32px rgba(4,7,12,.44);}
+.toast-inline.toast-info{border-color:rgba(110,172,255,.48); box-shadow:0 0 0 1px rgba(110,172,255,.16), 0 16px 32px rgba(4,7,12,.44);}
+.toast-text{line-height:1.35;}
+.toast-action{border:1px solid rgba(155,185,235,.42); background:rgba(255,255,255,0.04); color:var(--text); border-radius:999px; padding:6px 11px; cursor:pointer; transition:transform .15s ease, background .2s ease, border-color .2s ease;}
+.toast-action:hover{transform:translateY(-1px); background:rgba(255,255,255,0.08); border-color:rgba(178,206,255,.6);}
+.toast-action:active{transform:translateY(0);}
+
+@media (max-width: 640px){
+  .toast-region{left:12px; right:12px; max-width:none;}
+  .toast-inline{width:100%; border-radius:14px;}
+}
+
+@media (prefers-reduced-motion: reduce){
+  .toast,
+  .toast-inline,
+  .toast-action{transition:none;}
+  .toast{transform:translateX(-50%);}
+  .toast-inline,
+  .toast-inline.is-visible,
+  .toast-inline.is-leaving{transform:none;}
+}
 
 
 @media (max-width: 880px){

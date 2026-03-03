@@ -370,9 +370,19 @@ function showToast(message, { type = "info", duration = UI_TOAST_DURATION, actio
   if (!toastRegion || !message) return;
   const toast = document.createElement("div");
   toast.className = `toast-inline toast-${type}`;
+  toast.setAttribute("role", "status");
   const text = document.createElement("span");
+  text.className = "toast-text";
   text.textContent = message;
   toast.append(text);
+  let isRemoved = false;
+  const removeToast = () => {
+    if (isRemoved) return;
+    isRemoved = true;
+    toast.classList.remove("is-visible");
+    toast.classList.add("is-leaving");
+    window.setTimeout(() => toast.remove(), 320);
+  };
   if (actionLabel && typeof onAction === "function") {
     const actionBtn = document.createElement("button");
     actionBtn.type = "button";
@@ -380,7 +390,7 @@ function showToast(message, { type = "info", duration = UI_TOAST_DURATION, actio
     actionBtn.textContent = actionLabel;
     actionBtn.addEventListener("click", () => {
       onAction();
-      toast.remove();
+      removeToast();
     });
     toast.append(actionBtn);
   }
@@ -388,10 +398,7 @@ function showToast(message, { type = "info", duration = UI_TOAST_DURATION, actio
   window.setTimeout(() => {
     toast.classList.add("is-visible");
   }, 20);
-  window.setTimeout(() => {
-    toast.classList.remove("is-visible");
-    window.setTimeout(() => toast.remove(), 200);
-  }, duration);
+  window.setTimeout(removeToast, Math.max(1800, duration));
 }
 
 function resolveUiDialog(result) {
