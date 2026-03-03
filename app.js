@@ -2876,10 +2876,10 @@ if (saveTemplateBtn) {
   saveTemplateBtn.addEventListener("click", async () => {
     const exercises = getDayExercises(state.selectedDate);
     if (!exercises.length) {
-      showToast("Añade ejercicios antes de guardar una plantilla.", { type: "error" });
+      showToast("Añade al menos un ejercicio para convertir este día en plantilla.", { type: "error" });
       return;
     }
-    const name = await uiPrompt("Nombre de la plantilla:", `Rutina ${toHuman(state.selectedDate)}`, {
+    const name = await uiPrompt("Ponle un nombre a tu plantilla:", `Rutina ${toHuman(state.selectedDate)}`, {
       title: "Guardar plantilla",
       confirmText: "Guardar",
     });
@@ -2888,7 +2888,7 @@ if (saveTemplateBtn) {
     state.templates = Array.isArray(state.templates) ? [template, ...state.templates] : [template];
     save();
     renderTemplates();
-    showToast("Plantilla guardada.", { type: "success" });
+    showToast("Plantilla guardada con éxito ✨", { type: "success" });
   });
 }
 
@@ -2917,21 +2917,21 @@ if (templateList) {
       switchToTab("entreno");
     }
     if (action === "rename-template") {
-      const nextName = await uiPrompt("Nuevo nombre de plantilla:", template.name, { title: "Renombrar plantilla" });
+      const nextName = await uiPrompt("Elige el nuevo nombre de la plantilla:", template.name, { title: "Renombrar plantilla" });
       if (!nextName) return;
       template.name = nextName.trim() || template.name;
       save();
       renderTemplates();
-      showToast("Plantilla renombrada.", { type: "success" });
+      showToast("Nombre actualizado ✅", { type: "success" });
     }
     if (action === "delete-template") {
-      const ok = await uiConfirm("¿Eliminar esta plantilla?", { confirmText: "Eliminar" });
+      const ok = await uiConfirm("¿Seguro que quieres eliminar esta plantilla?", { confirmText: "Eliminar" });
       if (!ok) return;
       const removed = template;
       state.templates = templates.filter((item) => item.id !== id);
       save();
       renderTemplates();
-      showDeleteUndoToast("Plantilla eliminada.", () => {
+      showDeleteUndoToast("Plantilla eliminada. Puedes deshacer este cambio.", () => {
         state.templates = [removed, ...(Array.isArray(state.templates) ? state.templates : [])];
         save();
         renderTemplates();
@@ -4611,7 +4611,7 @@ function applyDayMultiSelection(){
   renderMiniCalendar();
   callSeguimiento("refresh");
   const totalDays = updates.size;
-  showToast(totalDays === 1 ? "Ejercicios copiados en el día seleccionado." : `Ejercicios copiados en ${totalDays} días.`, { type: "success" });
+  showToast(totalDays === 1 ? "¡Listo! Ejercicios copiados en el día seleccionado." : `¡Hecho! Ejercicios copiados en ${totalDays} días.`, { type: "success" });
   setDayMultiActive(false);
 }
 
@@ -5075,8 +5075,8 @@ function renderTodayInsights(dayISO, exercises){
   }
   if (todayMobilityText) {
     todayMobilityText.textContent = meta.habits.mobility
-      ? "✅ Movilidad completada. Mantén la constancia."
-      : "Recuerda dedicar 5' a movilidad para desbloquear rangos.";
+      ? "✅ ¡Movilidad completada! Tu cuerpo te lo va a agradecer mañana."
+      : "Regálate 5' de movilidad para entrenar con mejor rango y menos molestias.";
   }
   if (todayMobilityToggle) {
     todayMobilityToggle.textContent = meta.habits.mobility ? "Desmarcar" : "Marcar movilidad";
@@ -6282,7 +6282,7 @@ copyDayBtn.addEventListener("click", ()=>{
   state.workouts[dstISO] = targetList.concat(items);
   save();
   syncHistoryForDay(dstISO, { showToast: false });
-  showToast("Día copiado.", { type: "success" });
+  showToast("Día copiado correctamente ✅", { type: "success" });
   setPanelVisibility(copyDayBox, false);
   renderMiniCalendar();
   callSeguimiento("refresh");
