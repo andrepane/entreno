@@ -4408,7 +4408,7 @@ function renderDay(dayISO){
           doneList[i] = v;
           ex.done = doneList;
           save();
-          syncHistoryForDay(dayISO, { showToast: true, exerciseName: ex && ex.name });
+          syncHistoryForDay(dayISO, { showToast: false, exerciseName: ex && ex.name });
           callSeguimiento("refresh");
         });
         wrap.append(span, input);
@@ -5667,8 +5667,8 @@ function syncHistoryForDay(dayISO, options = {}){
     const combinedMessage = [targetComment, targetProgression && targetProgression.text].filter(Boolean).join(" · ");
     if (combinedMessage) {
       showHistoryToast(combinedMessage);
-      return;
     }
+    return;
   }
   const priority = ["reps", "tiempo", "peso"];
   let selected = null;
