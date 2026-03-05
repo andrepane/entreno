@@ -4318,6 +4318,7 @@ function renderDay(dayISO){
     const meta = document.createElement("div");
     meta.className = "meta";
     meta.innerHTML = metaText(ex);
+    enableQuickWeightEdit(meta, ex, dayISO);
     const lastSummary = buildLastTimeSummary(ex, dayISO);
     let lastEl = null;
     if (lastSummary) {
@@ -5731,8 +5732,49 @@ function metaText(ex){
     parts.push(`<span><strong>Cardio:</strong> ${minutesLabel} min</span>`);
   }
 
-  if (ex.weightKg!=null) parts.push(`<span class="exercise-weight-highlight"><strong>Lastre:</strong> ${ex.weightKg} kg</span>`);
+  const weightLabel = ex.weightKg != null ? `${ex.weightKg} kg` : "Sin lastre";
+  parts.push(`<button type="button" class="exercise-weight-highlight exercise-weight-quick-btn" aria-label="Editar lastre"><strong>Lastre:</strong> ${weightLabel}</button>`);
   return parts.join(" · ");
+}
+
+function enableQuickWeightEdit(metaEl, ex, dayISO){
+  const weightBtn = metaEl.querySelector(".exercise-weight-quick-btn");
+  if (!weightBtn) return;
+
+  const showWeightSelect = () => {
+    const select = document.createElement("select");
+    select.className = "exercise-weight-quick-select";
+    buildWeightOptions(select);
+    setWeightSelectValue(select, hasValue(ex.weightKg) ? ex.weightKg : "");
+
+    const restoreButton = () => {
+      if (!select.isConnected) return;
+      select.replaceWith(weightBtn);
+    };
+
+    select.addEventListener("change", () => {
+      const rawValue = select.value;
+      ex.weightKg = rawValue === "" ? null : Number(rawValue);
+      save();
+      syncHistoryForDay(dayISO, { showToast: false, exerciseName: ex && ex.name });
+      renderDay(dayISO);
+      callSeguimiento("refresh");
+    });
+    select.addEventListener("blur", restoreButton);
+    select.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        restoreButton();
+        weightBtn.focus();
+      }
+    });
+
+    weightBtn.replaceWith(select);
+    select.focus();
+    select.click();
+  };
+
+  weightBtn.addEventListener("click", showWeightSelect);
 }
 
 function updateEmomUI(instance){
