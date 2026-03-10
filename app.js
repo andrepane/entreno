@@ -3408,6 +3408,62 @@ function filterLibraryItems(items, filters){
   });
 }
 
+function enableLibraryChipInlineEdit(triggerBtn, config){
+  if (!triggerBtn || !config || !config.item || !config.key || !Array.isArray(config.options) || !config.options.length) return;
+
+  const { item, key, options, labels = {} } = config;
+
+  const showSelect = () => {
+    const select = document.createElement("select");
+    select.className = "library-chip-select";
+
+    options.forEach((optionValue) => {
+      const option = document.createElement("option");
+      option.value = optionValue;
+      option.textContent = labels[optionValue] || optionValue;
+      select.append(option);
+    });
+
+    const currentValue = typeof item[key] === "string" ? item[key] : "";
+    if (options.includes(currentValue)) {
+      select.value = currentValue;
+    } else {
+      select.value = options[0];
+    }
+
+    const restoreButton = () => {
+      if (!select.isConnected) return;
+      select.replaceWith(triggerBtn);
+    };
+
+    select.addEventListener("change", () => {
+      const nextValue = select.value;
+      if (!options.includes(nextValue)) return;
+      if (item[key] === nextValue) {
+        restoreButton();
+        return;
+      }
+      updateLibrary({ id: item.id, [key]: nextValue });
+      renderLibrarySection();
+    });
+
+    select.addEventListener("blur", restoreButton);
+    select.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        restoreButton();
+        triggerBtn.focus();
+      }
+    });
+
+    triggerBtn.replaceWith(select);
+    select.focus();
+    select.click();
+  };
+
+  triggerBtn.addEventListener("click", showSelect);
+}
+
 function renderLibrary(){
   if (!libraryListEl || !libraryEmptyEl) return;
   const filters = {
@@ -3447,9 +3503,11 @@ function renderLibrary(){
     titleWrap.className = "library-card-title";
     const title = document.createElement("h3");
     title.textContent = item.name;
-    const category = document.createElement("span");
-    category.className = "library-card-category";
+    const category = document.createElement("button");
+    category.type = "button";
+    category.className = "library-card-category library-chip-button";
     category.textContent = CATEGORY_LABELS[item.category] || item.category;
+    category.setAttribute("aria-label", `Editar categoría de ${item.name}`);
     titleWrap.append(title, category);
     header.append(thumb, titleWrap);
 
@@ -3464,17 +3522,52 @@ function renderLibrary(){
     const meta = document.createElement("div");
     meta.className = "library-card-meta";
     const metaItems = [
-      { label: MUSCLE_GROUP_LABELS[item.muscleGroup] || item.muscleGroup },
-      { label: EQUIPMENT_LABELS[item.equipment] || item.equipment },
-      { label: LEVEL_LABELS[item.level] || item.level },
-      { label: GOAL_LABELS[item.goal] || item.goal },
+      {
+        key: "muscleGroup",
+        label: MUSCLE_GROUP_LABELS[item.muscleGroup] || item.muscleGroup,
+        options: MUSCLE_GROUP_KEYS,
+        labels: MUSCLE_GROUP_LABELS,
+      },
+      {
+        key: "equipment",
+        label: EQUIPMENT_LABELS[item.equipment] || item.equipment,
+        options: EQUIPMENT_KEYS,
+        labels: EQUIPMENT_LABELS,
+      },
+      {
+        key: "level",
+        label: LEVEL_LABELS[item.level] || item.level,
+        options: LEVEL_KEYS,
+        labels: LEVEL_LABELS,
+      },
+      {
+        key: "goal",
+        label: GOAL_LABELS[item.goal] || item.goal,
+        options: GOAL_KEYS,
+        labels: GOAL_LABELS,
+      },
     ];
     metaItems.forEach((info) => {
       if (!info.label) return;
-      const chip = document.createElement("span");
-      chip.className = "library-meta-chip";
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "library-meta-chip library-chip-button";
       chip.textContent = info.label;
+      chip.setAttribute("aria-label", `Editar ${info.key} de ${item.name}`);
+      enableLibraryChipInlineEdit(chip, {
+        item,
+        key: info.key,
+        options: info.options,
+        labels: info.labels,
+      });
       meta.append(chip);
+    });
+
+    enableLibraryChipInlineEdit(category, {
+      item,
+      key: "category",
+      options: CATEGORY_KEYS,
+      labels: CATEGORY_LABELS,
     });
     body.append(meta);
     if (Array.isArray(item.tags) && item.tags.length) {
