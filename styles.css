@@ -1115,6 +1115,10 @@ body.is-dragging{user-select:none}
 .library-card-title{display:flex; flex-direction:column; gap:4px;}
 .library-card-title h3{margin:0; font-size:1rem;}
 .library-card-category{color:var(--muted); font-size:.85rem;}
+.library-card-category.library-chip-button{border-radius:999px; padding:4px 10px; border:1px solid var(--border); background:var(--surface-1);}
+.library-chip-button{cursor:pointer; transition:border-color .2s ease, background .2s ease, color .2s ease;}
+.library-chip-button:hover,.library-chip-button:focus-visible{border-color:var(--accent); color:var(--text); outline:none;}
+.library-chip-select{border-radius:999px; padding:4px 10px; font-size:.75rem; border:1px solid var(--accent); color:var(--text); background:var(--surface-1);}
 .library-card-body{display:flex; flex-direction:column; gap:8px;}
 .library-card-notes{margin:0; font-size:.9rem; color:var(--muted);}
 .global-notes-toggle{position:fixed; right:18px; bottom:18px; width:44px; height:44px; border-radius:999px; border:1px solid var(--border-strong); background:rgba(20,24,32,0.88); color:var(--text); display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow); z-index:45; transition:transform .2s ease, box-shadow .2s ease, border-color .2s ease;}
