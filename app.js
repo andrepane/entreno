@@ -1461,6 +1461,7 @@ function queueRemoteSave() {
   if (firebaseSaveTimeout) clearTimeout(firebaseSaveTimeout);
   firebaseSyncPending = false;
   firebaseSaveTimeout = setTimeout(() => {
+    firebaseSaveTimeout = null;
     const payload = {
       state: cloneStateForRemote(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -1469,7 +1470,7 @@ function queueRemoteSave() {
     firebaseDocRef.set(payload, { merge: true }).catch((err) => {
       console.warn("No se pudo sincronizar con Firebase", err);
     });
-  }, 800);
+  }, 250);
 }
 
 function flushRemoteSave() {
@@ -1502,15 +1503,8 @@ function subscribeToRemoteState() {
       const data = doc.data() || {};
       if (!isPlainObject(data.state)) return;
       const remoteState = data.state;
-      const remoteUpdated = getTimestampMillis(remoteState.lastModifiedAt);
-      const localUpdated = getTimestampMillis(state.lastModifiedAt);
-      if (!localUpdated || (remoteUpdated && remoteUpdated > localUpdated)) {
-        applyRemoteState(remoteState);
-        return;
-      }
-      if (firebaseSyncPending || (localUpdated && (!remoteUpdated || localUpdated > remoteUpdated))) {
-        queueRemoteSave();
-      }
+      firebaseSyncPending = false;
+      applyRemoteState(remoteState);
     },
     (err) => {
       console.warn("Error al escuchar cambios en Firebase", err);
@@ -1605,15 +1599,15 @@ function save({ skipRemote = false, updateTimestamp = true } = {}) {
     showStorageUsage(); // NEW: Actualiza el indicador visual tras guardar en localStorage
     storageSaveFailed = false;
     clearStorageWarning();
-    if (!skipRemote) {
-      queueRemoteSave();
-    }
   } catch (err) {
     console.warn("No se pudo guardar el estado de entreno", err);
     if (!storageSaveFailed) {
       showStorageWarning(STORAGE_SAVE_ERROR_MESSAGE);
     }
     storageSaveFailed = true;
+  }
+  if (!skipRemote) {
+    queueRemoteSave();
   }
 }
 
