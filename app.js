@@ -245,6 +245,8 @@ let firebaseDocRef = null;
 let firebaseUnsubscribe = null;
 let firebaseSaveTimeout = null;
 let firebaseReady = false;
+let firebaseConfigured = false;
+let firebaseSyncPending = false;
 const CATEGORY_KEYS = ["calistenia", "musculacion", "piernas", "cardio", "skill", "movilidad", "otro"];
 const CATEGORY_LABELS = {
   calistenia: "Calistenia",
@@ -1451,9 +1453,13 @@ function applyRemoteState(remoteState) {
 }
 
 function queueRemoteSave() {
-  if (!firebaseDocRef || typeof firebase === "undefined") return;
-  if (!firebaseReady) return;
+  if (!firebaseConfigured) return;
+  if (!firebaseDocRef || typeof firebase === "undefined" || !firebaseReady) {
+    firebaseSyncPending = true;
+    return;
+  }
   if (firebaseSaveTimeout) clearTimeout(firebaseSaveTimeout);
+  firebaseSyncPending = false;
   firebaseSaveTimeout = setTimeout(() => {
     const payload = {
       state: cloneStateForRemote(),
@@ -1488,7 +1494,7 @@ function subscribeToRemoteState() {
     (doc) => {
       firebaseReady = true;
       if (!doc.exists) {
-        if (state.lastModifiedAt) {
+        if (state.lastModifiedAt || firebaseSyncPending) {
           queueRemoteSave();
         }
         return;
@@ -1502,7 +1508,7 @@ function subscribeToRemoteState() {
         applyRemoteState(remoteState);
         return;
       }
-      if (localUpdated && (!remoteUpdated || localUpdated > remoteUpdated)) {
+      if (firebaseSyncPending || (localUpdated && (!remoteUpdated || localUpdated > remoteUpdated))) {
         queueRemoteSave();
       }
     },
@@ -1518,6 +1524,7 @@ function initFirebaseSync() {
   if (!config) {
     return;
   }
+  firebaseConfigured = true;
   const start = () => {
     if (typeof firebase === "undefined") return;
     firebaseApp = firebase.initializeApp(config);
@@ -2083,7 +2090,7 @@ if (
   prunedOldIcons ||
   resetToToday
 ) {
-  const deferRemoteSync = firebaseDocRef && !firebaseReady;
+  const deferRemoteSync = firebaseConfigured && !firebaseReady;
   save(deferRemoteSync ? { skipRemote: true, updateTimestamp: false } : undefined);
 }
 
