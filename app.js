@@ -1425,6 +1425,44 @@ function load() {
   } catch(e){ console.warn("Error loading storage", e); }
 }
 
+function loadStateForProfile(profileId) {
+  const normalizedProfileId = normalizeProfileId(profileId);
+  if (!normalizedProfileId) {
+    return createDefaultState();
+  }
+  const base = createDefaultState();
+  try {
+    const raw = localStorage.getItem(getStateStorageKey(normalizedProfileId));
+    if (!raw) return base;
+    const parsed = JSON.parse(raw);
+    if (!isPlainObject(parsed)) {
+      console.warn("Se ignoró un estado almacenado inválido del perfil", normalizedProfileId, parsed);
+      return base;
+    }
+    return { ...base, ...parsed };
+  } catch (err) {
+    console.warn("No se pudo cargar el estado del perfil", normalizedProfileId, err);
+    return base;
+  }
+}
+
+function saveStateForProfile(profileId, nextState) {
+  const normalizedProfileId = normalizeProfileId(profileId);
+  if (!normalizedProfileId) return false;
+  try {
+    localStorage.setItem(getStateStorageKey(normalizedProfileId), JSON.stringify(nextState));
+    showStorageUsage();
+    return true;
+  } catch (err) {
+    console.warn("No se pudo guardar el estado del perfil", normalizedProfileId, err);
+    if (!storageSaveFailed) {
+      showStorageWarning(STORAGE_SAVE_ERROR_MESSAGE);
+    }
+    storageSaveFailed = true;
+    return false;
+  }
+}
+
 function migrateLegacyLocalProfileStorage() {
   try {
     const legacyState = localStorage.getItem(STORAGE_KEY_PREFIX);
@@ -1650,30 +1688,24 @@ function subscribeToRemoteState() {
   );
 }
 
-function initFirebaseSync() {
-  if (!currentProfileId) return;
-  const requestedProfileId = currentProfileId;
+function ensureFirebaseSdkLoaded() {
   const config = getFirebaseConfig();
-  if (!config) {
-    return;
-  }
+  if (!config) return Promise.resolve(null);
   firebaseConfigured = true;
+
   const start = () => {
-    if (typeof firebase === "undefined") return;
+    if (typeof firebase === "undefined") return null;
     if (!firebaseApp) {
       firebaseApp = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(config);
     }
     firebaseDb = firebase.firestore();
-    ensureFirestoreProfileMigration().finally(() => {
-      if (currentProfileId !== requestedProfileId) return;
-      firebaseDocRef = firebaseDb.collection(FIREBASE_COLLECTION).doc(getFirebaseDocId());
-      subscribeToRemoteState();
-    });
+    return firebaseDb;
   };
+
   if (typeof firebase !== "undefined") {
-    start();
-    return;
+    return Promise.resolve(start());
   }
+
   const ensureScript = (src) =>
     new Promise((resolve, reject) => {
       const existing = document.querySelector(`script[data-firebase-src="${src}"]`);
@@ -1698,11 +1730,42 @@ function initFirebaseSync() {
       document.head.append(script);
     });
 
-  Promise.all([
+  return Promise.all([
     ensureScript("https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"),
     ensureScript("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"),
-  ])
-    .then(start)
+  ]).then(start);
+}
+
+function syncProfileStateToRemote(profileId, nextState) {
+  const normalizedProfileId = normalizeProfileId(profileId);
+  if (!normalizedProfileId) return Promise.resolve(false);
+  return ensureFirebaseSdkLoaded()
+    .then((db) => {
+      if (!db || typeof firebase === "undefined") return false;
+      return db.collection(FIREBASE_COLLECTION).doc(getFirebaseDocId(normalizedProfileId)).set({
+        state: JSON.parse(JSON.stringify(nextState)),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        version: FIREBASE_DOC_VERSION,
+      }, { merge: true }).then(() => true);
+    })
+    .catch((err) => {
+      console.warn("No se pudo sincronizar el perfil con Firebase", normalizedProfileId, err);
+      return false;
+    });
+}
+
+function initFirebaseSync() {
+  if (!currentProfileId) return;
+  const requestedProfileId = currentProfileId;
+  ensureFirebaseSdkLoaded()
+    .then((db) => {
+      if (!db) return;
+      return ensureFirestoreProfileMigration().finally(() => {
+        if (currentProfileId !== requestedProfileId) return;
+        firebaseDocRef = firebaseDb.collection(FIREBASE_COLLECTION).doc(getFirebaseDocId());
+        subscribeToRemoteState();
+      });
+    })
     .catch((err) => {
       console.warn("No se pudo cargar Firebase", err);
     });
@@ -1896,6 +1959,7 @@ let addFormSelectedLibrary = null;
 /* Librería */
 const openLibrarySelectorBtn = document.getElementById("openLibrarySelector");
 const openLibraryFormBtn = document.getElementById("openLibraryForm");
+const libraryCopyToProfileBtn = document.getElementById("libraryCopyToProfileBtn");
 const libraryListEl = document.getElementById("libraryList");
 const libraryEmptyEl = document.getElementById("libraryEmpty");
 const librarySearchInput = document.getElementById("librarySearch");
@@ -3202,8 +3266,114 @@ function renderCurrentDaySection() {
 }
 
 function renderLibrarySection() {
+  updateLibraryProfileCopyUi();
   renderLibrary();
   renderLibrarySelector();
+}
+
+function getOppositeProfileId(profileId = currentProfileId) {
+  const normalizedProfileId = normalizeProfileId(profileId);
+  if (!normalizedProfileId) return null;
+  return PROFILE_IDS.find((id) => id !== normalizedProfileId) || null;
+}
+
+function cloneLibraryExerciseForProfile(item) {
+  if (!isPlainObject(item)) return null;
+  const [normalized] = normalizeLibraryExercises([{ ...item, id: randomUUID() }]);
+  return normalized || null;
+}
+
+function mergeLibraryExercisesForCopy(sourceItems, targetItems) {
+  const sourceNormalized = normalizeLibraryExercises(sourceItems);
+  const targetNormalized = normalizeLibraryExercises(targetItems);
+  const targetByName = new Map();
+  targetNormalized.forEach((item) => {
+    targetByName.set(item.name.trim().toLowerCase(), item);
+  });
+
+  let created = 0;
+  let updated = 0;
+  sourceNormalized.forEach((item) => {
+    const key = item.name.trim().toLowerCase();
+    const existing = targetByName.get(key);
+    if (existing) {
+      Object.assign(existing, { ...item, id: existing.id });
+      updated += 1;
+      return;
+    }
+    const clone = cloneLibraryExerciseForProfile(item);
+    if (!clone) return;
+    targetNormalized.push(clone);
+    targetByName.set(key, clone);
+    created += 1;
+  });
+
+  return {
+    libraryExercises: normalizeLibraryExercises(targetNormalized),
+    created,
+    updated,
+    sourceCount: sourceNormalized.length,
+  };
+}
+
+function updateLibraryProfileCopyUi() {
+  if (!libraryCopyToProfileBtn) return;
+  const targetProfileId = getOppositeProfileId();
+  if (!currentProfileId || !targetProfileId) {
+    libraryCopyToProfileBtn.disabled = true;
+    libraryCopyToProfileBtn.textContent = "Copiar al otro perfil";
+    return;
+  }
+  libraryCopyToProfileBtn.disabled = false;
+  libraryCopyToProfileBtn.textContent = `Copiar a ${getProfileLabel(targetProfileId)}`;
+}
+
+async function handleCopyLibraryToOtherProfile() {
+  if (!currentProfileId) return;
+  const targetProfileId = getOppositeProfileId();
+  if (!targetProfileId) {
+    showToast("No se encontró otro perfil disponible.", { type: "error" });
+    return;
+  }
+
+  const sourceLibrary = getLibrary();
+  if (!sourceLibrary.length) {
+    showToast("La librería actual está vacía.", { type: "error" });
+    return;
+  }
+
+  const targetLabel = getProfileLabel(targetProfileId);
+  const ok = await uiConfirm(
+    `Se copiarán ${sourceLibrary.length} ejercicios de ${getProfileLabel(currentProfileId)} a ${targetLabel}. Si ya existe un ejercicio con el mismo nombre en ${targetLabel}, se actualizará con la versión actual.`,
+    {
+      title: "Copiar librería",
+      confirmText: `Copiar a ${targetLabel}`,
+    }
+  );
+  if (!ok) return;
+
+  const targetState = loadStateForProfile(targetProfileId);
+  const mergeResult = mergeLibraryExercisesForCopy(sourceLibrary, targetState.libraryExercises);
+  targetState.libraryExercises = mergeResult.libraryExercises;
+  targetState.lastModifiedAt = new Date().toISOString();
+
+  const saved = saveStateForProfile(targetProfileId, targetState);
+  if (!saved) {
+    showToast(`No se pudo copiar la librería a ${targetLabel}.`, { type: "error" });
+    return;
+  }
+
+  const synced = await syncProfileStateToRemote(targetProfileId, targetState);
+  const summary = [];
+  if (mergeResult.created) summary.push(`${mergeResult.created} nuevos`);
+  if (mergeResult.updated) summary.push(`${mergeResult.updated} actualizados`);
+  const summaryText = summary.length ? ` (${summary.join(", ")})` : "";
+  showToast(
+    synced
+      ? `Librería copiada a ${targetLabel}${summaryText}.`
+      : `Librería copiada a ${targetLabel}${summaryText}. Se guardó en este dispositivo; la sincronización remota quedó pendiente.`,
+    { type: "success", duration: synced ? UI_TOAST_DURATION : 6500 }
+  );
 }
 
 function renderHistorySection() {
@@ -4201,6 +4371,9 @@ function attachLibraryEventListeners(){
   }
   if (openLibraryFormBtn) {
     openLibraryFormBtn.addEventListener("click", () => openLibraryForm());
+  }
+  if (libraryCopyToProfileBtn) {
+    libraryCopyToProfileBtn.addEventListener("click", handleCopyLibraryToOtherProfile);
   }
   if (librarySearchInput) librarySearchInput.addEventListener("input", renderLibrary);
   if (libraryCategoryFilter) libraryCategoryFilter.addEventListener("change", renderLibrary);
