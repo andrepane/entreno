@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /workouts/{profileId} {
+      allow read: if profileId in ['andrea', 'cintia', 'shared'];
+      allow write: if profileId in ['andrea', 'cintia'];
+    }
+  }
+}

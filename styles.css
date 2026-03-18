@@ -238,6 +238,105 @@ body.menu-open .side-menu-overlay{
 body.menu-open .menu-toggle-bar:nth-child(1){
   transform:translateY(7px) rotate(45deg);
 }
+
+body.profile-gate-open{
+  overflow:hidden;
+}
+
+.app-shell-hidden{
+  visibility:hidden;
+  pointer-events:none;
+}
+
+.profile-gate{
+  position:fixed;
+  inset:0;
+  z-index:20;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+  background:rgba(4, 8, 16, 0.88);
+  backdrop-filter:blur(10px);
+}
+
+.profile-gate.hidden{
+  display:none;
+}
+
+.profile-gate-card{
+  width:min(100%, 420px);
+  background:var(--surface-1);
+  border:1px solid var(--border);
+  border-radius:24px;
+  box-shadow:var(--shadow);
+  padding:24px;
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+  text-align:center;
+}
+
+.profile-gate-eyebrow{
+  margin:0;
+  text-transform:uppercase;
+  letter-spacing:.18em;
+  font-size:.78rem;
+  color:var(--accent-muted);
+  font-weight:700;
+}
+
+.profile-gate-card h1{
+  margin:0;
+}
+
+.profile-gate-actions{
+  display:grid;
+  gap:12px;
+}
+
+.profile-choice{
+  width:100%;
+  padding:16px 18px;
+  border-radius:18px;
+  border:1px solid var(--border);
+  background:var(--surface-2);
+  color:var(--text);
+  font-size:1rem;
+  font-weight:700;
+  cursor:pointer;
+  transition:transform .16s ease, border-color .16s ease, background .16s ease;
+}
+
+.profile-choice:hover,
+.profile-choice:focus-visible,
+.profile-choice.is-active{
+  border-color:var(--accent);
+  background:color-mix(in srgb, var(--surface-3) 75%, var(--accent) 25%);
+  transform:translateY(-1px);
+}
+
+.profile-toolbar{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+
+.profile-status-chip{
+  display:inline-flex;
+  align-items:center;
+  min-height:34px;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background:var(--surface-2);
+  color:var(--accent-contrast);
+  font-size:.92rem;
+  font-weight:600;
+}
 body.menu-open .menu-toggle-bar:nth-child(2){
   opacity:0;
 }

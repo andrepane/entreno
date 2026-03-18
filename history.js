@@ -7,7 +7,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (global) {
   "use strict";
 
-  const STORAGE_KEY = "entreno.history.v1";
+  const STORAGE_KEY_PREFIX = "entreno.history.v1";
+  const PROFILE_DEFAULT = "andrea";
   const VALID_TYPES = new Set(["reps", "tiempo", "peso"]);
   const LEGACY_KEYS = ["entreno.history", "historyEntries", "analyticsHistory"];
   const TYPE_UNITS = { reps: "reps", tiempo: "seg", peso: "kg" };
@@ -298,9 +299,21 @@
     return list.map(cloneEntry);
   }
 
+  let currentProfileId = PROFILE_DEFAULT;
   let entries = [];
   let subscribers = [];
   let warnings = [];
+
+  function normalizeProfileId(profileId) {
+    const normalized = String(profileId || "")
+      .trim()
+      .toLowerCase();
+    return normalized || PROFILE_DEFAULT;
+  }
+
+  function getStorageKey(profileId = currentProfileId) {
+    return `${STORAGE_KEY_PREFIX}.${normalizeProfileId(profileId)}`;
+  }
 
   const storage = (() => {
     if (typeof global !== "undefined" && global.localStorage) {
@@ -334,7 +347,7 @@
   function save() {
     const payload = { version: 1, entries: cloneEntries(entries) };
     try {
-      storage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      storage.setItem(getStorageKey(), JSON.stringify(payload));
     } catch (err) {
       console.warn("No se pudo guardar el historial", err);
       if (!warnings.includes("No se pudo guardar el historial en el navegador.")) {
@@ -386,7 +399,7 @@
   function load() {
     warnings = [];
     try {
-      const raw = storage.getItem(STORAGE_KEY);
+      const raw = storage.getItem(getStorageKey());
       if (!raw) {
         entries = [];
         return getAllEntries();
@@ -842,6 +855,29 @@
     return warnings.slice();
   }
 
+  function migrateLegacyToProfile(profileId = PROFILE_DEFAULT) {
+    const normalizedProfileId = normalizeProfileId(profileId);
+    const targetKey = getStorageKey(normalizedProfileId);
+    try {
+      if (storage.getItem(targetKey)) return false;
+      const currentRaw = storage.getItem(STORAGE_KEY_PREFIX);
+      if (currentRaw) {
+        storage.setItem(targetKey, currentRaw);
+        storage.removeItem(STORAGE_KEY_PREFIX);
+        return true;
+      }
+    } catch (err) {
+      console.warn("No se pudo migrar el historial legacy al perfil", err);
+    }
+    return false;
+  }
+
+  function setProfile(profileId) {
+    currentProfileId = normalizeProfileId(profileId);
+    load();
+    return getAllEntries();
+  }
+
   load();
 
   return {
@@ -863,5 +899,8 @@
     minutesToSeconds,
     normalizeName,
     getAllEntries,
+    getStorageKey,
+    setProfile,
+    migrateLegacyToProfile,
   };
 });
