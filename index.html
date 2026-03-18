@@ -18,7 +18,19 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="app-header">
+  <div id="profileGate" class="profile-gate hidden" role="dialog" aria-modal="true" aria-labelledby="profileGateTitle">
+    <div class="profile-gate-card">
+      <p class="profile-gate-eyebrow">CaliGym</p>
+      <h1 id="profileGateTitle">Elige perfil</h1>
+      <p class="muted">Selecciona quién está usando la app. Cada perfil guarda y sincroniza sus datos por separado.</p>
+      <div class="profile-gate-actions">
+        <button type="button" class="profile-choice" data-profile-select="andrea">Andrea</button>
+        <button type="button" class="profile-choice" data-profile-select="cintia">Cintia</button>
+      </div>
+    </div>
+  </div>
+
+  <header class="app-header" data-app-shell>
     <div class="app-header-top">
       <button id="menuToggle" class="menu-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="sideMenu">
         <span class="menu-toggle-bar"></span>
@@ -26,6 +38,10 @@
         <span class="menu-toggle-bar"></span>
       </button>
       <h1>CaliGym</h1>
+      <div class="profile-toolbar">
+        <span id="profileStatusLabel" class="profile-status-chip">Elige perfil</span>
+        <button id="profileSwitchBtn" class="ghost small" type="button">Cambiar perfil</button>
+      </div>
     </div>
     <div class="day-controls">
       <button id="prevDayBtn" aria-label="Día anterior">◀</button>
@@ -54,12 +70,12 @@
     </nav>
   </aside>
 
-  <div id="swUpdateBanner" class="sw-update-banner hidden" role="status" aria-live="polite">
+  <div id="swUpdateBanner" class="sw-update-banner hidden" role="status" aria-live="polite" data-app-shell>
     <span>Nueva versión disponible.</span>
     <button id="swUpdateBtn" class="primary small" type="button">Actualizar</button>
   </div>
 
-  <main>
+  <main data-app-shell>
     <!-- Sección ENTRENO -->
     <section id="tab-entreno" class="tab-panel" role="tabpanel">
       <div class="day-summary">
@@ -673,7 +689,7 @@
   </main>
 
   <!-- Mini calendario -->
-  <aside class="mini-cal" aria-label="Calendario">
+  <aside class="mini-cal" aria-label="Calendario" data-app-shell>
     <div class="mini-cal-header">
       <button id="mcPrev" aria-label="Mes anterior">◀</button>
       <div id="mcLabel" aria-live="polite"></div>
@@ -927,7 +943,7 @@
     </div>
   </div>
 
-  <button id="globalNotesToggle" class="global-notes-toggle" type="button" aria-label="Abrir recordatorios">
+  <button id="globalNotesToggle" class="global-notes-toggle" type="button" aria-label="Abrir recordatorios" data-app-shell>
     <span class="global-notes-icon" aria-hidden="true">🔔</span>
     <span id="globalNotesBadge" class="global-notes-badge" aria-hidden="true"></span>
   </button>
@@ -962,8 +978,8 @@
     </div>
   </div>
 
-  <footer class="app-footer">
-    <small>Datos guardados en tu navegador.</small>
+  <footer class="app-footer" data-app-shell>
+    <small id="profileFooterLabel">Selecciona un perfil para empezar.</small>
   </footer>
 
   <div id="uiDialogModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="uiDialogTitle" aria-describedby="uiDialogMessage">
