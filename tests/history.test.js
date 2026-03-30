@@ -139,12 +139,60 @@ function testProgressionAlertsForRepsAndSameLoad() {
   assert.ok(alerts.some((item) => item.trigger === 'same-load'), 'Debe detectar el criterio de mismo lastre por más de 2 semanas');
 }
 
+function testFailureGoalUsesManualRepsAndWeightComparison() {
+  reset();
+
+  history.addEntry({
+    fechaISO: '2024-05-01',
+    ejercicio: 'Dominadas',
+    tipo: 'reps',
+    valor: 28
+  });
+  history.addEntry({
+    fechaISO: '2024-05-01',
+    ejercicio: 'Dominadas',
+    tipo: 'peso',
+    valor: 12
+  });
+
+  const day = {
+    fechaISO: '2024-05-08',
+    ejercicios: [
+      {
+        name: 'Dominadas',
+        goal: 'fallo',
+        sets: 3,
+        done: [12, 11, 10],
+        weightKg: 14,
+        status: 'done'
+      }
+    ]
+  };
+
+  const result = history.addOrUpdateFromDay(day);
+  const repsEntry = result.entries.find((entry) => entry.tipo === 'reps');
+  const weightEntry = result.entries.find((entry) => entry.tipo === 'peso');
+
+  assert.ok(repsEntry, 'Para ejercicios al fallo debe guardar reps usando los valores manuales');
+  assert.strictEqual(repsEntry.valor, 33, 'Debe sumar las reps manuales al fallo');
+  assert.ok(weightEntry, 'Para ejercicios al fallo con lastre debe guardar el peso');
+  assert.strictEqual(weightEntry.valor, 14, 'Debe registrar el lastre al fallo');
+
+  const repsMessage = result.messages.find((msg) => msg.tipo === 'reps');
+  const weightMessage = result.messages.find((msg) => msg.tipo === 'peso');
+  assert.ok(repsMessage, 'Debe generar mensaje comparativo de reps para al fallo');
+  assert.strictEqual(repsMessage.diff, 5, 'Debe comparar reps al fallo con el registro anterior');
+  assert.ok(weightMessage, 'Debe generar mensaje comparativo de lastre para al fallo');
+  assert.strictEqual(weightMessage.diff, 2, 'Debe comparar lastre al fallo con el registro anterior');
+}
+
 function run() {
   testCompareWithLast();
   testMinutesToSeconds();
   testAddOrUpdateFromDayRespectsHecho();
   testAddOrUpdateFromDayRespectsStatusField();
   testProgressionAlertsForRepsAndSameLoad();
+  testFailureGoalUsesManualRepsAndWeightComparison();
   console.log('All history tests passed');
 }
 

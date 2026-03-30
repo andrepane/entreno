@@ -240,7 +240,7 @@
         pushValue("peso", weight, weightNote ? [weightNote] : []);
       }
 
-      if (goal === "reps" || goal === "emom") {
+      if (goal === "reps" || goal === "emom" || goal === "fallo") {
         let totalReps = 0;
         if (hasDone) {
           totalReps = sumNumbers(numericDone);
@@ -250,7 +250,7 @@
           if (minutes > 0 && repsPerMinute > 0) {
             totalReps = minutes * repsPerMinute;
           }
-        } else {
+        } else if (goal === "reps") {
           const planned = ensureNumber(exerciseRaw.reps);
           if (planned && planned > 0) {
             totalReps = planned * sets;
