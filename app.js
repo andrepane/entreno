@@ -4633,7 +4633,11 @@ function updateExerciseStatus(exercise, status, dayISO, options = {}) {
   }
   save();
   const shouldToast = hasValue(options.showToast) ? options.showToast : normalized === EXERCISE_STATUS.DONE;
-  syncHistoryForDay(dayISO, { showToast: shouldToast, exerciseName: exercise && exercise.name });
+  syncHistoryForDay(dayISO, {
+    showToast: shouldToast,
+    exerciseName: exercise && exercise.name,
+    exerciseData: exercise,
+  });
   renderDay(dayISO);
   renderMiniCalendar();
   callSeguimiento("refresh");
@@ -4648,12 +4652,99 @@ function getLastExerciseEntry(exercise, dayISO) {
     .reverse();
   for (const iso of days) {
     const list = getDayWorkouts(iso).filter(isPlainObject);
-    const match = list.find((item) => (item.name || "").trim().toLowerCase() === targetName);
+    const match = list.find(
+      (item) => (item.name || "").trim().toLowerCase() === targetName && isExerciseDone(item)
+    );
     if (match) {
       return { dayISO: iso, exercise: match };
     }
   }
   return null;
+}
+
+function getExerciseTotalReps(exercise) {
+  if (!exercise || typeof exercise !== "object") return null;
+  const goalType = getExerciseGoalType(exercise);
+  const doneValues = Array.isArray(exercise.done) ? exercise.done : [];
+  const numericDone = doneValues
+    .map((value) => {
+      if (value == null || value === "") return null;
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : null;
+    })
+    .filter((value) => value != null);
+  if (numericDone.length) {
+    const sum = numericDone.reduce((acc, value) => acc + value, 0);
+    return Number.isFinite(sum) && sum > 0 ? sum : null;
+  }
+
+  const sets = Math.max(1, Number(exercise.sets) || 1);
+  if (goalType === "reps") {
+    const reps = Number(exercise.reps);
+    if (Number.isFinite(reps) && reps > 0) return reps * sets;
+  }
+  if (goalType === "emom") {
+    const minutes = Number(exercise.emomMinutes);
+    const repsPerMinute = Number(exercise.emomReps);
+    if (Number.isFinite(minutes) && minutes > 0 && Number.isFinite(repsPerMinute) && repsPerMinute > 0) {
+      return minutes * repsPerMinute;
+    }
+  }
+  return null;
+}
+
+function getExerciseWeightKg(exercise) {
+  const numeric = Number(exercise && exercise.weightKg);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+}
+
+function formatComparisonDiff(value, unit) {
+  const abs = Math.abs(Number(value));
+  const formatted = Number.isInteger(abs) ? String(abs) : String(Number(abs.toFixed(2)));
+  if (value > 0) return `+${formatted} ${unit}`;
+  if (value < 0) return `-${formatted} ${unit}`;
+  return `0 ${unit}`;
+}
+
+function buildStrictDoneComparisonComment(exercise, dayISO) {
+  const previous = getLastExerciseEntry(exercise, dayISO);
+  if (!previous) return "";
+
+  const currentReps = getExerciseTotalReps(exercise);
+  const previousReps = getExerciseTotalReps(previous.exercise);
+  let repsText = "Reps: sin datos comparables.";
+  if (Number.isFinite(currentReps) && Number.isFinite(previousReps)) {
+    const diff = currentReps - previousReps;
+    if (diff > 0) {
+      repsText = `Reps: ${formatComparisonDiff(diff, "reps")} respecto a la última vez.`;
+    } else if (diff < 0) {
+      repsText = `Reps: ${formatComparisonDiff(diff, "reps")} respecto a la última vez.`;
+    } else {
+      repsText = "Reps: iguales que la última vez.";
+    }
+  }
+
+  const currentWeight = getExerciseWeightKg(exercise);
+  const previousWeight = getExerciseWeightKg(previous.exercise);
+  let weightText = "";
+  if (currentWeight > 0 && previousWeight > 0) {
+    const diff = currentWeight - previousWeight;
+    if (diff > 0) {
+      weightText = `Lastre: +${formatDiffValue(diff)} kg respecto a la última vez.`;
+    } else if (diff < 0) {
+      weightText = `Lastre: -${formatDiffValue(diff)} kg respecto a la última vez.`;
+    } else {
+      weightText = "Lastre: igual que la última vez.";
+    }
+  } else if (currentWeight <= 0 && previousWeight <= 0) {
+    weightText = "Lastre: sin lastre (igual que la última vez).";
+  } else if (currentWeight <= 0 && previousWeight > 0) {
+    weightText = `Lastre: sin lastre (la última vez: +${formatDiffValue(previousWeight)} kg).`;
+  } else {
+    weightText = `Lastre: +${formatDiffValue(currentWeight)} kg (la última vez: sin lastre).`;
+  }
+
+  return `${repsText} · ${weightText}`;
 }
 
 function buildLastTimeSummary(exercise, dayISO) {
@@ -6173,7 +6264,9 @@ function syncHistoryForDay(dayISO, options = {}){
   });
   const targetExerciseName = options.exerciseName;
   if (targetExerciseName) {
-    const targetComment = buildExerciseHistoryComment(messages, targetExerciseName);
+    const targetComment =
+      buildStrictDoneComparisonComment(options.exerciseData, dayISO) ||
+      buildExerciseHistoryComment(messages, targetExerciseName);
     const targetProgression = progressionAlerts.find(
       (item) => item && normalizeHistoryExerciseName(item.ejercicio) === normalizeHistoryExerciseName(targetExerciseName)
     );
