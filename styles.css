@@ -1112,6 +1112,8 @@ button.icon-button.icon-with-label .icon{
 .exercise .title-main h3{margin:0; flex:1; min-width:0}
 .exercise .meta{color:var(--muted); font-size:.9rem; margin:6px 0; display:flex; flex-wrap:wrap; gap:6px}
 .exercise .meta span{background:var(--surface-2); padding:2px 8px; border-radius:8px; border:1px solid var(--border-subtle)}
+.exercise .meta .exercise-sets-quick-btn{appearance:none; -webkit-appearance:none; font:inherit; line-height:inherit; cursor:pointer; background:var(--surface-2); color:var(--muted); padding:2px 8px; border-radius:8px; border:1px solid var(--border-subtle);}
+.exercise .meta .exercise-sets-quick-select{background:var(--surface-2); border:1px solid var(--border-subtle); color:var(--text); font:inherit; padding:2px 8px; border-radius:8px;}
 .exercise .meta .exercise-weight-highlight{background:rgba(56,189,248,0.22); border-color:rgba(125,211,252,0.72); color:#e0f2fe; font-size:1rem; font-weight:700; padding:4px 10px;}
 .exercise .meta button.exercise-weight-highlight{appearance:none; -webkit-appearance:none; font:inherit; line-height:inherit; cursor:pointer;}
 .exercise .meta .exercise-weight-quick-select{background:rgba(56,189,248,0.22); border:1px solid rgba(125,211,252,0.72); color:#e0f2fe; font-size:1rem; font-weight:700; padding:4px 10px; border-radius:8px;}

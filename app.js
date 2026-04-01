@@ -4829,6 +4829,7 @@ function renderDay(dayISO){
     const meta = document.createElement("div");
     meta.className = "meta";
     meta.innerHTML = metaText(ex);
+    enableQuickSetsEdit(meta, ex, dayISO);
     enableQuickWeightEdit(meta, ex, dayISO);
     const lastSummary = buildLastTimeSummary(ex, dayISO);
     let lastEl = null;
@@ -4900,9 +4901,9 @@ function renderDay(dayISO){
         noteBox.classList.add("hidden");
       }
     });
-    if (ex.failure) {
-      const doneArray = Array.isArray(ex.done) ? ex.done : [];
-      const doneValues = Array.from({length: ex.sets}, (_,i)=> hasValue(doneArray[i]) ? doneArray[i] : null);
+    if (shouldRenderSetInputs(ex)) {
+      resizeDoneValues(ex);
+      const doneValues = Array.isArray(ex.done) ? ex.done : [];
       setsBox = document.createElement("div");
       setsBox.className = "sets-grid";
       for (let i=0;i<ex.sets;i++){
@@ -6221,7 +6222,8 @@ function metaText(ex){
   const goalType = getExerciseGoalType(ex);
   const parts = [];
   if (goalType !== "cardio" && goalType !== "emom") {
-    parts.push(`<span><strong>Series:</strong> ${ex.sets}</span>`);
+    const setsValue = Math.max(1, Number(ex.sets) || 1);
+    parts.push(`<button type="button" class="exercise-sets-quick-btn" aria-label="Editar series"><strong>Series:</strong> ${setsValue}</button>`);
   }
 
   if (goalType === "reps") {
@@ -6246,6 +6248,72 @@ function metaText(ex){
   const weightLabel = ex.weightKg != null ? `${ex.weightKg} kg` : "Sin lastre";
   parts.push(`<button type="button" class="exercise-weight-highlight exercise-weight-quick-btn" aria-label="Editar lastre"><strong>Lastre:</strong> ${weightLabel}</button>`);
   return parts.join(" · ");
+}
+
+function normalizeExerciseSets(exercise){
+  if (!exercise || typeof exercise !== "object") return 1;
+  const setsValue = Math.max(1, Number(exercise.sets) || 1);
+  exercise.sets = setsValue;
+  return setsValue;
+}
+
+function resizeDoneValues(exercise){
+  const setsValue = normalizeExerciseSets(exercise);
+  const current = Array.isArray(exercise.done) ? exercise.done : [];
+  const resized = current.slice(0, setsValue);
+  while (resized.length < setsValue) resized.push(null);
+  exercise.done = resized;
+}
+
+function shouldRenderSetInputs(exercise){
+  const goalType = getExerciseGoalType(exercise);
+  return goalType !== "cardio" && goalType !== "emom";
+}
+
+function enableQuickSetsEdit(metaEl, ex, dayISO){
+  const setsBtn = metaEl.querySelector(".exercise-sets-quick-btn");
+  if (!setsBtn) return;
+
+  const showSetsSelect = () => {
+    const select = document.createElement("select");
+    select.className = "exercise-sets-quick-select";
+    for (let i = 1; i <= 10; i += 1) {
+      const option = document.createElement("option");
+      option.value = String(i);
+      option.textContent = String(i);
+      select.append(option);
+    }
+    const currentSets = normalizeExerciseSets(ex);
+    select.value = String(currentSets);
+
+    const restoreButton = () => {
+      if (!select.isConnected) return;
+      select.replaceWith(setsBtn);
+    };
+
+    select.addEventListener("change", () => {
+      ex.sets = Math.max(1, Number(select.value) || 1);
+      resizeDoneValues(ex);
+      save();
+      syncHistoryForDay(dayISO, { showToast: false, exerciseName: ex && ex.name });
+      renderDay(dayISO);
+      callSeguimiento("refresh");
+    });
+    select.addEventListener("blur", restoreButton);
+    select.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        restoreButton();
+        setsBtn.focus();
+      }
+    });
+
+    setsBtn.replaceWith(select);
+    select.focus();
+    select.click();
+  };
+
+  setsBtn.addEventListener("click", showSetsSelect);
 }
 
 function enableQuickWeightEdit(metaEl, ex, dayISO){
