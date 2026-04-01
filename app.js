@@ -4664,31 +4664,17 @@ function getLastExerciseEntry(exercise, dayISO) {
 
 function getExerciseTotalReps(exercise) {
   if (!exercise || typeof exercise !== "object") return null;
-  const goalType = getExerciseGoalType(exercise);
   const doneValues = Array.isArray(exercise.done) ? exercise.done : [];
   const numericDone = doneValues
     .map((value) => {
       if (value == null || value === "") return null;
       const numeric = Number(value);
-      return Number.isFinite(numeric) ? numeric : null;
+      return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
     })
     .filter((value) => value != null);
   if (numericDone.length) {
     const sum = numericDone.reduce((acc, value) => acc + value, 0);
     return Number.isFinite(sum) && sum > 0 ? sum : null;
-  }
-
-  const sets = Math.max(1, Number(exercise.sets) || 1);
-  if (goalType === "reps") {
-    const reps = Number(exercise.reps);
-    if (Number.isFinite(reps) && reps > 0) return reps * sets;
-  }
-  if (goalType === "emom") {
-    const minutes = Number(exercise.emomMinutes);
-    const repsPerMinute = Number(exercise.emomReps);
-    if (Number.isFinite(minutes) && minutes > 0 && Number.isFinite(repsPerMinute) && repsPerMinute > 0) {
-      return minutes * repsPerMinute;
-    }
   }
   return null;
 }
@@ -4712,16 +4698,17 @@ function buildStrictDoneComparisonComment(exercise, dayISO) {
 
   const currentReps = getExerciseTotalReps(exercise);
   const previousReps = getExerciseTotalReps(previous.exercise);
+  if (!Number.isFinite(currentReps) || !Number.isFinite(previousReps)) {
+    return "";
+  }
   let repsText = "Reps: sin datos comparables.";
-  if (Number.isFinite(currentReps) && Number.isFinite(previousReps)) {
-    const diff = currentReps - previousReps;
-    if (diff > 0) {
-      repsText = `Reps: ${formatComparisonDiff(diff, "reps")} respecto a la última vez.`;
-    } else if (diff < 0) {
-      repsText = `Reps: ${formatComparisonDiff(diff, "reps")} respecto a la última vez.`;
-    } else {
-      repsText = "Reps: iguales que la última vez.";
-    }
+  const diff = currentReps - previousReps;
+  if (diff > 0) {
+    repsText = `Reps: ${formatComparisonDiff(diff, "reps")} respecto a la última vez.`;
+  } else if (diff < 0) {
+    repsText = `Reps: ${formatComparisonDiff(diff, "reps")} respecto a la última vez.`;
+  } else {
+    repsText = "Reps: iguales que la última vez.";
   }
 
   const currentWeight = getExerciseWeightKg(exercise);
