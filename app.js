@@ -682,7 +682,7 @@ function createDefaultState() {
       fontSize: "normal",
       highContrast: false,
       reduceMotion: false,
-      autoPruneOldIcons: false,
+      autoPruneOldIcons: true,
     },
     lastModifiedAt: null,
   };
@@ -712,8 +712,8 @@ const ICON_PRUNE_LIMIT_DAYS = (() => {
   const value =
     globalThis.iconPrune && Number.isFinite(globalThis.iconPrune.ICON_PRUNE_LIMIT_DAYS)
       ? globalThis.iconPrune.ICON_PRUNE_LIMIT_DAYS
-      : 14;
-  return value > 0 ? value : 14;
+      : 7;
+  return value > 0 ? value : 7;
 })();
 
 function isDayOlderThanIconPruneLimit(dayISO, referenceDate = new Date()) {
@@ -782,29 +782,25 @@ function normalizeWorkouts(rawWorkouts) {
           ? inferredStatus
           : EXERCISE_STATUS.PENDING;
         const rawIconType = typeof exercise.iconType === "string" ? exercise.iconType.toLowerCase() : "";
-        let iconType = ["emoji", "image", "asset"].includes(rawIconType) ? rawIconType : "";
+        let iconType = ["emoji", "asset"].includes(rawIconType) ? rawIconType : "";
         const emoji = typeof exercise.emoji === "string" ? exercise.emoji.trim() : "";
-        const imageDataUrl = typeof exercise.imageDataUrl === "string" ? exercise.imageDataUrl : "";
         const iconName = typeof exercise.iconName === "string" ? exercise.iconName.trim() : "";
         if (iconType === "asset" && !iconName) {
-          iconType = "";
-        }
-        if (iconType === "image" && !imageDataUrl) {
           iconType = "";
         }
         if (!iconType) {
           if (iconName) {
             iconType = "asset";
-          } else if (imageDataUrl) {
-            iconType = "image";
           } else if (emoji) {
             iconType = "emoji";
           } else {
             iconType = "emoji";
           }
         }
+        const cleanExercise = { ...exercise };
+        delete cleanExercise.imageDataUrl;
         return {
-          ...exercise,
+          ...cleanExercise,
           category: normalizeCategory(exercise.category),
           done: Array.isArray(exercise.done) ? exercise.done : [],
           status,
@@ -815,7 +811,6 @@ function normalizeWorkouts(rawWorkouts) {
           perceivedEffort: Number.isFinite(perceivedRaw) && perceivedRaw >= 1 && perceivedRaw <= 10 ? Math.round(perceivedRaw) : null,
           iconType,
           emoji: iconType === "emoji" ? emoji : "",
-          imageDataUrl: iconType === "image" ? imageDataUrl : "",
           iconName: iconType === "asset" ? iconName : "",
         };
       });
@@ -1052,21 +1047,15 @@ function normalizeLibraryExercises(rawList){
     if (!name) return;
     const category = normalizeCategory(item.category);
     const rawIconType = typeof item.iconType === "string" ? item.iconType.toLowerCase() : "";
-    let iconType = ["emoji", "image", "asset"].includes(rawIconType) ? rawIconType : "";
+    let iconType = ["emoji", "asset"].includes(rawIconType) ? rawIconType : "";
     const emoji = typeof item.emoji === "string" ? item.emoji.trim() : "";
-    const imageDataUrl = typeof item.imageDataUrl === "string" ? item.imageDataUrl : "";
     const iconName = typeof item.iconName === "string" ? item.iconName.trim() : "";
     if (iconType === "asset" && !iconName) {
-      iconType = "";
-    }
-    if (iconType === "image" && !imageDataUrl) {
       iconType = "";
     }
     if (!iconType) {
       if (iconName) {
         iconType = "asset";
-      } else if (imageDataUrl) {
-        iconType = "image";
       } else if (emoji) {
         iconType = "emoji";
       } else {
@@ -1079,13 +1068,14 @@ function normalizeLibraryExercises(rawList){
     const level = LEVEL_KEYS.includes(item.level) ? item.level : "principiante";
     const goal = GOAL_KEYS.includes(item.goal) ? item.goal : "fuerza";
     const muscleGroup = inferMuscleGroup(item);
+    const cleanItem = { ...item };
+    delete cleanItem.imageDataUrl;
     normalized.push({
       id,
       name,
       category,
       iconType,
       emoji: iconType === "emoji" ? emoji || "" : "",
-      imageDataUrl: iconType === "image" ? imageDataUrl : "",
       iconName: iconType === "asset" ? iconName : "",
       notes,
       tags,
@@ -1182,7 +1172,7 @@ function normalizeSettings(rawSettings){
   const fontSize = ["small", "normal", "large"].includes(fontSizeRaw) ? fontSizeRaw : "normal";
   const highContrast = !!settings.highContrast;
   const reduceMotion = !!settings.reduceMotion;
-  const autoPruneOldIcons = !!settings.autoPruneOldIcons;
+  const autoPruneOldIcons = settings.autoPruneOldIcons !== false;
   return {
     theme,
     density,
@@ -1779,11 +1769,11 @@ function pruneOldWorkoutIcons(referenceDate = new Date()) {
     if (!isDayOlderThanIconPruneLimit(dayISO, referenceDate)) return;
     exercises.forEach((exercise) => {
       if (!isPlainObject(exercise)) return;
-      if (exercise.iconType || exercise.emoji || exercise.imageDataUrl || exercise.iconName) {
+      if (exercise.iconType || exercise.emoji || exercise.iconName || Object.prototype.hasOwnProperty.call(exercise, "imageDataUrl")) {
         exercise.iconType = "";
         exercise.emoji = "";
-        exercise.imageDataUrl = "";
         exercise.iconName = "";
+        delete exercise.imageDataUrl;
         changed = true;
       }
     });
@@ -3040,7 +3030,6 @@ addForm.addEventListener("submit", (e)=>{
     perceivedEffort: null,
     iconType: "emoji",
     emoji: "",
-    imageDataUrl: "",
     iconName: "",
   };
 
@@ -3050,7 +3039,7 @@ addForm.addEventListener("submit", (e)=>{
     ex.libraryId = addFormSelectedLibrary.id;
     ex.iconType = addFormSelectedLibrary.iconType;
     ex.emoji = addFormSelectedLibrary.emoji;
-    ex.imageDataUrl = addFormSelectedLibrary.imageDataUrl;
+    delete ex.imageDataUrl;
     ex.iconName = addFormSelectedLibrary.iconName;
     ex.tags = Array.isArray(addFormSelectedLibrary.tags) ? addFormSelectedLibrary.tags.slice() : [];
     if (addFormSelectedLibrary.notes) {
@@ -3658,8 +3647,8 @@ function updateExercisesFromLibrary(libraryExercise) {
           exercise.emoji = icon.emoji;
           changed = true;
         }
-        if (exercise.imageDataUrl !== icon.imageDataUrl) {
-          exercise.imageDataUrl = icon.imageDataUrl;
+        if (Object.prototype.hasOwnProperty.call(exercise, "imageDataUrl")) {
+          delete exercise.imageDataUrl;
           changed = true;
         }
         if (exercise.iconName !== icon.iconName) {
@@ -3728,16 +3717,13 @@ function resolveExerciseIcon(source, options = {}){
   const dayISO = typeof options.dayISO === "string" ? options.dayISO : "";
   const ignoreLibraryIcons = shouldIgnoreLibraryIconsForDay(dayISO);
   if (!source || typeof source !== "object") {
-    return { iconType: "emoji", emoji: "", imageDataUrl: "", iconName: "", name: "" };
+    return { iconType: "emoji", emoji: "", iconName: "", name: "" };
   }
   if (source.iconType === "asset" && source.iconName) {
-    return { iconType: "asset", iconName: source.iconName, emoji: "", imageDataUrl: "", name: source.name || "" };
-  }
-  if (source.iconType === "image" && source.imageDataUrl) {
-    return { iconType: "image", imageDataUrl: source.imageDataUrl, emoji: "", iconName: "", name: source.name || "" };
+    return { iconType: "asset", iconName: source.iconName, emoji: "", name: source.name || "" };
   }
   if (source.iconType === "emoji" && source.emoji) {
-    return { iconType: "emoji", emoji: source.emoji, imageDataUrl: "", iconName: "", name: source.name || "" };
+    return { iconType: "emoji", emoji: source.emoji, iconName: "", name: source.name || "" };
   }
   if (source.libraryId && !ignoreLibraryIcons) {
     const libraryExercise = findLibraryExercise(source.libraryId);
@@ -3746,18 +3732,14 @@ function resolveExerciseIcon(source, options = {}){
     }
   }
   const emoji = typeof source.emoji === "string" ? source.emoji : "";
-  const imageDataUrl = typeof source.imageDataUrl === "string" ? source.imageDataUrl : "";
   const iconName = typeof source.iconName === "string" ? source.iconName : "";
   if (iconName) {
-    return { iconType: "asset", iconName, emoji: "", imageDataUrl: "", name: source.name || "" };
-  }
-  if (imageDataUrl) {
-    return { iconType: "image", imageDataUrl, emoji: "", iconName: "", name: source.name || "" };
+    return { iconType: "asset", iconName, emoji: "", name: source.name || "" };
   }
   if (emoji) {
-    return { iconType: "emoji", emoji, imageDataUrl: "", iconName: "", name: source.name || "" };
+    return { iconType: "emoji", emoji, iconName: "", name: source.name || "" };
   }
-  return { iconType: "placeholder", emoji: "", imageDataUrl: "", iconName: "", name: source.name || "" };
+  return { iconType: "placeholder", emoji: "", iconName: "", name: source.name || "" };
 }
 
 function createMiniatureElement(source, options = {}){
@@ -3773,12 +3755,6 @@ function createMiniatureElement(source, options = {}){
   if (icon.iconType === "asset" && icon.iconName) {
     const img = document.createElement("img");
     img.src = getExerciseIconUrl(icon.iconName);
-    img.alt = alt;
-    img.loading = "lazy";
-    wrapper.append(img);
-  } else if (icon.iconType === "image" && icon.imageDataUrl) {
-    const img = document.createElement("img");
-    img.src = icon.imageDataUrl;
     img.alt = alt;
     img.loading = "lazy";
     wrapper.append(img);
@@ -4274,20 +4250,6 @@ function openLibraryForm(item){
           populateLibraryIconSelect();
         }
         setLibraryIconPreview(item.iconName);
-      } else if (item.iconType === "image" && item.imageDataUrl) {
-        if (libraryIconAsset) libraryIconAsset.checked = true;
-        if (libraryIconPreview) {
-          libraryIconPreview.innerHTML = "";
-          const img = document.createElement("img");
-          img.src = item.imageDataUrl;
-          img.alt = item.name;
-          img.loading = "lazy";
-          libraryIconPreview.append(img);
-        }
-        if (libraryFormIcon) {
-          populateLibraryIconSelect();
-          libraryFormIcon.value = "";
-        }
       } else {
         if (libraryIconEmoji) libraryIconEmoji.checked = true;
         if (libraryFormEmoji) libraryFormEmoji.value = item.emoji || "";
@@ -4322,7 +4284,6 @@ function serializeLibraryForm(){
   const category = normalizeCategory(getInputValue(libraryFormCategory));
   const iconType = isChecked(libraryIconAsset) ? "asset" : "emoji";
   let emoji = "";
-  let imageDataUrl = "";
   let iconName = "";
   if (iconType === "asset") {
     iconName = (getInputValue(libraryFormIcon) || currentLibraryIconName || "").trim();
@@ -4348,7 +4309,6 @@ function serializeLibraryForm(){
     category,
     iconType,
     emoji,
-    imageDataUrl,
     iconName: iconType === "asset" ? iconName : "",
     notes,
     tags,
@@ -4568,9 +4528,8 @@ function buildExerciseFromLibrary(libraryExercise, config){
     libraryId: libraryExercise.id,
     name: libraryExercise.name,
     category: libraryExercise.category,
-    iconType: libraryExercise.iconType,
+    iconType: libraryExercise.iconName ? "asset" : libraryExercise.iconType === "emoji" ? "emoji" : "emoji",
     emoji: libraryExercise.emoji,
-    imageDataUrl: libraryExercise.imageDataUrl,
     iconName: libraryExercise.iconName,
     tags: Array.isArray(libraryExercise.tags) ? libraryExercise.tags.slice() : [],
     equipment: libraryExercise.equipment,

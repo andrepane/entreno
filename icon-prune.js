@@ -1,5 +1,5 @@
 (function initIconPrune(global) {
-  const ICON_PRUNE_LIMIT_DAYS = 14;
+  const ICON_PRUNE_LIMIT_DAYS = 7;
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
   function getStartOfDay(date) {

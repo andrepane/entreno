@@ -8,6 +8,8 @@
   "use strict";
 
   const STORAGE_KEY_PREFIX = "entreno.history.v1";
+  const IDB_DB_NAME = "entreno-history";
+  const IDB_STORE_NAME = "profileHistory";
   const PROFILE_DEFAULT = "andrea";
   const VALID_TYPES = new Set(["reps", "tiempo", "peso"]);
   const LEGACY_KEYS = ["entreno.history", "historyEntries", "analyticsHistory"];
@@ -333,6 +335,84 @@
     };
   })();
 
+  const idbState = {
+    available: typeof global !== "undefined" && !!global.indexedDB,
+    dbPromise: null,
+  };
+
+  function openHistoryDb() {
+    if (!idbState.available) return Promise.resolve(null);
+    if (idbState.dbPromise) return idbState.dbPromise;
+    idbState.dbPromise = new Promise((resolve) => {
+      const request = global.indexedDB.open(IDB_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(IDB_STORE_NAME)) {
+          db.createObjectStore(IDB_STORE_NAME, { keyPath: "profileId" });
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => {
+        idbState.available = false;
+        resolve(null);
+      };
+      request.onblocked = () => resolve(null);
+    });
+    return idbState.dbPromise;
+  }
+
+  function readEntriesFromIndexedDb(profileId = currentProfileId) {
+    return openHistoryDb().then((db) => {
+      if (!db) return null;
+      return new Promise((resolve) => {
+        const tx = db.transaction(IDB_STORE_NAME, "readonly");
+        const request = tx.objectStore(IDB_STORE_NAME).get(normalizeProfileId(profileId));
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => resolve(null);
+      });
+    });
+  }
+
+  function writeEntriesToIndexedDb(profileId = currentProfileId, list = entries) {
+    return openHistoryDb().then((db) => {
+      if (!db) return false;
+      return new Promise((resolve) => {
+        const tx = db.transaction(IDB_STORE_NAME, "readwrite");
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+        tx.onabort = () => resolve(false);
+        tx.objectStore(IDB_STORE_NAME).put({
+          profileId: normalizeProfileId(profileId),
+          version: 1,
+          entries: cloneEntries(list),
+          updatedAt: new Date().toISOString(),
+        });
+      });
+    });
+  }
+
+  function removeLocalHistoryCopy(profileId = currentProfileId) {
+    try {
+      storage.removeItem(getStorageKey(profileId));
+    } catch (_) {
+      // ignore storage cleanup errors
+    }
+  }
+
+  function restoreEntriesFromPayload(payload) {
+    const list = Array.isArray(payload && payload.entries) ? payload.entries : [];
+    const restored = [];
+    const seen = new Set();
+    list.forEach((item) => {
+      const normalized = normalizeStoredEntry(item);
+      if (normalized && !seen.has(normalized.id)) {
+        seen.add(normalized.id);
+        restored.push(normalized);
+      }
+    });
+    entries = restored;
+  }
+
   function notify() {
     const snapshot = getAllEntries();
     subscribers.forEach((fn) => {
@@ -345,7 +425,25 @@
   }
 
   function save() {
-    const payload = { version: 1, entries: cloneEntries(entries) };
+    const entriesSnapshot = cloneEntries(entries);
+    const payload = { version: 1, entries: entriesSnapshot };
+    if (idbState.available) {
+      writeEntriesToIndexedDb(currentProfileId, entriesSnapshot).then((stored) => {
+        if (stored) {
+          removeLocalHistoryCopy(currentProfileId);
+          return;
+        }
+        try {
+          storage.setItem(getStorageKey(), JSON.stringify(payload));
+        } catch (err) {
+          console.warn("No se pudo guardar el historial", err);
+          if (!warnings.includes("No se pudo guardar el historial en el navegador.")) {
+            warnings.push("No se pudo guardar el historial en el navegador.");
+          }
+        }
+      });
+      return;
+    }
     try {
       storage.setItem(getStorageKey(), JSON.stringify(payload));
     } catch (err) {
@@ -398,29 +496,39 @@
 
   function load() {
     warnings = [];
+    const profileId = currentProfileId;
+    let localPayload = null;
     try {
-      const raw = storage.getItem(getStorageKey());
-      if (!raw) {
+      const raw = storage.getItem(getStorageKey(profileId));
+      if (raw) {
+        localPayload = JSON.parse(raw);
+        restoreEntriesFromPayload(localPayload);
+      } else {
         entries = [];
-        return getAllEntries();
       }
-      const parsed = JSON.parse(raw);
-      const list = Array.isArray(parsed && parsed.entries) ? parsed.entries : [];
-      const restored = [];
-      const seen = new Set();
-      list.forEach((item) => {
-        const normalized = normalizeStoredEntry(item);
-        if (normalized && !seen.has(normalized.id)) {
-          seen.add(normalized.id);
-          restored.push(normalized);
-        }
-      });
-      entries = restored;
     } catch (err) {
       console.warn("Error reading history storage", err);
       warnings.push("No se pudo leer el historial guardado. Se reinició el seguimiento.");
       entries = [];
     }
+
+    if (idbState.available) {
+      readEntriesFromIndexedDb(profileId).then((payload) => {
+        if (currentProfileId !== profileId) return;
+        if (payload) {
+          restoreEntriesFromPayload(payload);
+          removeLocalHistoryCopy(profileId);
+          notify();
+          return;
+        }
+        if (localPayload) {
+          writeEntriesToIndexedDb(profileId, entries).then((stored) => {
+            if (stored) removeLocalHistoryCopy(profileId);
+          });
+        }
+      });
+    }
+
     const { migrated, failed } = migrateLegacy();
     if (failed) {
       warnings.push(`No se pudo migrar ${failed} entradas antiguas.`);

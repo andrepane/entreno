@@ -26,6 +26,7 @@ const hashVersion = (value) => {
 const APP_VERSION = hashVersion(PRECACHE_ASSETS.join('|'));
 const PRECACHE_NAME = `entreno-precache-${APP_VERSION}`;
 const RUNTIME_NAME = `entreno-runtime-${APP_VERSION}`;
+const MAX_RECENT_EXERCISE_ICONS = 24;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -70,15 +71,36 @@ const respondWithNavigation = async (request) => {
   }
 };
 
+const isExerciseIconRequest = (request) => {
+  const url = new URL(request.url);
+  return url.origin === self.location.origin && url.pathname.includes('/icons/exercises/');
+};
+
+const pruneRecentExerciseIcons = async (cache) => {
+  const keys = await cache.keys();
+  const exerciseIconRequests = keys.filter((request) => isExerciseIconRequest(request));
+  if (exerciseIconRequests.length <= MAX_RECENT_EXERCISE_ICONS) return;
+
+  const overflow = exerciseIconRequests.length - MAX_RECENT_EXERCISE_ICONS;
+  await Promise.all(exerciseIconRequests.slice(0, overflow).map((request) => cache.delete(request)));
+};
+
+const cacheRuntimeResponse = async (cache, request, response) => {
+  if (!response || !response.ok || (response.type !== 'basic' && response.type !== 'cors')) return;
+  await cache.delete(request);
+  await cache.put(request, response.clone());
+  if (isExerciseIconRequest(request)) {
+    await pruneRecentExerciseIcons(cache);
+  }
+};
+
 const respondWithStaleWhileRevalidate = async (request) => {
   const cache = await caches.open(RUNTIME_NAME);
   const cached = await cache.match(request);
 
   const networkFetch = fetch(request)
     .then((response) => {
-      if (response && response.ok && (response.type === 'basic' || response.type === 'cors')) {
-        cache.put(request, response.clone());
-      }
+      cacheRuntimeResponse(cache, request, response.clone());
       return response;
     })
     .catch(() => null);
