@@ -1110,8 +1110,8 @@ function normalizeTemplates(rawList){
     const exercises = Array.isArray(item.exercises)
       ? item.exercises.filter(isPlainObject).map((exercise) => ({
         ...exercise,
-        id: randomUUID(),
-        plannedId: randomUUID(),
+        id: typeof exercise.id === "string" && exercise.id ? exercise.id : randomUUID(),
+        plannedId: typeof exercise.plannedId === "string" && exercise.plannedId ? exercise.plannedId : randomUUID(),
         done: [],
         status: EXERCISE_STATUS.PENDING,
         completed: false,
@@ -1182,6 +1182,7 @@ function normalizeSettings(rawSettings){
   const reduceMotion = !!settings.reduceMotion;
   const autoPruneOldIcons = settings.autoPruneOldIcons !== false;
   return {
+    ...settings,
     theme,
     density,
     fontSize,
@@ -1399,6 +1400,11 @@ function clearStorageWarning() {
     conflictButton.hidden = true;
     conflictButton.classList.add("hidden");
   }
+  const resolveButton = document.getElementById("resolveSyncConflictBtn");
+  if (resolveButton) {
+    resolveButton.hidden = true;
+    resolveButton.classList.add("hidden");
+  }
 }
 
 function showStorageWarning(message) {
@@ -1410,6 +1416,11 @@ function showStorageWarning(message) {
     const visible = message === FIREBASE_CONFLICT_MESSAGE;
     conflictButton.hidden = !visible;
     conflictButton.classList.toggle("hidden", !visible);
+  }
+  const resolveButton = document.getElementById("resolveSyncConflictBtn");
+  if (resolveButton && message !== FIREBASE_CONFLICT_MESSAGE) {
+    resolveButton.hidden = true;
+    resolveButton.classList.add("hidden");
   }
 }
 
@@ -1670,6 +1681,11 @@ async function reconcileRemoteState() {
       firebaseConflictDetected = true;
       showStorageWarning(FIREBASE_CONFLICT_MESSAGE);
       showSyncStatus("Revisión necesaria: dos versiones distintas");
+      const resolveButton = document.getElementById("resolveSyncConflictBtn");
+      if (resolveButton && globalThis.entrenoSyncResolve.localSuperset(local, result.remote)) {
+        resolveButton.hidden = false;
+        resolveButton.classList.remove("hidden");
+      }
       return;
     }
     // A local edit during the network request must be reconciled in a fresh transaction.
@@ -2176,6 +2192,7 @@ const reduceMotionToggle = document.getElementById("reduceMotionToggle");
 const autoPruneOldIconsToggle = document.getElementById("autoPruneOldIcons");
 const exportDataBtn = document.getElementById("exportDataBtn");
 const downloadSyncConflictBtn = document.getElementById("downloadSyncConflictBtn");
+const resolveSyncConflictBtn = document.getElementById("resolveSyncConflictBtn");
 const finalizeStorageBtn = document.getElementById("finalizeStorageBtn");
 const importDataInput = document.getElementById("importDataInput");
 
@@ -2768,6 +2785,61 @@ if (downloadSyncConflictBtn) {
     } catch (error) {
       console.warn("No se pudieron descargar las dos copias", error);
       showToast("No se pudieron descargar las dos copias.", { type: "error" });
+    }
+  });
+}
+
+if (resolveSyncConflictBtn) {
+  resolveSyncConflictBtn.addEventListener("click", async () => {
+    if (!currentProfileId || !firebaseConflictDetected || !firebaseDb) return;
+    const profileId = currentProfileId;
+    const approved = await uiConfirm(
+      "La copia del móvil contiene todos los entrenos de la nube y más días recientes. Se unirán los ajustes exclusivos de la nube. Antes de escribir se comprobará de nuevo que nada haya cambiado allí.",
+      { title: "Resolver sincronización", confirmText: "Conservar y sincronizar" }
+    );
+    if (!approved || profileId !== currentProfileId) return;
+    try {
+      await pendingStateWrite;
+      const local = cloneStateForRemote();
+      const archived = await globalThis.entrenoStateStorage.loadSyncConflict(profileId);
+      if (!archived || !globalThis.entrenoSyncResolve.localSuperset(local, archived.remote)) {
+        throw new Error("La copia local ha cambiado y necesita una nueva revisión");
+      }
+      const docRef = firebaseDb.collection(FIREBASE_COLLECTION).doc(getFirebaseDocId(profileId));
+      const result = await firebaseDb.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(docRef);
+        if (!snapshot.exists) throw new Error("Falta la copia remota");
+        const remote = await globalThis.entrenoSyncCodec.unpack(snapshot.data());
+        const resolved = globalThis.entrenoSyncResolve.localSuperset(local, remote);
+        if (!resolved) throw new Error("La nube ha cambiado o ya no está incluida en la copia local");
+        const packedState = await globalThis.entrenoSyncCodec.pack(resolved);
+        transaction.update(docRef, {
+          state: globalThis.entrenoSyncCodec.marker,
+          packedState,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          version: 2,
+        });
+        return resolved;
+      });
+      if (profileId !== currentProfileId || syncComparable(state) !== syncComparable(local)) {
+        throw new Error("El perfil cambió mientras se resolvía el conflicto");
+      }
+      state.settings = normalizeSettings(result.settings);
+      if (!(await save({ skipRemote: true, updateTimestamp: false }))) {
+        throw new Error("No se pudo guardar en el dispositivo el estado unido");
+      }
+      await globalThis.entrenoStateStorage.saveSyncBase(profileId, result);
+      firebaseSyncBase = result;
+      firebaseConflictDetected = false;
+      clearStorageWarning();
+      showSyncStatus("Sincronizado con la nube");
+      showToast("Se conservaron todos los entrenos del móvil y se sincronizaron.", { type: "success" });
+      queueRemoteSave();
+    } catch (error) {
+      console.warn("No se pudo resolver el conflicto sin riesgo", error);
+      showStorageWarning(FIREBASE_CONFLICT_MESSAGE);
+      showSyncStatus("Revisión necesaria: no se ha sobrescrito el móvil");
+      showToast("La nube cambió o no se pudo verificar la copia. No se han borrado entrenos.", { type: "error" });
     }
   });
 }

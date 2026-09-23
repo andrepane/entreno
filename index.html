@@ -681,6 +681,7 @@
             <button id="exportDataBtn" type="button" class="ghost">Descargar mis datos</button>
             <small id="syncStatus" role="status">Comprobando sincronización…</small>
             <button id="downloadSyncConflictBtn" type="button" class="ghost hidden" hidden>Descargar ambas versiones para revisar el conflicto</button>
+            <button id="resolveSyncConflictBtn" type="button" class="ghost hidden" hidden>Conservar los entrenos del móvil y sincronizar</button>
             <small>Guarda una copia de los entrenamientos del perfil activo en Archivos.</small>
             <button id="finalizeStorageBtn" type="button" class="ghost" disabled>Liberar espacio tras comprobar la copia</button>
             <small>Solo elimina la copia antigua cuando tú lo confirmes. Tus entrenamientos permanecen en IndexedDB.</small>
@@ -1019,6 +1020,7 @@
   <script src="state-storage.js" defer></script>
   <script src="sync-merge.js" defer></script>
   <script src="sync-codec.js" defer></script>
+  <script src="sync-resolve.js" defer></script>
   <script src="seguimiento.js" defer></script>
   <script src="firebase-config.js" defer></script>
   <script src="app.js" defer></script>
