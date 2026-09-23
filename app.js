@@ -236,8 +236,7 @@ const PROFILE_LABELS = {
   andrea: "Andrea",
   cintia: "Cintia",
 };
-const STORAGE_APPROX_MAX_BYTES = 5 * 1024 * 1024; // NEW: Máximo aproximado permitido en localStorage
-const STORAGE_WARN_THRESHOLD_BYTES = 4.5 * 1024 * 1024; // NEW: Umbral para mostrar alerta visual de almacenamiento
+const STORAGE_WARN_THRESHOLD_BYTES = 4.5 * 1024 * 1024;
 const STORAGE_SAVE_ERROR_MESSAGE =
   "No se pudo guardar tu entrenamiento en este dispositivo. Comprueba si el modo privado está activado o libera espacio y vuelve a intentarlo.";
 const FIREBASE_COLLECTION = "workouts";
@@ -253,6 +252,8 @@ let firebaseSaveTimeout = null;
 let firebaseReady = false;
 let firebaseConfigured = false;
 let firebaseSyncPending = false;
+let firebaseConflictDetected = false;
+const FIREBASE_CONFLICT_MESSAGE = "La nube y este dispositivo contienen entrenamientos distintos. Se conservan los datos de este dispositivo y se ha pausado la sincronización.";
 let currentProfileId = null;
 let firebaseMigrationPromise = null;
 const CATEGORY_KEYS = ["calistenia", "musculacion", "piernas", "cardio", "skill", "movilidad", "otro"];
@@ -1394,63 +1395,25 @@ function showStorageWarning(message) {
   storageWarningEl.classList.remove("hidden");
 }
 
-function load() {
-  if (!currentProfileId) return;
-  state = { ...createDefaultState() };
-  try {
-    const raw = localStorage.getItem(getStateStorageKey());
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (isPlainObject(parsed)) {
-        state = { ...state, ...parsed };
-      } else {
-        console.warn("Se ignoró un estado almacenado inválido", parsed);
-        try {
-          localStorage.removeItem(getStateStorageKey());
-        } catch (removeErr) {
-          console.warn("No se pudo limpiar el estado almacenado inválido", removeErr);
-        }
-      }
-    }
-  } catch(e){ console.warn("Error loading storage", e); }
+async function load(profileId) {
+  const loaded = await globalThis.entrenoStateStorage.load(profileId);
+  return { ...createDefaultState(), ...(isPlainObject(loaded) ? loaded : {}) };
 }
 
-function loadStateForProfile(profileId) {
+async function loadStateForProfile(profileId) {
   const normalizedProfileId = normalizeProfileId(profileId);
-  if (!normalizedProfileId) {
-    return createDefaultState();
-  }
-  const base = createDefaultState();
-  try {
-    const raw = localStorage.getItem(getStateStorageKey(normalizedProfileId));
-    if (!raw) return base;
-    const parsed = JSON.parse(raw);
-    if (!isPlainObject(parsed)) {
-      console.warn("Se ignoró un estado almacenado inválido del perfil", normalizedProfileId, parsed);
-      return base;
-    }
-    return { ...base, ...parsed };
-  } catch (err) {
-    console.warn("No se pudo cargar el estado del perfil", normalizedProfileId, err);
-    return base;
-  }
+  if (!normalizedProfileId) return createDefaultState();
+  const loaded = await globalThis.entrenoStateStorage.load(normalizedProfileId);
+  return { ...createDefaultState(), ...(isPlainObject(loaded) ? loaded : {}) };
 }
 
-function saveStateForProfile(profileId, nextState) {
+async function saveStateForProfile(profileId, nextState) {
   const normalizedProfileId = normalizeProfileId(profileId);
   if (!normalizedProfileId) return false;
-  try {
-    localStorage.setItem(getStateStorageKey(normalizedProfileId), JSON.stringify(nextState));
-    showStorageUsage();
-    return true;
-  } catch (err) {
-    console.warn("No se pudo guardar el estado del perfil", normalizedProfileId, err);
-    if (!storageSaveFailed) {
-      showStorageWarning(STORAGE_SAVE_ERROR_MESSAGE);
-    }
-    storageSaveFailed = true;
-    return false;
-  }
+  const saved = await globalThis.entrenoStateStorage.save(normalizedProfileId, nextState);
+  if (saved) showStorageUsage();
+  else showStorageWarning(STORAGE_SAVE_ERROR_MESSAGE);
+  return saved;
 }
 
 function migrateLegacyLocalProfileStorage() {
@@ -1471,44 +1434,21 @@ function migrateLegacyLocalProfileStorage() {
     historyStore.migrateLegacyToProfile("andrea");
   }
 }
-// NEW: Calcula el espacio estimado utilizado en localStorage y devuelve un string humanizado
-function estimateLocalStorageUsage() {
-  if (typeof localStorage === "undefined" || localStorage === null) {
-    lastStorageUsageBytes = 0; // NEW: Reinicia el uso registrado cuando localStorage no está disponible
-    return "0 KB"; // NEW: Valor por defecto cuando no se puede acceder a localStorage
-  }
-  let totalBytes = 0; // NEW: Acumulador de bytes estimados
-  for (let index = 0; index < localStorage.length; index += 1) {
-    const key = localStorage.key(index) || ""; // NEW: Obtiene la clave actual o string vacío
-    const value = localStorage.getItem(key) || ""; // NEW: Obtiene el valor asociado o string vacío
-    totalBytes += (key.length + value.length) * 2; // NEW: Suma longitud total en bytes (UTF-16 ~2 bytes por carácter)
-  }
-  lastStorageUsageBytes = totalBytes; // NEW: Actualiza el valor global para que showStorageUsage conozca los bytes estimados
-  if (totalBytes >= 1024 * 1024) {
-    const mb = totalBytes / (1024 * 1024); // NEW: Conversión a megabytes
-    return `${mb.toFixed(2)} MB`; // NEW: Representación humanizada en MB
-  }
-  const kb = totalBytes / 1024; // NEW: Conversión a kilobytes
-  return `${kb.toFixed(1)} KB`; // NEW: Representación humanizada en KB
-}
-// NEW: Muestra o actualiza un badge visible con el uso aproximado del almacenamiento local
 function showStorageUsage() {
-  const usageLabel = estimateLocalStorageUsage(); // NEW: Obtiene el texto humanizado del espacio utilizado
-  let storageInfoEl = document.getElementById("storage-info"); // NEW: Localiza el nodo existente (si lo hay)
+  let storageInfoEl = document.getElementById("storage-info");
   if (!storageInfoEl) {
-    storageInfoEl = document.createElement("div"); // NEW: Crea el badge cuando no existe
-    storageInfoEl.id = "storage-info"; // NEW: Asigna el id solicitado
-    const hostPanel = document.getElementById("todayPanel"); // NEW: Obtiene un panel representativo para anclar el badge
-    const insertionTarget = hostPanel || document.body; // NEW: Define dónde insertar el badge
-    insertionTarget.appendChild(storageInfoEl); // NEW: Inserta el badge en la UI
+    storageInfoEl = document.createElement("div");
+    storageInfoEl.id = "storage-info";
+    (document.getElementById("todayPanel") || document.body).appendChild(storageInfoEl);
   }
-  const maxLabel =
-    STORAGE_APPROX_MAX_BYTES >= 1024 * 1024 // NEW: Determina si el máximo aproximado debe mostrarse en MB o KB
-      ? `${Math.round(STORAGE_APPROX_MAX_BYTES / (1024 * 1024))} MB`
-      : `${Math.round(STORAGE_APPROX_MAX_BYTES / 1024)} KB`; // NEW: Convierte el máximo aproximado a unidades legibles
-  storageInfoEl.textContent = `Espacio ocupado: ${usageLabel} (máx. aprox. ${maxLabel})`; // NEW: Actualiza el contenido del badge
-  const warn = lastStorageUsageBytes >= STORAGE_WARN_THRESHOLD_BYTES; // NEW: Determina si debe activarse el estado de alerta
-  storageInfoEl.classList.toggle("warn", warn); // NEW: Alterna la clase de alerta cuando se supera el umbral
+  const stored = currentProfileId ? localStorage.getItem(getStateStorageKey()) : null;
+  const legacyBytes = stored ? stored.length * 2 : 0;
+  storageInfoEl.classList.toggle("warn", legacyBytes >= STORAGE_WARN_THRESHOLD_BYTES);
+  const releaseButton = document.getElementById("finalizeStorageBtn");
+  if (releaseButton) releaseButton.disabled = !stored;
+  storageInfoEl.textContent = stored
+    ? "Datos locales pendientes de migración: " + (legacyBytes / 1048576).toFixed(2) + " MB"
+    : "Entrenamientos guardados en IndexedDB";
 }
 
 function getFirebaseConfig() {
@@ -1539,6 +1479,7 @@ function resetFirebaseSyncState() {
   firebaseDocRef = null;
   firebaseReady = false;
   firebaseSyncPending = false;
+  firebaseConflictDetected = false;
 }
 
 function applyRemoteState(remoteState) {
@@ -1608,7 +1549,7 @@ function ensureFirestoreProfileMigration() {
 }
 
 function queueRemoteSave() {
-  if (!firebaseConfigured) return;
+  if (firebaseConflictDetected || !firebaseConfigured) return;
   if (!firebaseDocRef || typeof firebase === "undefined" || !firebaseReady) {
     firebaseSyncPending = true;
     return;
@@ -1629,6 +1570,7 @@ function queueRemoteSave() {
 }
 
 function flushRemoteSave() {
+  if (firebaseConflictDetected) return;
   if (!firebaseDocRef || typeof firebase === "undefined") return;
   if (!firebaseSaveTimeout) return;
   clearTimeout(firebaseSaveTimeout);
@@ -1660,13 +1602,22 @@ function subscribeToRemoteState() {
       const remoteState = data.state;
       const remoteUpdated = getTimestampMillis(remoteState.lastModifiedAt);
       const localUpdated = getTimestampMillis(state.lastModifiedAt);
+      const localHasWorkouts = Object.values(state.workouts || {}).some((items) => Array.isArray(items) && items.length);
+      if (localHasWorkouts && JSON.stringify(state.workouts) !== JSON.stringify(remoteState.workouts || {})) {
+        firebaseConflictDetected = true;
+        if (firebaseSaveTimeout) {
+          clearTimeout(firebaseSaveTimeout);
+          firebaseSaveTimeout = null;
+        }
+        showStorageWarning(FIREBASE_CONFLICT_MESSAGE);
+        return;
+      }
       if (!localUpdated || (remoteUpdated && remoteUpdated > localUpdated)) {
         applyRemoteState(remoteState);
         return;
       }
-      if (firebaseSyncPending || (localUpdated && (!remoteUpdated || localUpdated > remoteUpdated))) {
-        queueRemoteSave();
-      }
+      // La mera apertura de otro dispositivo nunca debe subir una copia local antigua.
+      // Solo las ediciones explícitas programan una escritura remota.
     },
     (err) => {
       console.warn("Error al escuchar cambios en Firebase", err);
@@ -1781,6 +1732,7 @@ function pruneOldWorkoutIcons(referenceDate = new Date()) {
   return changed;
 }
 
+let pendingStateWrite = Promise.resolve();
 function save({ skipRemote = false, updateTimestamp = true } = {}) {
   if (!currentProfileId) return;
   state.libraryExercises = normalizeLibraryExercises(state.libraryExercises);
@@ -1792,21 +1744,25 @@ function save({ skipRemote = false, updateTimestamp = true } = {}) {
   if (updateTimestamp) {
     state.lastModifiedAt = new Date().toISOString();
   }
-  try {
-    localStorage.setItem(getStateStorageKey(), JSON.stringify(state));
-    showStorageUsage(); // NEW: Actualiza el indicador visual tras guardar en localStorage
-    storageSaveFailed = false;
-    clearStorageWarning();
-    if (!skipRemote) {
-      queueRemoteSave();
-    }
-  } catch (err) {
-    console.warn("No se pudo guardar el estado de entreno", err);
-    if (!storageSaveFailed) {
-      showStorageWarning(STORAGE_SAVE_ERROR_MESSAGE);
-    }
-    storageSaveFailed = true;
-  }
+  const profileId = currentProfileId;
+  const snapshot = JSON.parse(JSON.stringify(state));
+  pendingStateWrite = pendingStateWrite
+    .catch(() => false)
+    .then(async () => {
+      const saved = await globalThis.entrenoStateStorage.save(profileId, snapshot);
+      if (!saved) {
+        storageSaveFailed = true;
+        showStorageWarning(STORAGE_SAVE_ERROR_MESSAGE);
+        return false;
+      }
+      storageSaveFailed = false;
+      if (firebaseConflictDetected) showStorageWarning(FIREBASE_CONFLICT_MESSAGE);
+      else clearStorageWarning();
+      showStorageUsage();
+      if (!skipRemote && currentProfileId === profileId) queueRemoteSave();
+      return true;
+    });
+  return pendingStateWrite;
 }
 
 /* ========= DOM ========= */
@@ -2094,6 +2050,7 @@ const contrastToggle = document.getElementById("contrastToggle");
 const reduceMotionToggle = document.getElementById("reduceMotionToggle");
 const autoPruneOldIconsToggle = document.getElementById("autoPruneOldIcons");
 const exportDataBtn = document.getElementById("exportDataBtn");
+const finalizeStorageBtn = document.getElementById("finalizeStorageBtn");
 const importDataInput = document.getElementById("importDataInput");
 
 const restTimerState = {
@@ -2292,7 +2249,9 @@ function rebuildHistoryForCurrentState() {
   }
 }
 
-function activateProfile(profileId, { persistSelection = true } = {}) {
+let profileActivationEpoch = 0;
+async function activateProfile(profileId, { persistSelection = true } = {}) {
+  const activationEpoch = ++profileActivationEpoch;
   const normalizedProfileId = normalizeProfileId(profileId);
   if (!normalizedProfileId) return;
 
@@ -2307,9 +2266,17 @@ function activateProfile(profileId, { persistSelection = true } = {}) {
     historyStore.setProfile(currentProfileId);
   }
 
-  load();
-  initFirebaseSync();
-
+  setProfileGateVisible(true);
+  try {
+    const loadedState = await load(normalizedProfileId);
+    if (activationEpoch !== profileActivationEpoch) return;
+    state = loadedState;
+  } catch (error) {
+    console.error("No se pudo recuperar el perfil local", error);
+    showStorageWarning("No se pudieron leer los entrenamientos. No se sincronizará este perfil.");
+    currentProfileId = null;
+    return;
+  }
   const { shouldSave } = normalizeStateAfterLoad();
   const today = new Date();
   const todayISO = fmt(today);
@@ -2332,12 +2299,14 @@ function activateProfile(profileId, { persistSelection = true } = {}) {
   setProfileGateVisible(false);
 
   if (shouldSave || resetToToday) {
-    const deferRemoteSync = firebaseConfigured && !firebaseReady;
-    save(deferRemoteSync ? { skipRemote: true, updateTimestamp: false } : undefined);
+    const saved = await save({ skipRemote: true, updateTimestamp: false });
+    if (!saved) return;
   }
+  if (activationEpoch === profileActivationEpoch) initFirebaseSync();
 }
 
 function signOutCurrentProfile() {
+  ++profileActivationEpoch;
   flushRemoteSave();
   resetFirebaseSyncState();
   currentProfileId = null;
@@ -2368,7 +2337,7 @@ function getCalendarSnapshot(){
   return snapshot;
 }
 
-setProfileGateVisible(!currentProfileId);
+setProfileGateVisible(true);
 setRestTimer(restTimerState.duration);
 Promise.resolve().then(ensureExerciseIconsLoaded);
 attachLibraryEventListeners();
@@ -2601,6 +2570,31 @@ if (autoPruneOldIconsToggle) {
     if (pruned) {
       renderDay(state.selectedDate);
       renderMiniCalendar();
+    }
+  });
+}
+
+if (finalizeStorageBtn) {
+  finalizeStorageBtn.addEventListener("click", async () => {
+    if (!currentProfileId) return;
+    const profileId = currentProfileId;
+    const ok = await uiConfirm(
+      "Comprueba que has descargado una copia de este perfil y que los entrenamientos siguen visibles en este dispositivo. Se eliminará solo la copia antigua de localStorage.",
+      { title: "Liberar espacio", confirmText: "Liberar espacio" }
+    );
+    if (!ok || profileId !== currentProfileId) return;
+    await pendingStateWrite;
+    try {
+      const released = await globalThis.entrenoStateStorage.finalize(profileId, state);
+      if (!released) {
+        showToast("No se liberó espacio: la copia en IndexedDB no coincide con los datos actuales.", { type: "error" });
+        return;
+      }
+      showStorageUsage();
+      showToast("Espacio liberado; los entrenamientos siguen en IndexedDB.", { type: "success" });
+    } catch (error) {
+      console.warn("No se pudo verificar o liberar el almacenamiento antiguo", error);
+      showToast("No se liberó espacio. La copia antigua sigue intacta.", { type: "error" });
     }
   });
 }
@@ -3341,12 +3335,12 @@ async function handleCopyLibraryToOtherProfile() {
   );
   if (!ok) return;
 
-  const targetState = loadStateForProfile(targetProfileId);
+  const targetState = await loadStateForProfile(targetProfileId);
   const mergeResult = mergeLibraryExercisesForCopy(sourceLibrary, targetState.libraryExercises);
   targetState.libraryExercises = mergeResult.libraryExercises;
   targetState.lastModifiedAt = new Date().toISOString();
 
-  const saved = saveStateForProfile(targetProfileId, targetState);
+  const saved = await saveStateForProfile(targetProfileId, targetState);
   if (!saved) {
     showToast(`No se pudo copiar la librería a ${targetLabel}.`, { type: "error" });
     return;
