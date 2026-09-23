@@ -64,20 +64,17 @@
           const newTime = Date.parse(storedState.lastModifiedAt || "") || 0;
           if (oldTime > newTime) {
             await write(profileId, legacy);
-            global.localStorage.removeItem(key);
             return legacyState;
           }
         }
         if (legacy) {
           if (await read(profileId) !== stored) throw new Error("La lectura de IndexedDB falló");
-          global.localStorage.removeItem(key);
         }
         return storedState;
       }
       if (!legacy) return null;
       const parsed = JSON.parse(legacy);
       await write(profileId, legacy);
-      global.localStorage.removeItem(key);
       return parsed;
     } catch (error) {
       // If migration fails, leave the old copy untouched.
@@ -91,7 +88,6 @@
     const key = legacyKey(profileId);
     try {
       await write(profileId, serialized);
-      global.localStorage.removeItem(key);
       return true;
     } catch (error) {
       console.warn("IndexedDB no disponible; se intentará guardar localmente", error);
@@ -105,5 +101,12 @@
     }
   }
 
-  global.entrenoStateStorage = { load, save };
+  async function finalize(profileId, state) {
+    const serialized = JSON.stringify(state);
+    if (await read(profileId) !== serialized) return false;
+    global.localStorage.removeItem(legacyKey(profileId));
+    return (await read(profileId)) === serialized;
+  }
+
+  global.entrenoStateStorage = { load, save, finalize };
 })(typeof globalThis !== "undefined" ? globalThis : window);
