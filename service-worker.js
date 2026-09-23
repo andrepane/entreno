@@ -9,6 +9,7 @@ const PRECACHE_ASSETS = [
   './state-storage.js',
   './sync-merge.js',
   './sync-codec.js',
+  './sync-resolve.js',
   './seguimiento.js',
   './firebase-config.js',
   './manifest.webmanifest',
