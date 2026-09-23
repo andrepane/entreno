@@ -108,5 +108,24 @@
     return (await read(profileId)) === serialized;
   }
 
-  global.entrenoStateStorage = { load, save, finalize };
+  async function loadSyncBase(profileId) {
+    const stored = await read("sync-base." + profileId);
+    return stored === null ? null : JSON.parse(stored);
+  }
+
+  async function saveSyncBase(profileId, state) {
+    await write("sync-base." + profileId, JSON.stringify(state));
+  }
+
+  // Keep both originals available even if a sync conflict is discovered later.
+  async function saveSyncConflict(profileId, local, remote) {
+    await write("sync-conflict." + profileId, JSON.stringify({ local, remote, savedAt: new Date().toISOString() }));
+  }
+
+  async function loadSyncConflict(profileId) {
+    const stored = await read("sync-conflict." + profileId);
+    return stored === null ? null : JSON.parse(stored);
+  }
+
+  global.entrenoStateStorage = { load, save, finalize, loadSyncBase, saveSyncBase, saveSyncConflict, loadSyncConflict };
 })(typeof globalThis !== "undefined" ? globalThis : window);
