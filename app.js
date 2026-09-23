@@ -253,7 +253,14 @@ let firebaseReady = false;
 let firebaseConfigured = false;
 let firebaseSyncPending = false;
 let firebaseConflictDetected = false;
-const FIREBASE_CONFLICT_MESSAGE = "La nube y este dispositivo contienen entrenamientos distintos. Se conservan los datos de este dispositivo y se ha pausado la sincronización.";
+let firebaseSyncInFlight = false;
+let firebaseSyncBase = null;
+let firebaseSyncGeneration = 0;
+const FIREBASE_CONFLICT_MESSAGE = "Hay cambios distintos en este dispositivo y en la nube que necesitan revisión. No se ha sobrescrito ninguna copia. Descarga ambas versiones desde Ajustes.";
+function showSyncStatus(message) {
+  const label = document.getElementById("syncStatus");
+  if (label) label.textContent = message;
+}
 let currentProfileId = null;
 let firebaseMigrationPromise = null;
 const CATEGORY_KEYS = ["calistenia", "musculacion", "piernas", "cardio", "skill", "movilidad", "otro"];
@@ -1387,12 +1394,23 @@ function clearStorageWarning() {
   if (!storageWarningEl) return;
   storageWarningEl.textContent = "";
   storageWarningEl.classList.add("hidden");
+  const conflictButton = document.getElementById("downloadSyncConflictBtn");
+  if (conflictButton) {
+    conflictButton.hidden = true;
+    conflictButton.classList.add("hidden");
+  }
 }
 
 function showStorageWarning(message) {
   if (!storageWarningEl) return;
   storageWarningEl.textContent = message;
   storageWarningEl.classList.remove("hidden");
+  const conflictButton = document.getElementById("downloadSyncConflictBtn");
+  if (conflictButton) {
+    const visible = message === FIREBASE_CONFLICT_MESSAGE;
+    conflictButton.hidden = !visible;
+    conflictButton.classList.toggle("hidden", !visible);
+  }
 }
 
 async function load(profileId) {
@@ -1468,6 +1486,7 @@ function cloneStateForRemote() {
 }
 
 function resetFirebaseSyncState() {
+  ++firebaseSyncGeneration;
   if (firebaseSaveTimeout) {
     clearTimeout(firebaseSaveTimeout);
     firebaseSaveTimeout = null;
@@ -1480,6 +1499,9 @@ function resetFirebaseSyncState() {
   firebaseReady = false;
   firebaseSyncPending = false;
   firebaseConflictDetected = false;
+  firebaseSyncInFlight = false;
+  firebaseSyncBase = null;
+  showSyncStatus("Comprobando sincronización…");
 }
 
 function applyRemoteState(remoteState) {
@@ -1548,41 +1570,134 @@ function ensureFirestoreProfileMigration() {
   return firebaseMigrationPromise;
 }
 
+function syncComparable(value) {
+  const relevant = { ...value };
+  delete relevant.selectedDate;
+  delete relevant.lastModifiedAt;
+  delete relevant.plannedExercises;
+  const sort = (item) => Array.isArray(item)
+    ? item.map(sort)
+    : item && typeof item === "object"
+      ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, sort(item[key])]))
+      : item;
+  return JSON.stringify(sort(relevant));
+}
+
 function queueRemoteSave() {
   if (firebaseConflictDetected || !firebaseConfigured) return;
-  if (!firebaseDocRef || typeof firebase === "undefined" || !firebaseReady) {
-    firebaseSyncPending = true;
-    return;
-  }
+  firebaseSyncPending = true;
+  showSyncStatus("Sincronización pendiente…");
+  if (!firebaseDocRef || !firebaseReady) return;
   if (firebaseSaveTimeout) clearTimeout(firebaseSaveTimeout);
-  firebaseSyncPending = false;
   firebaseSaveTimeout = setTimeout(() => {
     firebaseSaveTimeout = null;
-    const payload = {
-      state: cloneStateForRemote(),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      version: FIREBASE_DOC_VERSION,
-    };
-    firebaseDocRef.set(payload, { merge: true }).catch((err) => {
-      console.warn("No se pudo sincronizar con Firebase", err);
-    });
+    reconcileRemoteState();
   }, 800);
 }
 
 function flushRemoteSave() {
-  if (firebaseConflictDetected) return;
-  if (!firebaseDocRef || typeof firebase === "undefined") return;
-  if (!firebaseSaveTimeout) return;
-  clearTimeout(firebaseSaveTimeout);
-  firebaseSaveTimeout = null;
-  const payload = {
-    state: cloneStateForRemote(),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    version: FIREBASE_DOC_VERSION,
-  };
-  firebaseDocRef.set(payload, { merge: true }).catch((err) => {
-    console.warn("No se pudo sincronizar con Firebase", err);
-  });
+  if (firebaseSaveTimeout) {
+    clearTimeout(firebaseSaveTimeout);
+    firebaseSaveTimeout = null;
+    reconcileRemoteState();
+  }
+}
+
+async function reconcileRemoteState() {
+  if (!firebaseDocRef || !firebaseReady || firebaseConflictDetected || firebaseSyncInFlight) {
+    firebaseSyncPending = true;
+    return;
+  }
+  const generation = firebaseSyncGeneration;
+  const profileId = currentProfileId;
+  const docRef = firebaseDocRef;
+  let completed = false;
+  firebaseSyncInFlight = true;
+  firebaseSyncPending = false;
+  try {
+    await pendingStateWrite;
+    if (generation !== firebaseSyncGeneration || profileId !== currentProfileId) return;
+    const local = cloneStateForRemote();
+    const result = await firebaseDb.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(docRef);
+      const remote = snapshot.exists ? await globalThis.entrenoSyncCodec.unpack(snapshot.data()) : null;
+      if (!remote) {
+        if (snapshot.exists) throw new Error("El documento remoto existe pero no contiene datos legibles");
+        const packedState = await globalThis.entrenoSyncCodec.pack(local);
+        transaction.set(docRef, {
+          state: globalThis.entrenoSyncCodec.marker,
+          packedState,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          version: 2,
+        });
+        return { state: local, remote: null, conflicts: [] };
+      }
+      const localIsNew = !local.lastModifiedAt &&
+        !Object.values(local.workouts || {}).some((items) => Array.isArray(items) && items.length) &&
+        !(local.libraryExercises || []).length &&
+        !(local.templates || []).length &&
+        !(local.globalNotes || []).length;
+      const merged = !firebaseSyncBase && localIsNew
+        ? { state: remote, conflicts: [] }
+        : globalThis.entrenoSyncMerge.merge(local, remote, firebaseSyncBase);
+      if (merged.conflicts.length) return { ...merged, remote };
+      // Keep the derived list present for older app versions. The UI rebuilds it from workouts.
+      merged.state.plannedExercises = syncComparable(merged.state) === syncComparable(local)
+        ? local.plannedExercises : remote.plannedExercises;
+      if (syncComparable(merged.state) !== syncComparable(remote)) {
+        const packedState = await globalThis.entrenoSyncCodec.pack(merged.state);
+        transaction.update(docRef, {
+          state: globalThis.entrenoSyncCodec.marker,
+          packedState,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          version: 2,
+        });
+      } else if (!snapshot.data()?.packedState) {
+        // Migrate an existing legacy document after verifying that both copies agree.
+        const packedState = await globalThis.entrenoSyncCodec.pack(merged.state);
+        transaction.update(docRef, {
+          state: globalThis.entrenoSyncCodec.marker,
+          packedState,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          version: 2,
+        });
+      }
+      return { ...merged, remote };
+    });
+    if (generation !== firebaseSyncGeneration || profileId !== currentProfileId) return;
+    if (result.conflicts.length) {
+      await globalThis.entrenoStateStorage.saveSyncConflict(profileId, local, result.remote);
+      firebaseConflictDetected = true;
+      showStorageWarning(FIREBASE_CONFLICT_MESSAGE);
+      showSyncStatus("Revisión necesaria: dos versiones distintas");
+      return;
+    }
+    // A local edit during the network request must be reconciled in a fresh transaction.
+    if (syncComparable(state) !== syncComparable(local)) {
+      firebaseSyncPending = true;
+      completed = true;
+      return;
+    }
+    if (result.remote && syncComparable(result.state) !== syncComparable(local)) {
+      applyRemoteState(result.state);
+      if (!(await pendingStateWrite)) throw new Error("No se pudo guardar localmente el estado sincronizado");
+    }
+    await globalThis.entrenoStateStorage.saveSyncBase(profileId, result.state);
+    firebaseSyncBase = result.state;
+    clearStorageWarning();
+    showSyncStatus("Sincronizado con la nube");
+    completed = true;
+  } catch (err) {
+    console.warn("No se pudo completar la sincronización segura", err);
+    firebaseSyncPending = true;
+    showStorageWarning("La sincronización está pendiente. Los entrenamientos siguen guardados en este dispositivo.");
+    showSyncStatus("Sincronización pendiente…");
+  } finally {
+    if (generation === firebaseSyncGeneration) {
+      firebaseSyncInFlight = false;
+      if (completed && firebaseSyncPending && firebaseReady && !firebaseConflictDetected) queueRemoteSave();
+    }
+  }
 }
 
 function subscribeToRemoteState() {
@@ -1590,37 +1705,14 @@ function subscribeToRemoteState() {
   if (firebaseUnsubscribe) firebaseUnsubscribe();
   const unsubscribe = firebaseDocRef.onSnapshot(
     (doc) => {
+      if (doc.metadata && (doc.metadata.fromCache || doc.metadata.hasPendingWrites)) return;
       firebaseReady = true;
-      if (!doc.exists) {
-        if (state.lastModifiedAt || firebaseSyncPending) {
-          queueRemoteSave();
-        }
-        return;
-      }
-      const data = doc.data() || {};
-      if (!isPlainObject(data.state)) return;
-      const remoteState = data.state;
-      const remoteUpdated = getTimestampMillis(remoteState.lastModifiedAt);
-      const localUpdated = getTimestampMillis(state.lastModifiedAt);
-      const localHasWorkouts = Object.values(state.workouts || {}).some((items) => Array.isArray(items) && items.length);
-      if (localHasWorkouts && JSON.stringify(state.workouts) !== JSON.stringify(remoteState.workouts || {})) {
-        firebaseConflictDetected = true;
-        if (firebaseSaveTimeout) {
-          clearTimeout(firebaseSaveTimeout);
-          firebaseSaveTimeout = null;
-        }
-        showStorageWarning(FIREBASE_CONFLICT_MESSAGE);
-        return;
-      }
-      if (!localUpdated || (remoteUpdated && remoteUpdated > localUpdated)) {
-        applyRemoteState(remoteState);
-        return;
-      }
-      // La mera apertura de otro dispositivo nunca debe subir una copia local antigua.
-      // Solo las ediciones explícitas programan una escritura remota.
+      if (!doc.exists && !state.lastModifiedAt && !firebaseSyncPending) return;
+      queueRemoteSave();
     },
     (err) => {
       console.warn("Error al escuchar cambios en Firebase", err);
+      firebaseSyncPending = true;
     }
   );
   firebaseUnsubscribe = perfDebug.trackFirebaseSubscription(
@@ -1631,7 +1723,10 @@ function subscribeToRemoteState() {
 
 function ensureFirebaseSdkLoaded() {
   const config = getFirebaseConfig();
-  if (!config) return Promise.resolve(null);
+  if (!config) {
+    showSyncStatus("Solo en este dispositivo");
+    return Promise.resolve(null);
+  }
   firebaseConfigured = true;
 
   const start = () => {
@@ -1683,11 +1778,32 @@ function syncProfileStateToRemote(profileId, nextState) {
   return ensureFirebaseSdkLoaded()
     .then((db) => {
       if (!db || typeof firebase === "undefined") return false;
-      return db.collection(FIREBASE_COLLECTION).doc(getFirebaseDocId(normalizedProfileId)).set({
-        state: JSON.parse(JSON.stringify(nextState)),
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        version: FIREBASE_DOC_VERSION,
-      }, { merge: true }).then(() => true);
+      const targetRef = db.collection(FIREBASE_COLLECTION).doc(getFirebaseDocId(normalizedProfileId));
+      return db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(targetRef);
+        const remote = snapshot.exists ? await globalThis.entrenoSyncCodec.unpack(snapshot.data()) : null;
+        if (!remote) {
+          if (snapshot.exists) throw new Error("El perfil remoto existe pero no contiene datos legibles");
+          const packedState = await globalThis.entrenoSyncCodec.pack(nextState);
+          transaction.set(targetRef, {
+            state: globalThis.entrenoSyncCodec.marker,
+            packedState,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            version: 2,
+          });
+          return true;
+        }
+        // Copying a library must never replace the other profile's workout history.
+        const result = mergeLibraryExercisesForCopy(nextState.libraryExercises, remote.libraryExercises);
+        const packedState = await globalThis.entrenoSyncCodec.pack({ ...remote, libraryExercises: result.libraryExercises });
+        transaction.update(targetRef, {
+          state: globalThis.entrenoSyncCodec.marker,
+          packedState,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          version: 2,
+        });
+        return true;
+      });
     })
     .catch((err) => {
       console.warn("No se pudo sincronizar el perfil con Firebase", normalizedProfileId, err);
@@ -1701,8 +1817,17 @@ function initFirebaseSync() {
   ensureFirebaseSdkLoaded()
     .then((db) => {
       if (!db) return;
-      return ensureFirestoreProfileMigration().finally(() => {
+      return ensureFirestoreProfileMigration().finally(async () => {
         if (currentProfileId !== requestedProfileId) return;
+        const generation = firebaseSyncGeneration;
+        try {
+          firebaseSyncBase = await globalThis.entrenoStateStorage.loadSyncBase(requestedProfileId);
+        } catch (err) {
+          console.warn("No se pudo leer la referencia de sincronización", err);
+          showStorageWarning("No se puede sincronizar con seguridad. Los entrenamientos siguen guardados localmente.");
+          return;
+        }
+        if (generation !== firebaseSyncGeneration || currentProfileId !== requestedProfileId) return;
         firebaseDocRef = firebaseDb.collection(FIREBASE_COLLECTION).doc(getFirebaseDocId());
         subscribeToRemoteState();
       });
@@ -2050,6 +2175,7 @@ const contrastToggle = document.getElementById("contrastToggle");
 const reduceMotionToggle = document.getElementById("reduceMotionToggle");
 const autoPruneOldIconsToggle = document.getElementById("autoPruneOldIcons");
 const exportDataBtn = document.getElementById("exportDataBtn");
+const downloadSyncConflictBtn = document.getElementById("downloadSyncConflictBtn");
 const finalizeStorageBtn = document.getElementById("finalizeStorageBtn");
 const importDataInput = document.getElementById("importDataInput");
 
@@ -2615,6 +2741,34 @@ if (exportDataBtn) {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+  });
+}
+
+if (downloadSyncConflictBtn) {
+  downloadSyncConflictBtn.addEventListener("click", async () => {
+    if (!currentProfileId) return;
+    try {
+      const conflict = await globalThis.entrenoStateStorage.loadSyncConflict(currentProfileId);
+      if (!conflict) throw new Error("No hay copias de un conflicto");
+      const blob = new Blob([JSON.stringify({
+        profile: currentProfileId,
+        local: cloneStateForRemote(),
+        localAtConflict: conflict.local,
+        remoteAtConflict: conflict.remote,
+        savedAt: conflict.savedAt,
+      }, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `caligym-conflicto-${currentProfileId}-${fmt(new Date())}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+      console.warn("No se pudieron descargar las dos copias", error);
+      showToast("No se pudieron descargar las dos copias.", { type: "error" });
+    }
   });
 }
 
