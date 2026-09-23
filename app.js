@@ -1634,6 +1634,11 @@ async function reconcileRemoteState() {
       const remote = snapshot.exists ? await globalThis.entrenoSyncCodec.unpack(snapshot.data()) : null;
       if (!remote) {
         if (snapshot.exists) throw new Error("El documento remoto existe pero no contiene datos legibles");
+        const localHasContent =
+          Object.values(local.workouts || {}).some((items) => Array.isArray(items) && items.length) ||
+          (local.libraryExercises || []).length || (local.globalNotes || []).length ||
+          (local.templates || []).length || (local.futureExercises || []).length;
+        if (!localHasContent) throw new Error("Un perfil vacío nunca puede crear o reemplazar la copia de la nube");
         const packedState = await globalThis.entrenoSyncCodec.pack(local);
         transaction.set(docRef, {
           state: globalThis.entrenoSyncCodec.marker,
