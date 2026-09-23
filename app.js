@@ -2750,7 +2750,13 @@ if (downloadSyncConflictBtn) {
     try {
       const conflict = await globalThis.entrenoStateStorage.loadSyncConflict(currentProfileId);
       if (!conflict) throw new Error("No hay copias de un conflicto");
-      const blob = new Blob([JSON.stringify({ profile: currentProfileId, ...conflict }, null, 2)], { type: "application/json" });
+      const blob = new Blob([JSON.stringify({
+        profile: currentProfileId,
+        local: cloneStateForRemote(),
+        localAtConflict: conflict.local,
+        remoteAtConflict: conflict.remote,
+        savedAt: conflict.savedAt,
+      }, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
