@@ -1393,10 +1393,9 @@ function showStorageWarning(message) {
   storageWarningEl.classList.remove("hidden");
 }
 
-async function load() {
-  if (!currentProfileId) return;
-  const loaded = await globalThis.entrenoStateStorage.load(currentProfileId);
-  state = { ...createDefaultState(), ...(isPlainObject(loaded) ? loaded : {}) };
+async function load(profileId) {
+  const loaded = await globalThis.entrenoStateStorage.load(profileId);
+  return { ...createDefaultState(), ...(isPlainObject(loaded) ? loaded : {}) };
 }
 
 async function loadStateForProfile(profileId) {
@@ -2251,8 +2250,9 @@ async function activateProfile(profileId, { persistSelection = true } = {}) {
 
   setProfileGateVisible(true);
   try {
-    await load();
+    const loadedState = await load(normalizedProfileId);
     if (activationEpoch !== profileActivationEpoch) return;
+    state = loadedState;
   } catch (error) {
     console.error("No se pudo recuperar el perfil local", error);
     showStorageWarning("No se pudieron leer los entrenamientos. No se sincronizará este perfil.");
