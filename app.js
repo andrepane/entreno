@@ -1444,6 +1444,8 @@ function showStorageUsage() {
   const stored = currentProfileId ? localStorage.getItem(getStateStorageKey()) : null;
   const legacyBytes = stored ? stored.length * 2 : 0;
   storageInfoEl.classList.toggle("warn", legacyBytes >= STORAGE_WARN_THRESHOLD_BYTES);
+  const releaseButton = document.getElementById("finalizeStorageBtn");
+  if (releaseButton) releaseButton.disabled = !stored;
   storageInfoEl.textContent = stored
     ? "Datos locales pendientes de migración: " + (legacyBytes / 1048576).toFixed(2) + " MB"
     : "Entrenamientos guardados en IndexedDB";
@@ -2048,6 +2050,7 @@ const contrastToggle = document.getElementById("contrastToggle");
 const reduceMotionToggle = document.getElementById("reduceMotionToggle");
 const autoPruneOldIconsToggle = document.getElementById("autoPruneOldIcons");
 const exportDataBtn = document.getElementById("exportDataBtn");
+const finalizeStorageBtn = document.getElementById("finalizeStorageBtn");
 const importDataInput = document.getElementById("importDataInput");
 
 const restTimerState = {
@@ -2567,6 +2570,31 @@ if (autoPruneOldIconsToggle) {
     if (pruned) {
       renderDay(state.selectedDate);
       renderMiniCalendar();
+    }
+  });
+}
+
+if (finalizeStorageBtn) {
+  finalizeStorageBtn.addEventListener("click", async () => {
+    if (!currentProfileId) return;
+    const profileId = currentProfileId;
+    const ok = await uiConfirm(
+      "Comprueba que has descargado una copia de este perfil y que los entrenamientos siguen visibles en este dispositivo. Se eliminará solo la copia antigua de localStorage.",
+      { title: "Liberar espacio", confirmText: "Liberar espacio" }
+    );
+    if (!ok || profileId !== currentProfileId) return;
+    await pendingStateWrite;
+    try {
+      const released = await globalThis.entrenoStateStorage.finalize(profileId, state);
+      if (!released) {
+        showToast("No se liberó espacio: la copia en IndexedDB no coincide con los datos actuales.", { type: "error" });
+        return;
+      }
+      showStorageUsage();
+      showToast("Espacio liberado; los entrenamientos siguen en IndexedDB.", { type: "success" });
+    } catch (error) {
+      console.warn("No se pudo verificar o liberar el almacenamiento antiguo", error);
+      showToast("No se liberó espacio. La copia antigua sigue intacta.", { type: "error" });
     }
   });
 }
