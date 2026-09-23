@@ -24,6 +24,11 @@ async function run() {
   delete removed.workouts["2026-01-01"];
   assert.deepEqual(merge(removed, base, base).state.workouts, {});
   assert.deepEqual(merge(removed, otherEdit, base).conflicts, ["workouts.2026-01-01"]);
+  const samplePacked = await globalThis.entrenoSyncCodec.pack(base);
+  await assert.rejects(
+    globalThis.entrenoSyncCodec.unpack({ state: edit, packedState: samplePacked }),
+    /versión antigua/
+  );
 
   for (const filename of ["caligym-backup-2026-09-23.json", "caligym-backup-2026-09-23(Cintia).json"]) {
     if (!fs.existsSync("upload/" + filename)) continue; // Local fixtures; never commit personal backups.
