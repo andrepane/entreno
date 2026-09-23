@@ -252,6 +252,8 @@ let firebaseSaveTimeout = null;
 let firebaseReady = false;
 let firebaseConfigured = false;
 let firebaseSyncPending = false;
+let firebaseConflictDetected = false;
+const FIREBASE_CONFLICT_MESSAGE = "La nube y este dispositivo contienen entrenamientos distintos. Se conservan los datos de este dispositivo y se ha pausado la sincronización.";
 let currentProfileId = null;
 let firebaseMigrationPromise = null;
 const CATEGORY_KEYS = ["calistenia", "musculacion", "piernas", "cardio", "skill", "movilidad", "otro"];
@@ -1475,6 +1477,7 @@ function resetFirebaseSyncState() {
   firebaseDocRef = null;
   firebaseReady = false;
   firebaseSyncPending = false;
+  firebaseConflictDetected = false;
 }
 
 function applyRemoteState(remoteState) {
@@ -1544,7 +1547,7 @@ function ensureFirestoreProfileMigration() {
 }
 
 function queueRemoteSave() {
-  if (!firebaseConfigured) return;
+  if (firebaseConflictDetected || !firebaseConfigured) return;
   if (!firebaseDocRef || typeof firebase === "undefined" || !firebaseReady) {
     firebaseSyncPending = true;
     return;
@@ -1565,6 +1568,7 @@ function queueRemoteSave() {
 }
 
 function flushRemoteSave() {
+  if (firebaseConflictDetected) return;
   if (!firebaseDocRef || typeof firebase === "undefined") return;
   if (!firebaseSaveTimeout) return;
   clearTimeout(firebaseSaveTimeout);
@@ -1596,6 +1600,16 @@ function subscribeToRemoteState() {
       const remoteState = data.state;
       const remoteUpdated = getTimestampMillis(remoteState.lastModifiedAt);
       const localUpdated = getTimestampMillis(state.lastModifiedAt);
+      const localHasWorkouts = Object.values(state.workouts || {}).some((items) => Array.isArray(items) && items.length);
+      if (localHasWorkouts && JSON.stringify(state.workouts) !== JSON.stringify(remoteState.workouts || {})) {
+        firebaseConflictDetected = true;
+        if (firebaseSaveTimeout) {
+          clearTimeout(firebaseSaveTimeout);
+          firebaseSaveTimeout = null;
+        }
+        showStorageWarning(FIREBASE_CONFLICT_MESSAGE);
+        return;
+      }
       if (!localUpdated || (remoteUpdated && remoteUpdated > localUpdated)) {
         applyRemoteState(remoteState);
         return;
@@ -1740,7 +1754,8 @@ function save({ skipRemote = false, updateTimestamp = true } = {}) {
         return false;
       }
       storageSaveFailed = false;
-      clearStorageWarning();
+      if (firebaseConflictDetected) showStorageWarning(FIREBASE_CONFLICT_MESSAGE);
+      else clearStorageWarning();
       showStorageUsage();
       if (!skipRemote && currentProfileId === profileId) queueRemoteSave();
       return true;
@@ -2259,8 +2274,6 @@ async function activateProfile(profileId, { persistSelection = true } = {}) {
     currentProfileId = null;
     return;
   }
-  initFirebaseSync();
-
   const { shouldSave } = normalizeStateAfterLoad();
   const today = new Date();
   const todayISO = fmt(today);
@@ -2283,8 +2296,10 @@ async function activateProfile(profileId, { persistSelection = true } = {}) {
   setProfileGateVisible(false);
 
   if (shouldSave || resetToToday) {
-    save({ skipRemote: true, updateTimestamp: false });
+    const saved = await save({ skipRemote: true, updateTimestamp: false });
+    if (!saved) return;
   }
+  if (activationEpoch === profileActivationEpoch) initFirebaseSync();
 }
 
 function signOutCurrentProfile() {
